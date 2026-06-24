@@ -1,0 +1,59 @@
+# Registro de Tareas - Óptica y Fidelización
+
+- [x] **Fase 1: Inicialización del Espacio de Trabajo**
+    - [x] Configurar directrices tecnológicas y definir los 5 Agentes Especializados (Orquestador).
+    - [x] Inicializar el proyecto Next.js con TypeScript y Tailwind CSS en el directorio raíz.
+    - [x] Configurar el archivo `.gitignore` y el entorno Git local.
+- [x] **Fase 2: Conexión con Supabase y Base de Datos**
+    - [x] Crear variables de entorno y lógica de cliente en `/utils/supabase`.
+    - [x] Diseñar el esquema SQL (Tablas `profiles`, `products`, `sales`, `coupons`, `reminders`).
+    - [x] Configurar políticas RLS y triggers de seguridad.
+- [x] **Fase 3: Autenticación y Control de Acceso (RBAC)**
+    - [x] Configurar el Middleware de Next.js para protección de rutas.
+    - [x] Implementar el flujo de autenticación y cambio forzado de contraseña temporal (`Rayo_[nombre]`).
+    - [x] Implementar bypass de Super Admin y login por nombre de usuario (Username Auth).
+    - [x] Crear panel de registro de usuarios (Dueños) usando Supabase Service Role client.
+- [x] **Fase 4: Desarrollo de Componentes e Interfaces**
+    - [x] Crear el sistema de diseño visual (Tailwind/CSS variables).
+    - [x] Desarrollar vistas Mobile-First (Catálogo, Inventario, Panel de Ventas).
+- [x] **Fase 5: Configuración PWA**
+    - [x] Configurar Service Workers y `manifest.json`.
+    - [x] Optimizar la visualización en iOS y Android.
+- [x] **Fase 6: Despliegue y Pruebas**
+    - [x] Ejecutar compilación de producción y pruebas integrales.
+    - [x] Configurar despliegue continuo en Vercel.
+- [x] **Fase 7: Sistema de Historial Clínico y Gestión de Pacientes**
+    - [x] Crear migración SQL en Supabase (customer_profiles + clinical_exams + ALTER sales)
+    - [x] Actualizar types/database.types.ts con nuevas tablas
+    - [x] Crear/actualizar lib/services.ts con nuevos servicios
+    - [x] Crear app/customers/actions.ts
+    - [x] Crear /customers page (lista + búsqueda de pacientes)
+    - [x] Crear /customers/new page (registro de cliente)
+    - [x] Crear /customers/[id] page (expediente completo)
+    - [x] Crear /customers/[id]/exam/new page (nuevo examen clínico)
+    - [x] Crear /customers/[id]/sale/new page (POS vinculado)
+    - [x] Rediseñar /dashboard/customer con datos reales
+    - [x] Actualizar proxy.ts para las nuevas rutas
+    - [x] Conectar links en navbar/dashboards de staff
+    - [x] npm run build + verificar
+    - [x] Corregir bug de recursión RLS en Supabase y verificar en navegador
+- [x] **Fase 8: Preferencias de Tema, Carga de Imágenes y Rediseño del Panel del Dueño**
+    - [x] Crear y ejecutar la migración SQL `20260624_theme_and_storage.sql` en Supabase (campo `bg_theme` y bucket `product-images`).
+    - [x] Actualizar `types/database.types.ts` con la columna `bg_theme` en `profiles`.
+    - [x] Modificar `app/globals.css` para añadir sobreescrituras de tema claro (.light) usando variables CSS.
+    - [x] Modificar `app/layout.tsx` para leer cookie `bg_theme` e inyectarla en `<html>`.
+    - [x] Modificar `app/auth/actions.ts` para soportar theme preference (login, getProfileData, updateProfile).
+    - [x] Modificar `app/profile/page.tsx` para integrar el selector de tema dinámico instantáneo.
+    - [x] Modificar `lib/services.ts` con `uploadProductImage` (upload a storage / base64 fallback) y funciones de actualización/eliminación de productos.
+    - [x] Rediseñar `app/dashboard/admin/page.tsx` con navegación por pestañas interactivas y animadas (Resumen, Clientes, Productos, Usuarios) incorporando búsqueda, creación, edición y eliminación de cada recurso.
+    - [x] Ejecutar `npm run build` para validar el proyecto.
+    - [x] Ejecutar el notificador remoto global de Telegram.
+- [ ] **Fase 9: Publicación en GitHub y Despliegue en Vercel**
+    - [ ] Preparar todos los cambios locales (`git add .`).
+    - [ ] Crear el commit local (`git commit -m "feat: tema claro/oscuro, carga de imagenes y rediseño de panel de administracion"`).
+    - [ ] Crear el repositorio público `optica-rayo` en GitHub y subir los archivos.
+    - [ ] Desplegar la aplicación a producción (`npx vercel --prod --yes`).
+    - [ ] Comprobar el enlace de producción online de Vercel.
+    - [ ] Notificar a Telegram la finalización del despliegue.
+
+

@@ -24,3 +24,156 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ==========================================
+   Light Mode Overrides (Premium theme transition)
+   ========================================== */
+html.light,
+.light body {
+  background-color: #f8fafc !important; /* slate-50 */
+  color: #0f172a !important; /* slate-900 */
+}
+
+/* Background Class Overrides */
+.light .bg-slate-950,
+.light .bg-slate-950\/80,
+.light .bg-slate-950\/60,
+.light .bg-slate-950\/50,
+.light .bg-slate-950\/40,
+.light .bg-slate-950\/30 {
+  background-color: #f1f5f9 !important; /* slate-100 */
+}
+
+.light .bg-slate-900,
+.light .bg-slate-900\/80,
+.light .bg-slate-900\/60,
+.light .bg-slate-900\/50,
+.light .bg-slate-900\/40,
+.light .bg-slate-900\/30 {
+  background-color: #ffffff !important; /* white cards */
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -2px rgba(0, 0, 0, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.02) !important;
+}
+
+.light .bg-slate-900\/60.backdrop-blur-xl {
+  background-color: rgba(255, 255, 255, 0.75) !important;
+}
+
+.light .bg-slate-900\/40.backdrop-blur-xl {
+  background-color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.light .bg-slate-950\/80.backdrop-blur-md {
+  background-color: rgba(248, 250, 252, 0.8) !important;
+}
+
+/* Border Class Overrides */
+.light .border-slate-900,
+.light .border-slate-850,
+.light .border-slate-800,
+.light .border-slate-800\/80,
+.light .border-slate-800\/60,
+.light .border-slate-800\/50,
+.light .border-slate-800\/40,
+.light .border-slate-900\/60 {
+  border-color: #e2e8f0 !important; /* slate-200 */
+}
+
+.light .divide-slate-950 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0 !important;
+}
+
+/* Text Color Overrides */
+.light .text-slate-100,
+.light .text-slate-200,
+.light .text-slate-300,
+.light .text-slate-350 {
+  color: #0f172a !important; /* slate-900 */
+}
+
+.light .text-slate-400,
+.light .text-slate-450,
+.light .text-slate-455 {
+  color: #334155 !important; /* slate-700 */
+}
+
+.light .text-slate-500,
+.light .text-slate-655,
+.light .text-slate-700 {
+  color: #64748b !important; /* slate-500 */
+}
+
+.light .text-slate-600 {
+  color: #475569 !important; /* slate-650/700 equivalent */
+}
+
+/* Glow effects in light mode */
+.light .bg-cyan-500\/5,
+.light .bg-violet-600\/5,
+.light .bg-indigo-500\/5,
+.light .bg-emerald-500\/5 {
+  background-color: rgba(6, 182, 212, 0.04) !important;
+}
+
+/* Inputs, Textareas, Selects overrides in light mode */
+.light input,
+.light select,
+.light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important; /* slate-300 */
+}
+
+.light input:focus,
+.light select:focus,
+.light textarea:focus {
+  border-color: #06b6d4 !important; /* cyan-500 */
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15) !important;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: #94a3b8 !important; /* slate-400 */
+}
+
+/* Buttons in light mode adjustments */
+.light .bg-slate-900.hover\:bg-slate-800 {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+.light .bg-slate-900.hover\:bg-slate-800:hover {
+  background-color: #e2e8f0 !important;
+}
+
+/* Specific elements adjustments */
+.light .text-cyan-400 {
+  color: #0891b2 !important; /* cyan-600 for better contrast */
+}
+.light .text-indigo-400 {
+  color: #4f46e5 !important; /* indigo-600 */
+}
+.light .text-emerald-400 {
+  color: #16a34a !important; /* emerald-600 */
+}
+.light .text-rose-450 {
+  color: #e11d48 !important; /* rose-600 */
+}
+.light .text-rose-400 {
+  color: #e11d48 !important; /* rose-600 */
+}
+
+.light .bg-cyan-500\/15 {
+  background-color: rgba(6, 182, 212, 0.12) !important;
+}
+.light .bg-indigo-500\/15 {
+  background-color: rgba(79, 70, 229, 0.12) !important;
+}
+.light .bg-emerald-500\/15 {
+  background-color: rgba(22, 163, 74, 0.12) !important;
+}
+.light .bg-rose-500\/15 {
+  background-color: rgba(225, 29, 72, 0.12) !important;
+}
+.light .bg-amber-500\/15 {
+  background-color: rgba(217, 119, 6, 0.12) !important;
+}
+
