@@ -65,8 +65,8 @@
     - [x] Añadir selectores en CSS para bordes de alto contraste (`border-slate-950`, `border-slate-955`) y fondo translúcido para modales.
     - [x] Rediseñar `app/catalog/page.tsx` con filtros avanzados (categorías con contador dinámico, control de precio máximo, disponibilidad, buscador por concordancia).
     - [x] Implementar modal de visualización rápida para detalles de productos e integración con botón de consulta WhatsApp.
-- [ ] **Fase 12: Compilación y Despliegue**
-    - [ ] Ejecutar `npm run build` localmente para validar que compile Next.js perfectamente.
-    - [ ] Agregar cambios, crear commit local, y subir a GitHub (`git add`, `git commit`, `git push`).
-    - [ ] Desplegar la versión de producción en Vercel (`npx vercel --prod --yes`).
-    - [ ] Ejecutar la alerta remota de Telegram.
+- [x] **Fase 12: Compilación y Despliegue**
+    - [x] Ejecutar `npm run build` localmente para validar que compile Next.js perfectamente.
+    - [x] Agregar cambios, crear commit local, y subir a GitHub (`git add`, `git commit`, `git push`).
+    - [x] Desplegar la versión de producción en Vercel (`npx vercel --prod --yes`).
+    - [x] Ejecutar la alerta remota de Telegram.
