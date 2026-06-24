@@ -48,12 +48,20 @@
     - [x] Rediseñar `app/dashboard/admin/page.tsx` con navegación por pestañas interactivas y animadas (Resumen, Clientes, Productos, Usuarios) incorporando búsqueda, creación, edición y eliminación de cada recurso.
     - [x] Ejecutar `npm run build` para validar el proyecto.
     - [x] Ejecutar el notificador remoto global de Telegram.
-- [ ] **Fase 9: Publicación en GitHub y Despliegue en Vercel**
-    - [ ] Preparar todos los cambios locales (`git add .`).
-    - [ ] Crear el commit local (`git commit -m "feat: tema claro/oscuro, carga de imagenes y rediseño de panel de administracion"`).
-    - [ ] Crear el repositorio público `optica-rayo` en GitHub y subir los archivos.
-    - [ ] Desplegar la aplicación a producción (`npx vercel --prod --yes`).
-    - [ ] Comprobar el enlace de producción online de Vercel.
-    - [ ] Notificar a Telegram la finalización del despliegue.
-
-
+- [x] **Fase 9: Publicación en GitHub y Despliegue en Vercel**
+    - [x] Preparar todos los cambios locales (`git add .`).
+    - [x] Crear el commit local (`git commit -m "feat: tema claro/oscuro, carga de imagenes y rediseño de panel de administracion"`).
+    - [x] Crear el repositorio público `optica-rayo` en GitHub y subir los archivos.
+    - [x] Desplegar la aplicación a producción (`npx vercel --prod --yes`).
+    - [x] Comprobar el enlace de producción online de Vercel.
+    - [x] Notificar a Telegram la finalización del despliegue.
+- [x] **Fase 10: Sub-rutas Dedicadas para el Panel del Dueño (Clientes, Productos, Usuarios)**
+    - [x] Crear la página `app/dashboard/admin/customers/page.tsx` para la gestión de clientes.
+    - [x] Crear la página `app/dashboard/admin/products/page.tsx` para la gestión del catálogo e imágenes.
+    - [x] Modificar la página `app/dashboard/admin/users/page.tsx` para incluir el CRUD completo de usuarios del sistema.
+    - [x] Rediseñar `app/dashboard/admin/page.tsx` para actuar como menú/hub con KPIs rápidos y redirección de tarjetas.
+- [x] **Fase 16: Compilación y Despliegue**
+    - [x] Ejecutar `npm run build` localmente para validar que Next.js compile todas las sub-rutas sin problemas.
+    - [ ] Agregar cambios, crear commit local, y subir a GitHub (`git add`, `git commit`, `git push`).
+    - [ ] Desplegar la versión de producción en Vercel (`npx vercel --prod --yes`).
+    - [ ] Ejecutar la alerta remota de Telegram. la finalización de la redirección de sub-rutas.
