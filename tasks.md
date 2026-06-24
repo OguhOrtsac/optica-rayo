@@ -60,8 +60,13 @@
     - [x] Crear la página `app/dashboard/admin/products/page.tsx` para la gestión del catálogo e imágenes.
     - [x] Modificar la página `app/dashboard/admin/users/page.tsx` para incluir el CRUD completo de usuarios del sistema.
     - [x] Rediseñar `app/dashboard/admin/page.tsx` para actuar como menú/hub con KPIs rápidos y redirección de tarjetas.
-- [x] **Fase 16: Compilación y Despliegue**
-    - [x] Ejecutar `npm run build` localmente para validar que Next.js compile todas las sub-rutas sin problemas.
+- [x] **Fase 11: Optimización de Contraste Temático y Rediseño del Catálogo del Cliente**
+    - [x] Agregar sobreescrituras en `app/globals.css` para `bg-slate-955` y sus variantes de opacidad, asegurando legibilidad en modo claro.
+    - [x] Añadir selectores en CSS para bordes de alto contraste (`border-slate-950`, `border-slate-955`) y fondo translúcido para modales.
+    - [x] Rediseñar `app/catalog/page.tsx` con filtros avanzados (categorías con contador dinámico, control de precio máximo, disponibilidad, buscador por concordancia).
+    - [x] Implementar modal de visualización rápida para detalles de productos e integración con botón de consulta WhatsApp.
+- [ ] **Fase 12: Compilación y Despliegue**
+    - [ ] Ejecutar `npm run build` localmente para validar que compile Next.js perfectamente.
     - [ ] Agregar cambios, crear commit local, y subir a GitHub (`git add`, `git commit`, `git push`).
     - [ ] Desplegar la versión de producción en Vercel (`npx vercel --prod --yes`).
-    - [ ] Ejecutar la alerta remota de Telegram. la finalización de la redirección de sub-rutas.
+    - [ ] Ejecutar la alerta remota de Telegram.

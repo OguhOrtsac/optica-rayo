@@ -40,7 +40,14 @@ html.light,
 .light .bg-slate-950\/60,
 .light .bg-slate-950\/50,
 .light .bg-slate-950\/40,
-.light .bg-slate-950\/30 {
+.light .bg-slate-950\/30,
+.light .bg-slate-955,
+.light .bg-slate-955\/85,
+.light .bg-slate-955\/80,
+.light .bg-slate-955\/60,
+.light .bg-slate-955\/50,
+.light .bg-slate-955\/40,
+.light .bg-slate-955\/30 {
   background-color: #f1f5f9 !important; /* slate-100 */
 }
 
@@ -62,11 +69,15 @@ html.light,
   background-color: rgba(255, 255, 255, 0.7) !important;
 }
 
+.light .bg-slate-955\/85.backdrop-blur-md,
+.light .bg-slate-955\/80.backdrop-blur-md,
 .light .bg-slate-950\/80.backdrop-blur-md {
-  background-color: rgba(248, 250, 252, 0.8) !important;
+  background-color: rgba(248, 250, 252, 0.85) !important;
 }
 
 /* Border Class Overrides */
+.light .border-slate-955,
+.light .border-slate-950,
 .light .border-slate-900,
 .light .border-slate-850,
 .light .border-slate-800,
@@ -78,6 +89,7 @@ html.light,
   border-color: #e2e8f0 !important; /* slate-200 */
 }
 
+.light .divide-slate-955 > :not([hidden]) ~ :not([hidden]),
 .light .divide-slate-950 > :not([hidden]) ~ :not([hidden]) {
   border-color: #e2e8f0 !important;
 }
@@ -175,5 +187,25 @@ html.light,
 }
 .light .bg-amber-500\/15 {
   background-color: rgba(217, 119, 6, 0.12) !important;
+}
+
+/* Extra overrides for customized tailwind utilities */
+.light .text-slate-355 {
+  color: #0f172a !important; /* slate-900 */
+}
+.light .text-slate-250,
+.light .text-slate-255 {
+  color: #1e293b !important; /* slate-800 */
+}
+.light .text-rose-455 {
+  color: #e11d48 !important; /* rose-600 */
+}
+.light .bg-rose-50\/5,
+.light .bg-rose-500\/5 {
+  background-color: rgba(225, 29, 72, 0.08) !important;
+}
+.light .bg-emerald-50\/5,
+.light .bg-emerald-500\/5 {
+  background-color: rgba(22, 163, 74, 0.08) !important;
 }
 
