@@ -48,10 +48,12 @@ export default function AdminDashboard() {
 
   // Business calculations
   const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0)
+  const totalPaid = sales.reduce((sum, s) => sum + (s.paid_amount !== undefined ? s.paid_amount : s.total), 0)
+  const totalPending = sales.reduce((sum, s) => sum + (s.pending_balance !== undefined ? s.pending_balance : 0), 0)
   const lowStockCount = products.filter(p => p.stock < 5).length
 
   return (
-    <main className="min-h-screen bg-slate-955 text-slate-100 p-4 md:p-8 space-y-8 relative">
+    <main className="min-h-screen bg-slate-955 text-slate-100 p-4 md:p-8 space-y-8 relative pb-24">
       {/* Glow backgrounds */}
       <div className="absolute top-0 left-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -59,28 +61,40 @@ export default function AdminDashboard() {
       <div className="max-w-7xl mx-auto space-y-6 relative">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-900 pb-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 border-b border-slate-900 pb-6">
           <div className="space-y-1">
             <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
               Panel del Dueño
             </h1>
-            <p className="text-xs text-slate-400 font-medium">
-              Gestión integral de clientes, catálogo de inventario, finanzas y personal.
+            <p className="text-xs text-slate-500 font-medium">
+              Gestión integral de clientes, catálogo de inventario, finanzas y personal de la óptica.
             </p>
           </div>
           
-          {/* Quick Stats banner */}
-          <div className="flex flex-wrap gap-4 text-xs font-semibold text-slate-400 bg-slate-900/30 border border-slate-900 rounded-xl px-4 py-2">
-            <div>
-              Ventas: <span className="text-cyan-400 font-bold">{sales.length}</span>
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full lg:w-auto">
+            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 text-center min-w-[120px]">
+              <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Ventas</span>
+              <span className="text-sm font-black text-cyan-400 mt-1 block">{sales.length} trans.</span>
             </div>
-            <div className="w-px bg-slate-800 self-stretch" />
-            <div>
-              Ingresos: <span className="text-emerald-400 font-bold">{formatPrice(totalRevenue)}</span>
+            
+            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 text-center min-w-[120px]">
+              <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Cobrado (Caja)</span>
+              <span className="text-sm font-black text-emerald-400 mt-1 block">{formatPrice(totalPaid)}</span>
             </div>
-            <div className="w-px bg-slate-800 self-stretch" />
-            <div>
-              Alerta Stock: <span className={`${lowStockCount > 0 ? 'text-rose-455' : 'text-slate-400'} font-bold`}>{lowStockCount}</span>
+            
+            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 text-center min-w-[120px]">
+              <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Por Cobrar</span>
+              <span className={`text-sm font-black mt-1 block ${totalPending > 0 ? 'text-rose-455' : 'text-slate-400'}`}>
+                {formatPrice(totalPending)}
+              </span>
+            </div>
+
+            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 text-center min-w-[120px]">
+              <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Alerta Stock</span>
+              <span className={`text-sm font-black mt-1 block ${lowStockCount > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                {lowStockCount} SKU
+              </span>
             </div>
           </div>
         </div>
@@ -149,11 +163,17 @@ export default function AdminDashboard() {
                     </div>
                     <div className="text-right pl-3 shrink-0">
                       <p className="font-semibold text-slate-200">{formatPrice(p.price)}</p>
-                      <span className={`inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                        p.stock < 5 ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-slate-900 text-slate-400'
-                      }`}>
-                        {p.stock} pz
-                      </span>
+                      {p.stock <= 3 ? (
+                        <span className="inline-block mt-0.5 text-[8px] font-black px-1.5 py-0.5 rounded bg-rose-500 text-slate-950 animate-pulse border border-rose-600">
+                          Stock Crítico: Solicitar Proveedor ({p.stock} pz)
+                        </span>
+                      ) : (
+                        <span className={`inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                          p.stock < 5 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-900 text-slate-400'
+                        }`}>
+                          {p.stock} pz
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -169,22 +189,34 @@ export default function AdminDashboard() {
               <div className="overflow-y-auto max-h-[350px] pr-2">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-900 text-slate-500 uppercase font-bold tracking-wider">
+                    <tr className="border-b border-slate-900 text-slate-500 uppercase font-bold tracking-wider text-[10px]">
                       <th className="py-2.5 px-3">Fecha</th>
                       <th className="py-2.5 px-3">Cliente</th>
-                      <th className="py-2.5 px-3">Vendedor</th>
-                      <th className="py-2.5 px-3 text-right">Monto</th>
+                      <th className="py-2.5 px-3 text-right">Total</th>
+                      <th className="py-2.5 px-3 text-right">Cobrado</th>
+                      <th className="py-2.5 px-3 text-right">Pendiente</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-950">
-                    {sales.map((s) => (
-                      <tr key={s.id} className="hover:bg-slate-900/10 transition-colors">
-                        <td className="py-2.5 px-3 text-slate-500">{new Date(s.created_at).toLocaleDateString()}</td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-350">{s.customer_name || 'Anónimo'}</td>
-                        <td className="py-2.5 px-3 text-slate-400">{s.seller_name || 'Staff'}</td>
-                        <td className="py-2.5 px-3 text-right font-bold text-cyan-400">{formatPrice(s.total)}</td>
-                      </tr>
-                    ))}
+                    {sales.map((s) => {
+                      const pending = s.pending_balance !== undefined ? s.pending_balance : 0
+                      const paid = s.paid_amount !== undefined ? s.paid_amount : s.total
+                      return (
+                        <tr key={s.id} className="hover:bg-slate-900/10 transition-colors">
+                          <td className="py-2.5 px-3 text-slate-500">{new Date(s.created_at).toLocaleDateString('es-MX')}</td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-350">{s.customer_name || 'Anónimo'}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-300">{formatPrice(s.total)}</td>
+                          <td className="py-2.5 px-3 text-right text-emerald-500 font-semibold">{formatPrice(paid)}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            {pending > 0 ? (
+                              <span className="text-rose-455 font-bold">{formatPrice(pending)}</span>
+                            ) : (
+                              <span className="text-slate-500">Liquidado</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

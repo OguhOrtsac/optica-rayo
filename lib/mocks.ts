@@ -15,7 +15,9 @@ export let MOCK_PRODUCTS: Product[] = [
     price: 1899.00,
     stock: 12,
     category: 'frames',
-    image_url: null,
+    image_url: 'https://images.unsplash.com/photo-1591076482161-42ce6da69f67?auto=format&fit=crop&w=600&q=80',
+    is_promo: true,
+    is_featured: true,
     created_at: new Date().toISOString()
   },
   {
@@ -26,6 +28,8 @@ export let MOCK_PRODUCTS: Product[] = [
     stock: 50,
     category: 'lenses',
     image_url: null,
+    is_promo: false,
+    is_featured: false,
     created_at: new Date().toISOString()
   },
   {
@@ -36,6 +40,8 @@ export let MOCK_PRODUCTS: Product[] = [
     stock: 8,
     category: 'contact_lenses',
     image_url: null,
+    is_promo: false,
+    is_featured: false,
     created_at: new Date().toISOString()
   },
   {
@@ -45,7 +51,9 @@ export let MOCK_PRODUCTS: Product[] = [
     price: 2450.00,
     stock: 3,
     category: 'frames',
-    image_url: null,
+    image_url: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?auto=format&fit=crop&w=600&q=80',
+    is_promo: false,
+    is_featured: true,
     created_at: new Date().toISOString()
   },
   {
@@ -56,6 +64,104 @@ export let MOCK_PRODUCTS: Product[] = [
     stock: 25,
     category: 'accessories',
     image_url: null,
+    is_promo: false,
+    is_featured: false,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'p6',
+    name: 'Ray-Ban Clubmaster Classic',
+    description: 'Lentes de sol icónicos con montura de acetato negro premium y detalles metálicos dorados. Estilo vintage clásico de alta distinción.',
+    price: 3599.00,
+    stock: 8,
+    category: 'frames',
+    image_url: 'https://images.unsplash.com/photo-1577803645773-f96470509666?auto=format&fit=crop&w=600&q=80',
+    is_promo: true,
+    is_featured: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'p7',
+    name: 'Oakley Holbrook Polarized',
+    description: 'Gafas de sol deportivas con micas polarizadas Prizm de espejo azul. Montura O Matter negra mate ultra duradera.',
+    price: 4200.00,
+    stock: 2,
+    category: 'frames',
+    image_url: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=600&q=80',
+    is_promo: false,
+    is_featured: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'p8',
+    name: 'Gucci GG Rectangular Black',
+    description: 'Armazón oftálmico rectangular de acetato negro de alta gama con las patillas grabadas con la banda web característica de Gucci.',
+    price: 6899.00,
+    stock: 5,
+    category: 'frames',
+    image_url: 'https://images.unsplash.com/photo-1591076482161-42ce6da69f67?auto=format&fit=crop&w=600&q=80',
+    is_promo: false,
+    is_featured: false,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'p9',
+    name: 'Carrera Sport Navigator',
+    description: 'Gafas de sol de aviador contemporáneas con montura metálica fina, doble puente negro y patillas con inserciones de goma deportiva.',
+    price: 2950.00,
+    stock: 15,
+    category: 'frames',
+    image_url: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?auto=format&fit=crop&w=600&q=80',
+    is_promo: true,
+    is_featured: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'p10',
+    name: 'Mica Progresiva Varilux Physio',
+    description: 'Lentes progresivos de alta definición con transición de campos visuales fluida y tratamiento antirreflejante de alta duración Crizal.',
+    price: 4800.00,
+    stock: 30,
+    category: 'lenses',
+    image_url: null,
+    is_promo: false,
+    is_featured: false,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'p11',
+    name: 'Mica Transitions Crizal Sapphire',
+    description: 'Micas inteligentes con cambio de tonalidad fotosensible Transitions gris de alta velocidad. Antirreflejante Sapphire premium.',
+    price: 3600.00,
+    stock: 45,
+    category: 'lenses',
+    image_url: null,
+    is_promo: true,
+    is_featured: false,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'p12',
+    name: 'Lentes de Contacto Biofinity Toric (Caja/6)',
+    description: 'Lentes de contacto mensuales de hidrogel de silicona diseñados específicamente para corregir altos grados de astigmatismo. Transpirables.',
+    price: 1450.00,
+    stock: 10,
+    category: 'contact_lenses',
+    image_url: null,
+    is_promo: false,
+    is_featured: false,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'p13',
+    name: 'Estuche Rígido de Piel Rayo',
+    description: 'Estuche de lujo fabricado en piel genuina color tabaco curtida artesanalmente. Interior afelpado suave de terciopelo anti-rayaduras.',
+    price: 450.00,
+    stock: 3,
+    category: 'accessories',
+    image_url: null,
+    is_promo: false,
+    is_featured: false,
     created_at: new Date().toISOString()
   }
 ]
@@ -123,6 +229,10 @@ export let MOCK_SALES: (Sale & { customer_name?: string; seller_name?: string })
     discount_applied: 0,
     notes: null,
     total: 3099.00,
+    paid_amount: 3099.00,
+    pending_balance: 0.00,
+    payment_method: 'cash',
+    status: 'Entregado',
     created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
   },
   {
@@ -136,6 +246,10 @@ export let MOCK_SALES: (Sale & { customer_name?: string; seller_name?: string })
     discount_applied: 0,
     notes: null,
     total: 2450.00,
+    paid_amount: 2450.00,
+    pending_balance: 0.00,
+    payment_method: 'card',
+    status: 'Entregado',
     created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
   }
 ]
@@ -179,7 +293,12 @@ export function updateMockProductStock(id: string, newStock: number) {
   MOCK_PRODUCTS = MOCK_PRODUCTS.map(p => p.id === id ? { ...p, stock: newStock } : p)
 }
 
-export function addMockSale(customerName: string, items: { productId: string; quantity: number }[]) {
+export function addMockSale(
+  customerName: string, 
+  items: { productId: string; quantity: number }[],
+  paidAmount?: number,
+  paymentMethod?: 'cash' | 'card' | 'transfer'
+) {
   const customerId = 'cust_' + Math.random().toString(36).substr(2, 9)
   
   let total = 0
@@ -203,6 +322,17 @@ export function addMockSale(customerName: string, items: { productId: string; qu
     }
   })
 
+  const finalPaidAmount = paidAmount !== undefined ? paidAmount : total
+  const pendingBalance = Math.max(0, total - finalPaidAmount)
+
+  // Status computation for workshop
+  let statusVal: 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado' = 'Cotizacion'
+  if (finalPaidAmount >= total) {
+    statusVal = 'Listo_Entrega'
+  } else if (finalPaidAmount > 0) {
+    statusVal = 'Anticipo_Pagado'
+  }
+
   const newSale = {
     id: saleId,
     customer_id: customerId,
@@ -214,6 +344,10 @@ export function addMockSale(customerName: string, items: { productId: string; qu
     discount_applied: 0,
     notes: null,
     total,
+    paid_amount: finalPaidAmount,
+    pending_balance: pendingBalance,
+    payment_method: paymentMethod || 'cash',
+    status: statusVal,
     created_at: new Date().toISOString()
   }
 
@@ -234,3 +368,87 @@ export function addMockSale(customerName: string, items: { productId: string; qu
 
   return { sale: newSale, items: itemsToAdd }
 }
+
+export function updateMockSaleStatus(id: string, newStatus: 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado') {
+  MOCK_SALES = MOCK_SALES.map(s => s.id === id ? { ...s, status: newStatus } : s)
+  return true
+}
+
+export let MOCK_PROFILES = [
+  { id: 'sell-1', email: 'vendedora@opticarayo.com', full_name: 'Patricia Vendedora', role: 'seller', temporal_password_changed: true },
+  { id: 'opt-1', email: 'optometrista@opticarayo.com', full_name: 'Dr. Hugo Optometrista', role: 'dev', temporal_password_changed: true },
+  { id: 'cust-1', email: 'carlos@gmail.com', full_name: 'Carlos Mendoza', role: 'customer', temporal_password_changed: true },
+  { id: 'cust-2', email: 'sofia@gmail.com', full_name: 'Ana Sofia Gomez', role: 'customer', temporal_password_changed: true }
+]
+
+export let MOCK_CUSTOMER_PROFILES = [
+  { id: 'cust-1', phone: '(555) 987-6543', medical_notes: 'Sensibilidad a la luz azul. Usa micas anti-reflejantes.' },
+  { id: 'cust-2', phone: '(555) 456-7890', medical_notes: 'Paciente con astigmatismo elevado en ojo izquierdo.' }
+]
+
+export let MOCK_CLINICAL_EXAMS = [
+  {
+    id: 'e1',
+    customer_id: 'cust-1',
+    examiner_id: 'opt-1',
+    exam_date: new Date(Date.now() - 340 * 24 * 60 * 60 * 1000).toISOString(),
+    od_sphere: -1.5,
+    od_cylinder: -0.5,
+    od_axis: 180,
+    oi_sphere: -1.75,
+    oi_cylinder: -0.25,
+    oi_axis: 170,
+    pd_distance: 63.0,
+    lens_type: 'Monofocal',
+    treatment: 'Anti-Reflejante premium',
+    next_exam_date: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000).toISOString()
+  }
+]
+
+export function addMockCustomer(profile: any, customerProfile: any, clinicalExam?: any) {
+  MOCK_PROFILES = [...MOCK_PROFILES, profile]
+  MOCK_CUSTOMER_PROFILES = [...MOCK_CUSTOMER_PROFILES, customerProfile]
+  if (clinicalExam) {
+    MOCK_CLINICAL_EXAMS = [clinicalExam, ...MOCK_CLINICAL_EXAMS]
+  }
+  return profile.id
+}
+
+export function addMockReminder(reminder: any) {
+  MOCK_REMINDERS = [reminder, ...MOCK_REMINDERS]
+}
+
+// ----------------------------------------------------
+// Wishlists local storage mocks
+// ----------------------------------------------------
+export interface WishlistItem {
+  id: string
+  user_id: string
+  product_id: string
+  created_at: string
+}
+
+export let MOCK_WISHLISTS: WishlistItem[] = []
+
+export function addMockWishlistItem(userId: string, productId: string) {
+  const exists = MOCK_WISHLISTS.some(w => w.user_id === userId && w.product_id === productId)
+  if (!exists) {
+    MOCK_WISHLISTS.push({
+      id: 'w_' + Math.random().toString(36).substr(2, 9),
+      user_id: userId,
+      product_id: productId,
+      created_at: new Date().toISOString()
+    })
+  }
+}
+
+export function removeMockWishlistItem(userId: string, productId: string) {
+  MOCK_WISHLISTS = MOCK_WISHLISTS.filter(w => !(w.user_id === userId && w.product_id === productId))
+}
+
+export function getMockWishlist(userId: string): string[] {
+  return MOCK_WISHLISTS
+    .filter(w => w.user_id === userId)
+    .map(w => w.product_id)
+}
+

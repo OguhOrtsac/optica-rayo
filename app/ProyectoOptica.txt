@@ -1,0 +1,141 @@
+# 🧠 EXPEDIENTE TÉCNICO Y ARQUITECTURA: ERP + CRM + POS - ÓPTICA RAYO
+
+Este documento describe con precisión la arquitectura, el flujo de negocio, la estructura de datos y el estado de desarrollo del ERP, CRM y Punto de Venta (POS) para la Óptica Rayo. Está diseñado para que cualquier agente de IA o desarrollador comprenda instantáneamente el proyecto y pueda continuar la programación con coherencia y sin romper dependencias.
+
+---
+
+## 1. VISTA GENERAL DEL PROYECTO
+Óptica Rayo es un sistema integrado diseñado para dispositivos móviles y de escritorio (con enfoque Mobile-First real y botones >= 44px de área táctil). Su objetivo es digitalizar una óptica familiar a través de:
+- **CRM:** Registro clínico de pacientes y expedientes optométricos (recetas).
+- **POS:** Terminal de ventas ultra veloz con soporte para anticipos (señas) y cálculo de saldos pendientes.
+- **Taller de Laboratorio:** Monitoreo de órdenes de trabajo con estados de producción.
+- **Inventario:** Alertas visuales de stock bajo y actualización en vivo tras ventas.
+- **Personal:** Gestión de staff con interruptores estilo iOS para asignar permisos/roles.
+
+---
+
+## 2. STACK TECNOLÓGICO
+1. **Framework:** Next.js (App Router, Middleware, Server Actions y Client Components).
+2. **Base de Datos & Auth:** Supabase (PostgreSQL) con seguridad a nivel de filas (RLS) habilitada en todas las tablas.
+3. **Estilo:** Tailwind CSS con variables CSS personalizadas para transiciones de temas (globals.css).
+4. **Tipado:** TypeScript estricto con tipos de base de datos sincronizados (`types/database.types.ts`).
+5. **Ecosistema PWA:** Registro de service worker configurado para comportamiento similar a aplicación nativa en dispositivos iOS/Android.
+
+---
+
+## 3. ESTRUCTURA DE ARCHIVOS CLAVE
+- `app/layout.tsx`: Root Layout que encapsula el App Shell. Inyecta un padding inferior automático (`pb-20 md:pb-0`) para móviles, evitando que la barra de navegación inferior tape contenidos importantes.
+- `components/navbar.tsx`: Navegación adaptativa.
+  - *Móvil (md:hidden):* Barra de navegación inferior flotante con efecto de cristal (glassmorphism) e iconos rápidos optimizados para uso táctil.
+  - *Escritorio (md:block):* Menú superior tradicional de navegación rápida y accesos directos al perfil.
+- `lib/services.ts`: Capa intermedia de servicios que interactúa con la base de datos de Supabase a través del cliente de navegador, proporcionando fallbacks automáticos basados en mocks si la conexión con Supabase no está configurada o falla.
+- `lib/mocks.ts`: Base de datos local en memoria (MOCK_PRODUCTS, MOCK_SALES, MOCK_REMINDERS, MOCK_COUPONS) utilizada para desarrollo rápido local y pruebas sin red.
+- `types/database.types.ts`: Tipos exportados de PostgreSQL generados por Supabase.
+- `utils/supabase/`: Clientes para el lado del servidor y cliente.
+
+---
+
+## 4. FUNCIONALIDADES DETALLADAS Y LÓGICA DE NEGOCIO
+
+### A. Registro de Clientes y Receta (CRM) (`app/customers/new/page.tsx`)
+- Formulario interactivo implementado como un **Stepper de 2 Pasos** para no abrumar al optometrista en pantallas táctiles:
+  - **Paso 1: Datos Personales:** Nombre, usuario (con contraseña autogenerada temporal `Rayo_[Nombre]`) y teléfono. Al escribir el teléfono, se formatea dinámicamente como `(XXX) XXX-XXXX` y se realiza una consulta asíncrona a Supabase para alertar si el número ya está duplicado.
+  - **Paso 2: Datos Optométricos (Receta):** Cuadrícula responsiva para Ojo Derecho (OD) e Ojo Izquierdo (OI). Cada campo numérico (Esfera, Cilindro, Eje, Adición, Distancia Pupilar) cuenta con botones táctiles de incremento/decremento `+` y `-` que facilitan el ajuste rápido en tablets o móviles sin necesidad de usar el teclado numérico.
+- **Acción del Servidor (`app/customers/actions.ts`):** Procesa el registro de forma atómica. Si el usuario ingresa datos de receta, crea el perfil de cliente en `customer_profiles`, calcula de forma automática la **fecha de próxima revisión** a $+365$ días, inserta el examen en `clinical_exams` y programa una alerta en la tabla de recordatorios (`reminders`).
+
+### B. Terminal POS e Inventario en Vivo (`app/dashboard/seller/page.tsx`)
+- **Interfaz Adaptativa:**
+  - *Escritorio:* Layout de tres columnas de alta productividad.
+  - *Móvil:* Acordeón por pestañas (`1. Catálogo`, `2. Carrito`, `3. Taller`).
+- **Autocompletado Predictivo:** Buscador predictivo en memoria que permite encontrar productos y clientes instantáneamente (<50ms) mientras el usuario escribe.
+- **Matemáticas del POS en tiempo real:**
+  - Calcula el Subtotal de la compra.
+  - Aplica cupones de descuento (consultados dinámicamente) y calcula el porcentaje.
+  - Desglosa comercialmente el 16% de IVA sobre la base imponible.
+  - Calcula el saldo restante de la orden basándose en el **Anticipo / Pago Parcial** ingresado por el vendedor.
+- **Actualización de Stock en Vivo:** Al realizar la checkout, el sistema descuenta de forma real la cantidad de productos de la base de datos en Supabase.
+- **Insignia de Stock Crítico:** Si el stock de cualquier producto es $\le 3$ unidades, se resalta en rojo brillante en las vistas administrativas con una insignia animada (`animate-pulse`) que advierte *"Stock Crítico: Solicitar Proveedor"*.
+
+### C. Monitoreo de Taller y Status Engine
+- Una venta no es sólo un ticket financiero, representa un trabajo clínico de laboratorio.
+- Las ventas en `sales` cuentan con un campo de estado de taller: `['Cotizacion', 'Anticipo_Pagado', 'En_Taller', 'Listo_Entrega', 'Entregado']`.
+- En el POS, el staff de la tienda puede alternar a la pestaña de "Monitoreo de Taller" para ver el listado de órdenes activas (con totales, anticipos y adeudos desglosados) y cambiar el estado del lente con un menú select interactivo. Al hacer clic, llama a `updateSaleStatus` y persiste el nuevo estado en Supabase inmediatamente.
+
+### D. Alertas y Cobranza CRM por WhatsApp (`app/customers/[id]/page.tsx`)
+En la ficha técnica del paciente, se programaron botones táctiles de acceso rápido:
+1. **Recordatorio de Examen (WhatsApp):** Si ha pasado un año, el vendedor presiona el botón y abre automáticamente WhatsApp Web o la App móvil con un mensaje pre-redactado: *"Hola {nombre}, te saludamos de Óptica Rayo. Queremos recordarte que tus lentes están próximos a cumplir un año de su última revisión. Te sugerimos agendar tu examen visual de seguimiento preventivo..."*.
+2. **Cobranza de Saldo (WhatsApp):** Si el paciente tiene deudas (el sistema calcula la suma de todos los campos `pending_balance` en Supabase), se muestra un botón rojo de cobranza destacando el monto y pre-redactando el mensaje de cobro amigable: *"Hola {nombre}, te recordamos cordialmente que cuentas con un saldo pendiente de {adeudo} MXN de tu compra..."*.
+
+### E. Control de Personal e iOS Toggles (`app/dashboard/admin/users/page.tsx`)
+- Panel de gestión de usuarios de la óptica.
+- Reemplaza los aburridos dropdowns y checkboxes por **Toggle Switches animados estilo iOS** para asignar los roles:
+  - *Administrador / Dueño* (owner)
+  - *Ventas / POS* (seller)
+  - *Optometrista / Clínico* (dev)
+
+---
+
+## 5. ESQUEMA DE BASE DE DATOS (TABLAS PRINCIPALES)
+
+### `public.profiles`
+- `id` (UUID, primary key)
+- `email` (TEXT)
+- `full_name` (TEXT)
+- `role` (TEXT: owner, seller, customer, dev)
+
+### `public.customer_profiles`
+- `id` (UUID, references profiles)
+- `phone` (TEXT)
+- `date_of_birth` (DATE)
+- `address` (TEXT)
+- `occupation` (TEXT)
+- `blood_type` (TEXT)
+- `medical_notes` (TEXT)
+- `emergency_contact_name` (TEXT)
+- `emergency_contact_phone` (TEXT)
+
+### `public.clinical_exams`
+- `id` (UUID, primary key)
+- `customer_id` (UUID, references profiles)
+- `examiner_id` (UUID, references profiles)
+- `exam_date` (TIMESTAMP)
+- `od_sphere`, `od_cylinder`, `od_add` (NUMERIC)
+- `od_axis` (INTEGER)
+- `oi_sphere`, `oi_cylinder`, `oi_add` (NUMERIC)
+- `oi_axis` (INTEGER)
+- `pd_distance` (NUMERIC)
+- `lens_type` (TEXT)
+- `frame_recommendation` (TEXT)
+- `treatment` (TEXT)
+- `clinical_notes` (TEXT)
+- `next_exam_date` (TIMESTAMP)
+
+### `public.products`
+- `id` (UUID, primary key)
+- `name` (TEXT)
+- `description` (TEXT)
+- `price` (NUMERIC)
+- `stock` (INTEGER)
+- `category` (TEXT: frames, lenses, contact_lenses, accessories)
+
+### `public.sales`
+- `id` (UUID, primary key)
+- `customer_id`, `seller_id` (UUID, references profiles)
+- `total` (NUMERIC)
+- `paid_amount` (NUMERIC)
+- `pending_balance` (NUMERIC)
+- `payment_method` (TEXT: cash, card, transfer)
+- `status` (TEXT: Cotizacion, Anticipo_Pagado, En_Taller, Listo_Entrega, Entregado)
+- `notes` (TEXT)
+- `created_at` (TIMESTAMP)
+
+---
+
+## 6. MIGRACIONES SQL OBLIGATORIAS (EJECUTADAS)
+- `20260623_initial_schema.sql`: Creación del esquema relacional, políticas RLS para lectura/escritura y triggers automáticos de registro.
+- `20260705_pos_payment_updates.sql`: Agrega columnas de anticipos y métodos de pago a `sales`.
+- `20260705_sales_status_taller.sql`: Agrega la columna de estado de taller a `sales`.
+
+---
+
+Este expediente técnico es la fuente de verdad única para mantener la integridad de Óptica Rayo en producción.

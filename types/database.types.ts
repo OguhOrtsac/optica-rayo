@@ -165,6 +165,8 @@ export interface Database {
           stock: number
           category: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url: string | null
+          is_promo: boolean
+          is_featured: boolean
           created_at: string
         }
         Insert: {
@@ -175,6 +177,8 @@ export interface Database {
           stock?: number
           category: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url?: string | null
+          is_promo?: boolean
+          is_featured?: boolean
           created_at?: string
         }
         Update: {
@@ -185,6 +189,8 @@ export interface Database {
           stock?: number
           category?: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url?: string | null
+          is_promo?: boolean
+          is_featured?: boolean
           created_at?: string
         }
       }
@@ -199,6 +205,10 @@ export interface Database {
           total: number
           notes: string | null
           created_at: string
+          paid_amount: number
+          pending_balance: number
+          payment_method: 'cash' | 'card' | 'transfer' | null
+          status: 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado'
         }
         Insert: {
           id?: string
@@ -210,6 +220,10 @@ export interface Database {
           total?: number
           notes?: string | null
           created_at?: string
+          paid_amount?: number
+          pending_balance?: number
+          payment_method?: 'cash' | 'card' | 'transfer' | null
+          status?: 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado'
         }
         Update: {
           id?: string
@@ -221,6 +235,10 @@ export interface Database {
           total?: number
           notes?: string | null
           created_at?: string
+          paid_amount?: number
+          pending_balance?: number
+          payment_method?: 'cash' | 'card' | 'transfer' | null
+          status?: 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado'
         }
       }
       sale_items: {

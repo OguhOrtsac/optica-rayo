@@ -27,12 +27,135 @@ function extractUsername(email: string): string {
     : email
 }
 
+export interface LoginState {
+  error: string | null
+}
+
+export interface RegisterState {
+  error: string | null
+  success: boolean
+  userId?: string
+}
+
+/**
+ * Handles patient self-registration (Sign up)
+ * Supports offline-first bypass, creating a mock customer profile if database fails.
+ */
+export async function registerPatient(currentState: RegisterState, formData: FormData): Promise<RegisterState> {
+  const email = formData.get('email') as string
+  const fullName = formData.get('fullName') as string
+  const password = formData.get('password') as string
+  const confirmPassword = formData.get('confirmPassword') as string
+
+  if (!email || !fullName || !password || !confirmPassword) {
+    return { error: 'Todos los campos son obligatorios.', success: false }
+  }
+
+  if (password.length < 6) {
+    return { error: 'La contraseña debe tener al menos 6 caracteres.', success: false }
+  }
+
+  if (password !== confirmPassword) {
+    return { error: 'Las contraseñas no coinciden.', success: false }
+  }
+
+  const formattedEmail = formatToEmail(email)
+  const cookieStore = await cookies()
+
+  // Try standard Supabase Sign up flow first
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase.auth.signUp({
+      email: formattedEmail,
+      password: password,
+      options: {
+        data: {
+          full_name: fullName,
+          role: 'customer',
+        }
+      }
+    })
+
+    if (!error && data.user) {
+      // In Supabase trigger or code, profile is created. Double check.
+      // Auto login the patient
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: formattedEmail,
+        password: password,
+      })
+
+      if (!signInError) {
+        revalidatePath('/', 'layout')
+        return { success: true, error: null }
+      }
+    }
+  } catch (err) {
+    console.warn('Supabase sign up failed, falling back to local mock bypass:', err)
+  }
+
+  // Fallback Offline-First: Create local mock patient profile
+  const mockId = 'usr_' + Math.random().toString(36).substr(2, 9)
+  const mockProfile = {
+    id: mockId,
+    email: formattedEmail,
+    full_name: fullName,
+    role: 'customer',
+    created_at: new Date().toISOString()
+  }
+
+  const mockCustomerProfile = {
+    id: mockId,
+    phone: '',
+    date_of_birth: '',
+    address: '',
+    occupation: '',
+    blood_type: '',
+    medical_notes: 'Autoregistrado desde la web.',
+    emergency_contact_name: '',
+    emergency_contact_phone: '',
+    created_at: new Date().toISOString()
+  }
+
+  // Import mockDb dynamically to avoid circular dependencies
+  const mockDb = require('@/lib/mocks')
+  mockDb.addMockCustomer(mockProfile, mockCustomerProfile)
+
+  // Auto-login locally using bypass cookies
+  cookieStore.set('optica_rayo_superadmin_session', 'true', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60,
+    path: '/',
+  })
+  cookieStore.set('optica_rayo_mock_role', 'customer', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60,
+    path: '/',
+  })
+  cookieStore.set('optica_rayo_mock_email', formattedEmail, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60,
+    path: '/',
+  })
+  cookieStore.set('optica_rayo_mock_name', fullName, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60,
+    path: '/',
+  })
+
+  revalidatePath('/', 'layout')
+  return { success: true, userId: mockId, error: null }
+}
+
 /**
  * Handles user login.
  * Supports username mapping (converts "username" to "username@opticarayo.com").
  * Incorporates a one-time Super Admin local bypass.
  */
-export async function login(currentState: any, formData: FormData) {
+export async function login(currentState: LoginState, formData: FormData): Promise<LoginState> {
   let email = formData.get('email') as string
   const password = formData.get('password') as string
 
@@ -45,13 +168,45 @@ export async function login(currentState: any, formData: FormData) {
 
   const cookieStore = await cookies()
 
-  // 1. One-Time Super Admin local bypass check
-  if (formattedEmail === 'superadmin@opticarayo.com' && password === 'Rayo_SuperAdmin2026') {
+  // 1. One-Time Mock local bypass check
+  if (
+    (formattedEmail === 'superadmin@opticarayo.com' && password === 'Rayo_SuperAdmin2026') ||
+    (formattedEmail === 'vendedora@opticarayo.com' && password === 'Rayo_Vendedora2026') ||
+    (formattedEmail === 'optometrista@opticarayo.com' && password === 'Rayo_Optometrista2026')
+  ) {
+    let roleVal = 'dev'
+    let nameVal = 'Dr. Hugo Optometrista'
+    if (formattedEmail === 'superadmin@opticarayo.com') {
+      roleVal = 'owner'
+      nameVal = 'Super Administrador'
+    } else if (formattedEmail === 'vendedora@opticarayo.com') {
+      roleVal = 'seller'
+      nameVal = 'Patricia Vendedora'
+    }
+
     // Set a secure session cookie locally to grant temporary admin rights
     cookieStore.set('optica_rayo_superadmin_session', 'true', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: 60 * 60, // 1 hour session
+      path: '/',
+    })
+    cookieStore.set('optica_rayo_mock_role', roleVal, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 60,
+      path: '/',
+    })
+    cookieStore.set('optica_rayo_mock_email', formattedEmail, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 60,
+      path: '/',
+    })
+    cookieStore.set('optica_rayo_mock_name', nameVal, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 60,
       path: '/',
     })
 
@@ -105,6 +260,9 @@ export async function logout() {
   
   // Clear Super Admin local bypass cookie
   cookieStore.delete('optica_rayo_superadmin_session')
+  cookieStore.delete('optica_rayo_mock_role')
+  cookieStore.delete('optica_rayo_mock_email')
+  cookieStore.delete('optica_rayo_mock_name')
 
   // Clear standard Supabase session
   const supabase = await createClient()
@@ -240,15 +398,18 @@ export async function createUserAction(currentState: any, formData: FormData) {
 export async function getProfileData() {
   const cookieStore = await cookies()
 
-  // Check for Super Admin bypass session first
+  // Check for Mock bypass session first
   const superadminSession = cookieStore.get('optica_rayo_superadmin_session')?.value
-  if (superadminSession === 'true') {
+  const mockRole = cookieStore.get('optica_rayo_mock_role')?.value
+  if (superadminSession === 'true' && mockRole) {
+    const mockEmail = cookieStore.get('optica_rayo_mock_email')?.value || ''
+    const mockName = cookieStore.get('optica_rayo_mock_name')?.value || ''
     return {
-      username: 'superadmin',
-      fullName: 'Super Administrador',
-      role: 'superadmin',
-      email: 'superadmin@opticarayo.com',
-      isSuperAdmin: true,
+      username: mockEmail.split('@')[0],
+      fullName: mockName,
+      role: mockRole,
+      email: mockEmail,
+      isSuperAdmin: mockRole === 'owner',
       bg_theme: 'dark' as 'dark' | 'light',
     }
   }

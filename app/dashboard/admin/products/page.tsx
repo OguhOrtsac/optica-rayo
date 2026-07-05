@@ -30,6 +30,8 @@ export default function AdminProductsPage() {
   const [pCategory, setPCategory] = useState<'frames' | 'lenses' | 'contact_lenses' | 'accessories'>('frames')
   const [pImageFile, setPImageFile] = useState<File | null>(null)
   const [pImagePreview, setPImagePreview] = useState<string>('')
+  const [pIsPromo, setPIsPromo] = useState(false)
+  const [pIsFeatured, setPIsFeatured] = useState(false)
   const [submittingProduct, setSubmittingProduct] = useState(false)
 
   // Edit / Delete states
@@ -92,7 +94,9 @@ export default function AdminProductsPage() {
         price: parseFloat(pPrice),
         stock: parseInt(pStock),
         category: pCategory,
-        image_url: imageUrl
+        image_url: imageUrl,
+        is_promo: pIsPromo,
+        is_featured: pIsFeatured
       })
 
       showFeedback('success', '¡Producto añadido exitosamente al catálogo!')
@@ -103,6 +107,8 @@ export default function AdminProductsPage() {
       setPCategory('frames')
       setPImageFile(null)
       setPImagePreview('')
+      setPIsPromo(false)
+      setPIsFeatured(false)
       await loadProductsData()
     } catch (e) {
       showFeedback('error', 'Error al registrar el producto.')
@@ -129,7 +135,9 @@ export default function AdminProductsPage() {
         price: editingProduct.price,
         stock: editingProduct.stock,
         category: editingProduct.category,
-        image_url: finalImageUrl
+        image_url: finalImageUrl,
+        is_promo: editingProduct.is_promo,
+        is_featured: editingProduct.is_featured
       })
 
       showFeedback('success', 'Producto actualizado correctamente.')
@@ -310,8 +318,7 @@ export default function AdminProductsPage() {
                     {pImageFile ? pImageFile.name : 'Ningún archivo'}
                   </span>
                 </div>
-                
-                {/* Preview */}
+                    {/* Preview */}
                 {pImagePreview && (
                   <div className="mt-3 relative w-16 h-16 rounded-lg overflow-hidden border border-slate-900 bg-slate-955">
                     <img
@@ -330,6 +337,40 @@ export default function AdminProductsPage() {
                     </button>
                   </div>
                 )}
+              </div>
+
+              {/* Promo and Featured checkboxes */}
+              <div className="grid grid-cols-2 gap-4 bg-slate-950/40 p-3 border border-slate-900 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-bold text-slate-350">En Promoción</p>
+                    <p className="text-[8px] text-slate-500">Lente en descuento</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pIsPromo}
+                      onChange={e => setPIsPromo(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-8 h-4.5 bg-slate-900 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-cyan-500 peer-checked:after:bg-slate-955"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-bold text-slate-355">Destacado</p>
+                    <p className="text-[8px] text-slate-500">Mostrar en carrusel</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pIsFeatured}
+                      onChange={e => setPIsFeatured(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                  </label>
+                </div>
               </div>
 
               <button
@@ -515,6 +556,39 @@ export default function AdminProductsPage() {
                   accept="image/*"
                   className="w-full text-xs text-slate-400"
                 />
+              </div>
+
+              {/* Edit Modal promo toggles */}
+              <div className="grid grid-cols-2 gap-4 bg-slate-950/40 p-3 border border-slate-950 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-bold text-slate-350">En Promoción</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editingProduct.is_promo}
+                      onChange={e => setEditingProduct({ ...editingProduct, is_promo: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-8 h-4.5 bg-slate-900 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-cyan-500 peer-checked:after:bg-slate-955"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] font-bold text-slate-350">Destacado (Hero)</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editingProduct.is_featured}
+                      onChange={e => setEditingProduct({ ...editingProduct, is_featured: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-8 h-4.5 bg-slate-900 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-cyan-500 peer-checked:after:bg-slate-955"></div>
+                  </label>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">

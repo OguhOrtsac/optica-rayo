@@ -209,3 +209,193 @@ html.light,
   background-color: rgba(22, 163, 74, 0.08) !important;
 }
 
+/* ==========================================
+   Refactored Mobile Dropdown Menu (UI/UX Premium)
+   ========================================== */
+.mobile-dropdown-menu {
+  /* Tema Oscuro: Fondo profundo e inteligente (#1e1e1e con sutil glassmorphism) */
+  background-color: rgba(30, 30, 30, 0.95) !important; 
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Enlaces del submenú en Tema Oscuro */
+.mobile-dropdown-menu a,
+.mobile-dropdown-menu label a {
+  color: #e0e0e0 !important; /* Gris claro/blanco roto para evitar fatiga visual */
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  padding: 0.6rem 1rem !important;
+  border-radius: 0.75rem !important;
+  display: block !important;
+  width: 100%;
+}
+
+/* Hover en Tema Oscuro: Acento vibrante pero elegante (cyan/celeste) */
+.mobile-dropdown-menu a:hover,
+.mobile-dropdown-menu label a:hover {
+  background-color: rgba(6, 182, 212, 0.1) !important;
+  color: #22d3ee !important; /* cyan-400 */
+}
+
+/* Tema Claro: Blanco humo (#F8F9FA) con glassmorphism sutil */
+html.light .mobile-dropdown-menu {
+  background-color: rgba(248, 249, 250, 0.95) !important; 
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Enlaces del submenú en Tema Claro */
+html.light .mobile-dropdown-menu a,
+html.light .mobile-dropdown-menu label a {
+  color: #333333 !important; /* Gris muy oscuro para alto contraste */
+}
+
+/* Hover en Tema Claro: Fondo suave que resalta la letra */
+html.light .mobile-dropdown-menu a:hover,
+html.light .mobile-dropdown-menu label a:hover {
+  background-color: rgba(59, 130, 246, 0.08) !important; /* Azul suave */
+  color: #1e3a8a !important; /* Azul marino */
+}
+
+/* Restablecer estilos en escritorio */
+@media (min-width: 768px) {
+  .mobile-dropdown-menu,
+  html.light .mobile-dropdown-menu {
+    background-color: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-bottom: 0 !important;
+  }
+  .mobile-dropdown-menu a,
+  html.light .mobile-dropdown-menu a {
+    background-color: transparent !important;
+    padding: 0.375rem 0.5rem !important;
+    width: auto !important;
+    display: inline-block !important;
+  }
+  .mobile-dropdown-menu a:hover,
+  html.light .mobile-dropdown-menu a:hover {
+    background-color: transparent !important;
+  }
+}
+
+/* ==========================================
+   Premium Cards (Profundidad y Sombras Adaptativas)
+   ========================================== */
+/* Tarjetas en Tema Oscuro */
+.bg-slate-900\/30,
+.bg-slate-900,
+.bg-slate-900\/40,
+.bg-slate-950\/40,
+.bg-slate-955\/30 {
+  border-radius: 1.25rem !important; /* rounded-2xl */
+  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.6), 0 4px 12px -2px rgba(0, 0, 0, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.04) !important;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s !important;
+}
+
+.bg-slate-900\/30:hover,
+.bg-slate-900:hover,
+.bg-slate-900\/40:hover,
+.bg-slate-950\/40:hover,
+.bg-slate-955\/30:hover {
+  transform: translateY(-2.5px) !important;
+  box-shadow: 0 16px 40px -6px rgba(0, 0, 0, 0.8), 0 4px 20px -2px rgba(6, 182, 212, 0.12) !important; /* Brillo cyan sutil */
+  border-color: rgba(6, 182, 212, 0.25) !important;
+}
+
+/* Tarjetas en Tema Claro */
+html.light .bg-slate-900\/30,
+html.light .bg-slate-900,
+html.light .bg-slate-900\/40,
+html.light .bg-slate-950\/40,
+html.light .bg-slate-955\/30 {
+  background-color: #ffffff !important;
+  border-radius: 1.25rem !important;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05), 0 8px 16px -6px rgba(0, 0, 0, 0.02) !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+html.light .bg-slate-900\/30:hover,
+html.light .bg-slate-900:hover,
+html.light .bg-slate-900\/40:hover,
+html.light .bg-slate-950\/40:hover,
+html.light .bg-slate-955\/30:hover {
+  transform: translateY(-2.5px) !important;
+  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.08), 0 10px 20px -10px rgba(0, 0, 0, 0.04) !important;
+  border-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+/* ==========================================
+   Premium Interactive Buttons
+   ========================================== */
+/* Botones de acción principales (gradientes o con bg-gradient-to-r) */
+a.bg-gradient-to-r,
+button.bg-gradient-to-r,
+.bg-gradient-to-r[role="button"],
+button[type="submit"],
+.btn-premium {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+a.bg-gradient-to-r:hover,
+button.bg-gradient-to-r:hover,
+button[type="submit"]:hover,
+.btn-premium:hover {
+  transform: translateY(-2px) !important;
+  filter: brightness(1.08) !important;
+  box-shadow: 0 8px 25px -4px rgba(6, 182, 212, 0.45) !important; /* Brillo cyan para tema oscuro */
+}
+
+a.bg-gradient-to-r:active,
+button.bg-gradient-to-r:active,
+button[type="submit"]:active,
+.btn-premium:active {
+  transform: translateY(0.5px) !important;
+  filter: brightness(0.94) !important;
+  box-shadow: 0 4px 10px -2px rgba(6, 182, 212, 0.2) !important;
+}
+
+/* Sombras en tema claro para botones con gradientes */
+html.light a.bg-gradient-to-r:hover,
+html.light button.bg-gradient-to-r:hover,
+html.light button[type="submit"]:hover,
+html.light .btn-premium:hover {
+  box-shadow: 0 10px 25px -4px rgba(79, 70, 229, 0.35) !important; /* Sombra indigo */
+}
+
+/* ==========================================
+   Dark Theme Color Overrides (Fondo #121212 y Superficie #1E1E1E)
+   ========================================== */
+/* Asegurar que el tema oscuro base sea #121212 */
+html:not(.light) body,
+html:not(.light) .bg-slate-950,
+html:not(.light) .bg-slate-955 {
+  background-color: #121212 !important;
+}
+
+/* Asegurar que las superficies de menús y tarjetas en tema oscuro sean #1E1E1E */
+html:not(.light) .bg-slate-900,
+html:not(.light) .bg-slate-900\/30,
+html:not(.light) .bg-slate-900\/40,
+html:not(.light) .bg-slate-900\/50,
+html:not(.light) .bg-slate-950\/40,
+html:not(.light) .bg-slate-955\/30,
+html:not(.light) .mobile-dropdown-menu {
+  background-color: #1e1e1e !important;
+}
+
+/* Ajustar los bordes de tarjetas y menús en tema oscuro para que armonicen con #1E1E1E */
+html:not(.light) .border-slate-900,
+html:not(.light) .border-slate-800,
+html:not(.light) .border-slate-850 {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+
+
+

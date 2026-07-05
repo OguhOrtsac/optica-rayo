@@ -52,7 +52,9 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
         <PWARegister />
         <Navbar />
-        {children}
+        <div className="flex-1 pb-20 md:pb-0">
+          {children}
+        </div>
       </body>
     </html>
   );

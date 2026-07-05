@@ -70,3 +70,19 @@
     - [x] Agregar cambios, crear commit local, y subir a GitHub (`git add`, `git commit`, `git push`).
     - [x] Desplegar la versión de producción en Vercel (`npx vercel --prod --yes`).
     - [x] Ejecutar la alerta remota de Telegram.
+- [x] **Fase 13: Personalización de Submenús y Comportamiento de Hamburguesa**
+    - [x] Agregar estilo de fondo azul bajito para el menú desplegable (móvil) en temas claro y oscuro en `app/globals.css`.
+    - [x] Envolver los enlaces del menú móvil en un label que actúe sobre el checkbox para cerrarlo automáticamente al hacer clic en `components/navbar.tsx`.
+    - [x] Validar con `npm run build` que el proyecto compile sin problemas.
+    - [x] Notificar de forma remota a Telegram.
+- [x] **Fase 14: Refactorización Estética de UI/UX (Menús, Tarjetas y Botones)**
+    - [x] Ajustar los colores base del tema oscuro en `app/globals.css`: `#121212` para el fondo y `#1E1E1E` para superficies de menús y tarjetas.
+    - [x] Realizar verificación visual del menú móvil, tarjetas y botones utilizando el subagente del navegador.
+    - [x] Validar con `npm run build` que el proyecto compile sin problemas.
+    - [x] Notificar de forma remota a Telegram.
+
+
+
+
+
+

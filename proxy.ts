@@ -16,24 +16,44 @@ export async function proxy(request: NextRequest) {
   // Read local Super Admin bypass session cookie
   const superadminSession = request.cookies.get('optica_rayo_superadmin_session')?.value
 
-  // CASE A: Super Admin Bypass is active
+  // CASE A: Mock Bypass is active
   if (superadminSession === 'true') {
-    // If navigating to login, index, change-password or dashboard root -> Redirect to admin panel
+    const mockRole = request.cookies.get('optica_rayo_mock_role')?.value || 'owner'
+
+    // Root-level dashboard redirection based on role
     if (pathname === '/login' || pathname === '/' || pathname === '/change-password' || pathname === '/dashboard') {
-      // Note: /profile is NOT redirected here so Super Admin can access it
       const url = request.nextUrl.clone()
-      url.pathname = '/dashboard/admin'
+      if (mockRole === 'seller') {
+        url.pathname = '/dashboard/seller'
+      } else {
+        url.pathname = '/dashboard/admin'
+      }
       return NextResponse.redirect(url)
     }
 
-    // Block access to seller and customer dashboards for superadmin
-    if (pathname.startsWith('/dashboard/customer') || pathname.startsWith('/dashboard/seller')) {
+    // Role-based path protections for mock sessions
+    if (pathname.startsWith('/dashboard/admin')) {
+      if (mockRole !== 'owner' && mockRole !== 'dev') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard/seller'
+        return NextResponse.redirect(url)
+      }
+    }
+
+    if (pathname.startsWith('/dashboard/seller')) {
+      if (mockRole !== 'owner' && mockRole !== 'seller' && mockRole !== 'dev') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard/admin'
+        return NextResponse.redirect(url)
+      }
+    }
+
+    if (pathname.startsWith('/dashboard/customer')) {
       const url = request.nextUrl.clone()
-      url.pathname = '/dashboard/admin'
+      url.pathname = mockRole === 'seller' ? '/dashboard/seller' : '/dashboard/admin'
       return NextResponse.redirect(url)
     }
 
-    // Allow access to admin pages (/dashboard/admin and /dashboard/admin/users)
     return response
   }
 

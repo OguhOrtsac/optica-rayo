@@ -17,16 +17,28 @@ function isSupabaseConfigured(): boolean {
 }
 
 /**
+ * Wraps a promise with a timeout rejection to prevent infinite loading.
+ */
+function withTimeout(promise: Promise<any> | any, ms = 2500): Promise<any> {
+  return Promise.race([
+    promise,
+    new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Timeout de red con base de datos')), ms))
+  ])
+}
+
+/**
  * Service to fetch all products in the catalog.
  */
 export async function getProducts(): Promise<Product[]> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name', { ascending: true })
+      const { data, error } = await withTimeout(
+        supabase
+          .from('products')
+          .select('*')
+          .order('name', { ascending: true })
+      )
       
       if (!error && data) return data
       console.error('Error fetching products from Supabase:', error?.message)
@@ -165,14 +177,16 @@ export async function getSales(): Promise<(Sale & { customer_name?: string; sell
     try {
       const supabase = createBrowserClient()
       // Joining profiles for customer and seller names
-      const { data, error } = await supabase
-        .from('sales')
-        .select(`
-          *,
-          customer:profiles!sales_customer_id_fkey(full_name),
-          seller:profiles!sales_seller_id_fkey(full_name)
-        `)
-        .order('created_at', { ascending: false })
+      const { data, error } = await withTimeout(
+        supabase
+          .from('sales')
+          .select(`
+            *,
+            customer:profiles!sales_customer_id_fkey(full_name),
+            seller:profiles!sales_seller_id_fkey(full_name)
+          `)
+          .order('created_at', { ascending: false })
+      )
       
       if (!error && data) {
         return data.map((sale: any) => ({
@@ -192,26 +206,41 @@ export async function getSales(): Promise<(Sale & { customer_name?: string; sell
 /**
  * Service to register a new transaction sale (Staff only).
  */
-export async function createSale(customerName: string, items: { productId: string; quantity: number }[]): Promise<any> {
+export async function createSale(
+  customerName: string, 
+  items: { productId: string; quantity: number }[],
+  paidAmount?: number,
+  paymentMethod?: 'cash' | 'card' | 'transfer'
+): Promise<any> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
       
-      // Step A: Find or create a temporary client profile
-      // For this wizard, we mock creating a new profile.
-      // In production, we register them on profiles and auth.
-      // Below we execute the mock transaction as default since we don't have full profile sync details,
-      // but if Supabase is connected we would insert into sales/sale_items.
-      
-      // Let's implement the live database transaction insert:
       const total = items.reduce((acc, item) => {
         const prod = mockDb.MOCK_PRODUCTS.find(p => p.id === item.productId)
         return acc + (prod ? prod.price * item.quantity : 0)
       }, 0)
 
+      const finalPaidAmount = paidAmount !== undefined ? paidAmount : total
+      const pendingBalance = Math.max(0, total - finalPaidAmount)
+
+      // Status computation for workshop
+      let statusVal: 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado' = 'Cotizacion'
+      if (finalPaidAmount >= total) {
+        statusVal = 'Listo_Entrega'
+      } else if (finalPaidAmount > 0) {
+        statusVal = 'Anticipo_Pagado'
+      }
+
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
-        .insert([{ total }])
+        .insert([{ 
+          total,
+          paid_amount: finalPaidAmount,
+          pending_balance: pendingBalance,
+          payment_method: paymentMethod || 'cash',
+          status: statusVal
+        }])
         .select()
         .single()
       
@@ -242,7 +271,7 @@ export async function createSale(customerName: string, items: { productId: strin
       console.error('Supabase sale registration failed, falling back to mocks:', e)
     }
   }
-  return mockDb.addMockSale(customerName, items)
+  return mockDb.addMockSale(customerName, items, paidAmount, paymentMethod)
 }
 
 /**
@@ -252,13 +281,15 @@ export async function getReminders(): Promise<(Reminder & { customer_name?: stri
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('reminders')
-        .select(`
-          *,
-          customer:profiles(full_name)
-        `)
-        .order('next_suggested_visit', { ascending: true })
+      const { data, error } = await withTimeout(
+        supabase
+          .from('reminders')
+          .select(`
+            *,
+            customer:profiles(full_name)
+          `)
+          .order('next_suggested_visit', { ascending: true })
+      )
       
       if (!error && data) {
         return data.map((rem: any) => ({
@@ -281,11 +312,13 @@ export async function getCoupons(): Promise<Coupon[]> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('coupons')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
+      const { data, error } = await withTimeout(
+        supabase
+          .from('coupons')
+          .select('*')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+      )
       
       if (!error && data) return data
       console.error('Error fetching coupons from Supabase:', error?.message)
@@ -316,14 +349,24 @@ export async function searchCustomers(query: string = ''): Promise<any[]> {
         q = q.ilike('full_name', `%${query.trim()}%`)
       }
 
-      const { data, error } = await q
+      const { data, error } = await withTimeout(q)
       if (!error && data) return data
       console.error('Error searching customers:', error?.message)
     } catch (e) {
       console.error('Customer search failed:', e)
     }
   }
-  return []
+  // Fallback
+  const filtered = mockDb.MOCK_PROFILES
+    .filter(p => p.role === 'customer')
+    .map(p => {
+      const cp = mockDb.MOCK_CUSTOMER_PROFILES.find(x => x.id === p.id)
+      return { ...p, customer_profiles: cp || null }
+    })
+  if (query.trim()) {
+    return filtered.filter(p => p.full_name.toLowerCase().includes(query.trim().toLowerCase()))
+  }
+  return filtered
 }
 
 /**
@@ -333,17 +376,25 @@ export async function getCustomerById(id: string): Promise<any | null> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(`*, customer_profiles(*)`)
-        .eq('id', id)
-        .single()
+      const { data, error } = await withTimeout(
+        supabase
+          .from('profiles')
+          .select(`*, customer_profiles(*)`)
+          .eq('id', id)
+          .single()
+      )
 
       if (!error && data) return data
       console.error('Error fetching customer:', error?.message)
     } catch (e) {
       console.error('Customer fetch failed:', e)
     }
+  }
+  // Fallback
+  const p = mockDb.MOCK_PROFILES.find(x => x.id === id)
+  if (p) {
+    const cp = mockDb.MOCK_CUSTOMER_PROFILES.find(x => x.id === id)
+    return { ...p, customer_profiles: cp || null }
   }
   return null
 }
@@ -355,14 +406,16 @@ export async function getCustomerExams(customerId: string): Promise<any[]> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('clinical_exams')
-        .select(`
-          *,
-          examiner:profiles!clinical_exams_examiner_id_fkey(full_name)
-        `)
-        .eq('customer_id', customerId)
-        .order('exam_date', { ascending: false })
+      const { data, error } = await withTimeout(
+        supabase
+          .from('clinical_exams')
+          .select(`
+            *,
+            examiner:profiles!clinical_exams_examiner_id_fkey(full_name)
+          `)
+          .eq('customer_id', customerId)
+          .order('exam_date', { ascending: false })
+      )
 
       if (!error && data) return data
       console.error('Error fetching exams:', error?.message)
@@ -370,7 +423,11 @@ export async function getCustomerExams(customerId: string): Promise<any[]> {
       console.error('Exam fetch failed:', e)
     }
   }
-  return []
+  // Fallback
+  return mockDb.MOCK_CLINICAL_EXAMS.filter(e => e.customer_id === customerId).map(e => {
+    const examiner = mockDb.MOCK_PROFILES.find(x => x.id === e.examiner_id)
+    return { ...e, examiner: { full_name: examiner ? examiner.full_name : 'Optometrista' } }
+  })
 }
 
 /**
@@ -380,20 +437,22 @@ export async function getCustomerSales(customerId: string): Promise<any[]> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('sales')
-        .select(`
-          *,
-          coupon:coupons(code, discount_percent),
-          seller:profiles!sales_seller_id_fkey(full_name),
-          sale_items(
-            quantity,
-            price,
-            product:products(name, category)
-          )
-        `)
-        .eq('customer_id', customerId)
-        .order('created_at', { ascending: false })
+      const { data, error } = await withTimeout(
+        supabase
+          .from('sales')
+          .select(`
+            *,
+            coupon:coupons(code, discount_percent),
+            seller:profiles!sales_seller_id_fkey(full_name),
+            sale_items(
+              quantity,
+              price,
+              product:products(name, category)
+            )
+          `)
+          .eq('customer_id', customerId)
+          .order('created_at', { ascending: false })
+      )
 
       if (!error && data) return data
       console.error('Error fetching customer sales:', error?.message)
@@ -401,7 +460,8 @@ export async function getCustomerSales(customerId: string): Promise<any[]> {
       console.error('Customer sales fetch failed:', e)
     }
   }
-  return []
+  // Fallback
+  return mockDb.MOCK_SALES.filter(s => s.customer_id === customerId)
 }
 
 /**
@@ -496,10 +556,12 @@ export async function getAllProfiles(): Promise<any[]> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('full_name', { ascending: true })
+      const { data, error } = await withTimeout(
+        supabase
+          .from('profiles')
+          .select('*')
+          .order('full_name', { ascending: true })
+      )
 
       if (!error && data) return data
       console.error('Error fetching all profiles:', error?.message)
@@ -507,5 +569,139 @@ export async function getAllProfiles(): Promise<any[]> {
       console.error('Supabase profiles fetch failed:', e)
     }
   }
-  return []
+  // Fallback
+  return mockDb.MOCK_PROFILES
 }
+
+/**
+ * Checks if a phone number is already registered to a customer.
+ */
+export async function checkPhoneDuplicate(phone: string): Promise<boolean> {
+  if (!phone || phone.trim().length < 7) return false
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('customer_profiles')
+        .select('id')
+        .eq('phone', phone.trim())
+        .limit(1)
+
+      if (!error && data && data.length > 0) return true
+    } catch (e) {
+      console.error('Error checking phone duplicate:', e)
+    }
+  }
+  // Fallback
+  return mockDb.MOCK_CUSTOMER_PROFILES.some(cp => cp.phone === phone.trim())
+}
+
+/**
+ * Updates the workshop/lab status of a sale transaction.
+ */
+export async function updateSaleStatus(
+  saleId: string, 
+  newStatus: 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado'
+): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { error } = await supabase
+        .from('sales')
+        .update({ status: newStatus })
+        .eq('id', saleId)
+      
+      if (!error) return true
+      console.error('Error updating sale status in Supabase:', error.message)
+    } catch (e) {
+      console.error('Failed to update sale status in Supabase:', e)
+    }
+  }
+  return mockDb.updateMockSaleStatus(saleId, newStatus)
+}
+
+/**
+ * Retrieves the user's wishlist from Supabase or mock database.
+ */
+export async function getWishlist(userId: string): Promise<string[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await withTimeout(
+        supabase
+          .from('wishlists')
+          .select('product_id')
+          .eq('user_id', userId)
+      )
+      if (!error && data) {
+        return data.map((item: any) => item.product_id)
+      }
+    } catch (e) {
+      console.error('Wishlist fetch error:', e)
+    }
+  }
+  return mockDb.getMockWishlist(userId)
+}
+
+/**
+ * Toggles a product in the user's wishlist.
+ */
+export async function toggleWishlistItem(userId: string, productId: string, active: boolean): Promise<void> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      if (active) {
+        await withTimeout(
+          supabase
+            .from('wishlists')
+            .upsert({ user_id: userId, product_id: productId })
+        )
+      } else {
+        await withTimeout(
+          supabase
+            .from('wishlists')
+            .delete()
+            .eq('user_id', userId)
+            .eq('product_id', productId)
+        )
+      }
+      return
+    } catch (e) {
+      console.error('Wishlist toggle error:', e)
+    }
+  }
+
+  if (active) {
+    mockDb.addMockWishlistItem(userId, productId)
+  } else {
+    mockDb.removeMockWishlistItem(userId, productId)
+  }
+}
+
+/**
+ * Synchronizes local guest wishlist with database upon register or login.
+ */
+export async function syncWishlist(userId: string, productIds: string[]): Promise<void> {
+  if (!userId || productIds.length === 0) return
+  
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const records = productIds.map(pid => ({ user_id: userId, product_id: pid }))
+      await withTimeout(
+        supabase
+          .from('wishlists')
+          .upsert(records, { onConflict: 'user_id,product_id' })
+      )
+      return
+    } catch (e) {
+      console.error('Wishlist sync error:', e)
+    }
+  }
+
+  // Fallback to local mocks
+  productIds.forEach(pid => {
+    mockDb.addMockWishlistItem(userId, pid)
+  })
+}
+
