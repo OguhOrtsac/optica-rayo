@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>OpticManager - Inventario y Productos</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-highest": "#d8e3fb",
+                        "on-tertiary-container": "#49da9f",
+                        "on-surface-variant": "#434653",
+                        "surface-variant": "#d8e3fb",
+                        "secondary-fixed": "#c4e7ff",
+                        "surface": "#f9f9ff",
+                        "tertiary-fixed": "#6ffbbe",
+                        "on-secondary": "#ffffff",
+                        "surface-bright": "#f9f9ff",
+                        "on-surface": "#111c2d",
+                        "inverse-surface": "#263143",
+                        "primary-fixed-dim": "#b0c6ff",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "surface-tint": "#215abd",
+                        "error": "#ba1a1a",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "secondary": "#00668a",
+                        "on-primary-fixed": "#001945",
+                        "outline": "#737784",
+                        "error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#004c69",
+                        "outline-variant": "#c3c6d5",
+                        "on-primary-fixed-variant": "#00429b",
+                        "tertiary-container": "#005c3e",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-fixed": "#002113",
+                        "surface-dim": "#cfdaf2",
+                        "secondary-fixed-dim": "#7bd0ff",
+                        "on-secondary-fixed": "#001e2c",
+                        "on-error": "#ffffff",
+                        "on-primary-container": "#a9c1ff",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "primary-container": "#004aad",
+                        "primary-fixed": "#d9e2ff",
+                        "on-secondary-container": "#004d6a",
+                        "secondary-container": "#40c2fd",
+                        "surface-container-low": "#f0f3ff",
+                        "on-error-container": "#93000a",
+                        "on-background": "#111c2d",
+                        "background": "#f9f9ff",
+                        "surface-container-high": "#dee8ff",
+                        "inverse-on-surface": "#ecf1ff",
+                        "tertiary": "#00422b",
+                        "surface-container": "#e7eeff",
+                        "inverse-primary": "#b0c6ff",
+                        "primary": "#00357f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "container-max": "1440px",
+                        "sm": "8px",
+                        "lg": "24px",
+                        "gutter": "24px",
+                        "md": "16px",
+                        "xs": "4px",
+                        "xl": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "label-md": ["Inter"],
+                        "display": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "title-lg": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "display": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-md min-h-screen">
+<!-- TopAppBar (Web) -->
+<header class="hidden md:flex bg-surface dark:bg-surface-dim font-title-lg text-title-lg shadow-sm border-b border-outline-variant dark:border-outline fixed top-0 left-0 w-full z-50 justify-between items-center px-md h-16">
+<div class="font-headline-md text-headline-md font-bold text-primary dark:text-inverse-primary">
+            OpticManager
+        </div>
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-primary dark:text-inverse-primary hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors active:scale-95 transition-transform p-2 rounded-full cursor-pointer" data-icon="notifications">notifications</span>
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-sm">
+                UP
+            </div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-16 pb-24 md:pb-8 px-md md:px-lg max-w-container-max mx-auto space-y-lg mt-md">
+<!-- Page Header & Actions -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
+<div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface">Inventario y Productos</h1>
+<p class="text-on-surface-variant font-body-md">Gestione su catálogo de armazones, lentes y accesorios.</p>
+</div>
+<button class="bg-primary text-on-primary px-lg py-sm rounded-full flex items-center gap-sm font-label-md text-label-md hover:bg-primary-container hover:text-on-primary-container transition-colors shadow-sm active:scale-95" onclick="document.getElementById('uploadModal').classList.remove('hidden')">
+<span class="material-symbols-outlined text-lg">add</span>
+                Subir Producto
+            </button>
+</div>
+<!-- Filters Grid -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-md bg-surface-container-lowest p-md rounded-xl border border-outline-variant shadow-sm">
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Categoría</label>
+<select class="w-full bg-surface-container-low border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option>Todas</option>
+<option>Armazones</option>
+<option>Lentes de Contacto</option>
+<option>Accesorios</option>
+</select>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Marca</label>
+<select class="w-full bg-surface-container-low border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option>Todas</option>
+<option>Ray-Ban</option>
+<option>Oakley</option>
+<option>Acuvue</option>
+</select>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Estado</label>
+<select class="w-full bg-surface-container-low border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option>Todos</option>
+<option>En Stock</option>
+<option>Stock Bajo</option>
+<option>Agotado</option>
+</select>
+</div>
+<div class="flex items-end">
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-low border border-outline-variant rounded-lg py-2 pl-10 pr-3 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" placeholder="Buscar producto..." type="text"/>
+</div>
+</div>
+</div>
+<!-- Bento Grid for Products -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-lg">
+<!-- Product Card 1 -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+<div class="h-48 bg-surface-container-low relative">
+<img class="w-full h-full object-cover" data-alt="A high-quality, clinical style product photo of modern, minimalist optical frames resting on a sterile white surface. The lighting is bright and soft, highlighting the metallic details of the glasses. The overall aesthetic is clean, professional, and slightly medical, using a palette of white, subtle grays, and metallic silver." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBIpLGFcyam6Hzv7nAY4g2sFE9pS6UKhJp9nXmA-o3WTBL7z9kbM18jXJEi5pU-5brxz1d4uT2Fw9hgeZxa5IxbomTg_bg_j0uTP6KqHLzUqG_Qd2qbHzRm0_1cTZJe1DT4n6wUPe8Ri2YJtz2aVZse_uYXKTrRwEvFt8DWosAOcd9asKLWksBaDrZ1BuYODwdQ8WeQPbXtydZRXibEK9MclGsT0FUqTya5fPQHXLYGAy-mE8u6QRSE3Q"/>
+<div class="absolute top-2 right-2 bg-tertiary-container text-on-tertiary-container font-label-md text-label-md px-2 py-1 rounded-full">
+                        En Stock: 24
+                    </div>
+</div>
+<div class="p-md flex-1 flex flex-col">
+<div class="flex justify-between items-start mb-2">
+<div>
+<span class="text-label-md font-label-md text-secondary">ARMAZONES</span>
+<h3 class="font-title-lg text-title-lg text-on-surface">Ray-Ban Aviator Classic</h3>
+</div>
+<span class="font-title-lg text-title-lg text-primary">$150.00</span>
+</div>
+<p class="text-on-surface-variant font-body-md mb-4 flex-1">Metal dorado, puente doble, plaquetas ajustables.</p>
+<div class="flex gap-2 mt-auto">
+<button class="flex-1 bg-surface-container-high text-on-surface py-2 rounded-lg font-label-md text-label-md hover:bg-surface-variant transition-colors">Editar</button>
+<button class="flex-1 border border-primary text-primary py-2 rounded-lg font-label-md text-label-md hover:bg-primary hover:text-on-primary transition-colors">Promoción</button>
+</div>
+</div>
+</div>
+<!-- Product Card 2 (Low Stock) -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+<div class="h-48 bg-surface-container-low relative">
+<img class="w-full h-full object-cover" data-alt="A clean, clinical product shot of a box of daily contact lenses on a pristine white background. The lighting is sterile and bright, emphasizing the medical nature of the product. Subtle shadows give depth, while the color palette is dominated by whites, light blues, and grays, fitting a modern medical aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCqE5b0bMc6IEB2ojP9TtHEszthsUUe8EGZJXmzggzTeKTbyuhiqKZeT02dmqQhxDzhMlZotKlCtYNs-StbutxhaNXrw4JlS0WtGFI0J4VSDURsoAWu5Ien9si-OYpJkS5dTm6xs_7E0SxwYYAP0E6oX4L2KoOH8XHdRlR3TN384o0rJwTO3vtKD0BV3zc2Kxw6vlWZuyMs1YTEQebfrZSgPxmp7y6puGjm_GId14BIWet0_66a4BksDQ"/>
+<div class="absolute top-2 right-2 bg-error-container text-on-error-container font-label-md text-label-md px-2 py-1 rounded-full">
+                        Stock Bajo: 3
+                    </div>
+</div>
+<div class="p-md flex-1 flex flex-col">
+<div class="flex justify-between items-start mb-2">
+<div>
+<span class="text-label-md font-label-md text-secondary">LENTES DE CONTACTO</span>
+<h3 class="font-title-lg text-title-lg text-on-surface">Acuvue Oasys 1-Day</h3>
+</div>
+<span class="font-title-lg text-title-lg text-primary">$85.00</span>
+</div>
+<p class="text-on-surface-variant font-body-md mb-4 flex-1">Caja x30, hidrogel de silicona, protección UV.</p>
+<div class="flex gap-2 mt-auto">
+<button class="flex-1 bg-surface-container-high text-on-surface py-2 rounded-lg font-label-md text-label-md hover:bg-surface-variant transition-colors">Editar</button>
+<button class="flex-1 border border-primary text-primary py-2 rounded-lg font-label-md text-label-md hover:bg-primary hover:text-on-primary transition-colors">Promoción</button>
+</div>
+</div>
+</div>
+<!-- Product Card 3 (With Promo) -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+<div class="h-48 bg-surface-container-low relative">
+<img class="w-full h-full object-cover" data-alt="A sleek, modern optical accessory case displayed on a minimal, sterile white table. The lighting is diffused and bright, creating soft shadows. The overall look is professional, high-end, and clean, using a palette of stark whites and deep, rich blacks to emphasize quality and precision." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDLiGH4p97L6_LKaXecaQOTzp_cdzMmjWq84kfTCruXz4XIRpHW5cDPfhfvVjRSq9QYDtbfAkIpLrfn59kddKGqMSMDqOFa4sq6e5RvgcgGPnqDpJopOpZCIcMo7XoYNd5WqxGlOTsY241M3t7_QOR5zaop8zpMg_6k1jaEHbzSV10Y-G19iGgDjzNpMJyJVdsRWClN8K64qcMVU-AZ7Ng047gQEfXx3r1ujIj-Hh4Hb8-6L7PfPakZkQ"/>
+<div class="absolute top-2 right-2 bg-tertiary-container text-on-tertiary-container font-label-md text-label-md px-2 py-1 rounded-full">
+                        En Stock: 50
+                    </div>
+<div class="absolute bottom-2 left-2 bg-secondary text-on-secondary font-label-md text-label-md px-2 py-1 rounded-md flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-sm">sell</span>
+                        -20% Descuento
+                    </div>
+</div>
+<div class="p-md flex-1 flex flex-col">
+<div class="flex justify-between items-start mb-2">
+<div>
+<span class="text-label-md font-label-md text-secondary">ACCESORIOS</span>
+<h3 class="font-title-lg text-title-lg text-on-surface">Estuche Premium</h3>
+</div>
+<div class="text-right">
+<span class="font-title-lg text-title-lg text-primary block">$20.00</span>
+<span class="text-sm text-on-surface-variant line-through">$25.00</span>
+</div>
+</div>
+<p class="text-on-surface-variant font-body-md mb-4 flex-1">Estuche rígido forrado en microfibra, cierre magnético.</p>
+<div class="flex gap-2 mt-auto">
+<button class="flex-1 bg-surface-container-high text-on-surface py-2 rounded-lg font-label-md text-label-md hover:bg-surface-variant transition-colors">Editar</button>
+<button class="flex-1 border border-primary text-primary py-2 rounded-lg font-label-md text-label-md hover:bg-primary hover:text-on-primary transition-colors">Modificar Promo</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Upload Product Modal -->
+<div class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-on-surface/20 backdrop-blur-sm p-4" id="uploadModal">
+<div class="bg-surface-container-lowest rounded-xl shadow-lg w-full max-w-2xl overflow-hidden border border-outline-variant flex flex-col max-h-[90vh]">
+<div class="px-lg py-md border-b border-outline-variant flex justify-between items-center bg-surface">
+<h2 class="font-title-lg text-title-lg text-on-surface">Subir Nuevo Producto</h2>
+<button class="text-on-surface-variant hover:text-on-surface" onclick="document.getElementById('uploadModal').classList.add('hidden')">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="p-lg overflow-y-auto flex-1 space-y-md">
+<!-- Image Upload Area -->
+<div class="border-2 border-dashed border-outline-variant rounded-xl p-lg flex flex-col items-center justify-center bg-surface-container-low cursor-pointer hover:bg-surface-container-highest transition-colors">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant mb-2">add_photo_alternate</span>
+<p class="font-body-md text-on-surface-variant text-center">Haga clic o arrastre una imagen aquí<br/><span class="text-xs">JPG, PNG, WebP (Max 5MB)</span></p>
+</div>
+<!-- Form Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+<div class="md:col-span-2">
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Nombre del Producto *</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text"/>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Categoría *</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option>Armazones</option>
+<option>Lentes de Contacto</option>
+<option>Lentes Oftálmicas</option>
+<option>Accesorios</option>
+</select>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Marca</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text"/>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Material</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" placeholder="Ej. Titanio, Acetato" type="text"/>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Código SKU *</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="text"/>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Precio ($) *</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" step="0.01" type="number"/>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Stock Inicial *</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="number"/>
+</div>
+</div>
+<!-- Promo Section -->
+<div class="border-t border-outline-variant pt-md mt-md">
+<h3 class="font-title-lg text-title-lg text-on-surface mb-2">Promociones</h3>
+<div class="flex items-center gap-sm mb-2">
+<input class="rounded text-primary focus:ring-primary" id="hasPromo" type="checkbox"/>
+<label class="font-body-md text-on-surface" for="hasPromo">Aplicar descuento inicial</label>
+</div>
+<div class="grid grid-cols-2 gap-md opacity-50 pointer-events-none" id="promoFields">
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Tipo de Descuento</label>
+<select class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option>Porcentaje (%)</option>
+<option>Monto Fijo ($)</option>
+</select>
+</div>
+<div>
+<label class="block text-label-md font-label-md text-on-surface-variant mb-1">Valor</label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded-lg p-2 text-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none" type="number"/>
+</div>
+</div>
+</div>
+</div>
+<div class="px-lg py-md border-t border-outline-variant flex justify-end gap-sm bg-surface">
+<button class="px-lg py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high transition-colors" onclick="document.getElementById('uploadModal').classList.add('hidden')">Cancelar</button>
+<button class="px-lg py-2 rounded-lg font-label-md text-label-md bg-primary text-on-primary hover:bg-primary-container hover:text-on-primary-container transition-colors shadow-sm">Guardar Producto</button>
+</div>
+</div>
+</div>
+<!-- BottomNavBar (Mobile) -->
+<nav class="md:hidden bg-surface dark:bg-surface-dim font-label-md text-label-md font-headline-md text-headline-md text-primary docked full-width bottom-0 rounded-t-xl border-t border-outline-variant dark:border-outline shadow-lg hover:bg-surface-variant dark:hover:bg-on-surface-variant/10 active:scale-90 transition-all fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-sm pb-safe">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="payments">payments</span>
+<span>Sales</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-full px-4 py-1" href="#">
+<span class="material-symbols-outlined mb-1 fill" data-icon="inventory_2" data-weight="fill">inventory_2</span>
+<span>Inventory</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="group">group</span>
+<span>Patients</span>
+</a>
+</nav>
+<script>
+        // Simple logic to toggle promo fields
+        document.getElementById('hasPromo').addEventListener('change', function(e) {
+            const fields = document.getElementById('promoFields');
+            if(e.target.checked) {
+                fields.classList.remove('opacity-50', 'pointer-events-none');
+            } else {
+                fields.classList.add('opacity-50', 'pointer-events-none');
+            }
+        });
+    </script>
+</body></html>

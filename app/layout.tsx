@@ -35,6 +35,7 @@ export const metadata: Metadata = {
 };
 
 import { cookies } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
 
 export default async function RootLayout({
   children,
@@ -43,6 +44,22 @@ export default async function RootLayout({
 }>) {
   const cookieStore = await cookies();
   const theme = cookieStore.get("bg_theme")?.value || "dark";
+  const superadminSession = cookieStore.get('optica_rayo_superadmin_session')?.value
+
+  let isAuthenticated = false;
+  if (superadminSession === 'true') {
+    isAuthenticated = true;
+  } else {
+    try {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        isAuthenticated = true;
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
 
   return (
     <html
@@ -52,7 +69,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
         <PWARegister />
         <Navbar />
-        <div className="flex-1 pb-20 md:pb-0">
+        <div className={`flex-1 ${isAuthenticated ? 'pb-20 md:pb-0' : 'pb-0'}`}>
           {children}
         </div>
       </body>

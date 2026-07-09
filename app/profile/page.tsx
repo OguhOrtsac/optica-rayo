@@ -2,6 +2,8 @@
 
 import { useActionState, useEffect, useState } from 'react'
 import { updateProfile, logout, getProfileData, updateThemeAction } from '@/app/auth/actions'
+import { User, Shield, ShieldAlert, Key, LogOut, CheckCircle, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 
 const initialState = {
   error: null as string | null,
@@ -66,7 +68,7 @@ export default function ProfilePage() {
   const getRoleBadgeLabel = (role: string) => {
     const labels: Record<string, string> = {
       dev: 'Desarrollador',
-      owner: 'Dueño',
+      owner: 'Dueño / Administrador',
       seller: 'Vendedor',
       customer: 'Cliente',
       superadmin: 'Super Admin',
@@ -76,16 +78,17 @@ export default function ProfilePage() {
 
   const getRoleBadgeColor = (role: string) => {
     const colors: Record<string, string> = {
-      dev: 'bg-violet-500/15 text-violet-400 border-violet-500/25',
-      owner: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/25',
-      seller: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
-      customer: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
-      superadmin: 'bg-rose-500/15 text-rose-400 border-rose-500/25',
+      dev: 'bg-[#dee8ff]/80 text-[#00668a]',
+      owner: 'bg-[#dee8ff] text-[#00357f]',
+      seller: 'bg-[#dee8ff]/60 text-[#00668a]',
+      customer: 'bg-[#dee8ff]/40 text-[#00668a]',
+      superadmin: 'bg-[#ffdad6] text-[#ba1a1a]',
     }
-    return colors[role] || 'bg-slate-500/15 text-slate-400 border-slate-500/25'
+    return colors[role] || 'bg-slate-100 text-slate-655'
   }
 
   const getInitials = (name: string) => {
+    if (!name) return 'PT'
     return name
       .split(' ')
       .map((word) => word[0])
@@ -96,10 +99,10 @@ export default function ProfilePage() {
 
   if (loadingProfile) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-950">
+      <main className="min-h-screen flex items-center justify-center bg-[#f9f9ff] text-[#111c2d]">
         <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-400" />
-          <p className="text-sm text-slate-500 font-medium">Cargando perfil...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
+          <p className="text-sm text-[#737784] font-medium">Cargando perfil...</p>
         </div>
       </main>
     )
@@ -107,13 +110,13 @@ export default function ProfilePage() {
 
   if (!profileData) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 p-4">
-        <div className="text-center space-y-4">
-          <p className="text-slate-400">No se pudo cargar el perfil.</p>
+      <main className="min-h-screen flex items-center justify-center bg-[#f9f9ff] text-[#111c2d] p-4">
+        <div className="text-center space-y-4 max-w-sm w-full bg-white border border-[#cbd5e1] p-6 rounded-2xl shadow-sm">
+          <p className="text-[#737784] font-semibold text-xs">No se pudo cargar el perfil.</p>
           <form action={logout}>
             <button
               type="submit"
-              className="bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/25 px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              className="w-full bg-[#ba1a1a] hover:bg-[#93000a] text-white py-2.5 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm"
             >
               Cerrar Sesión
             </button>
@@ -124,73 +127,73 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-12">
-      {/* Visual background decorations */}
-      <div className="fixed top-20 right-10 w-72 h-72 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="fixed bottom-10 left-10 w-80 h-80 bg-violet-600/5 rounded-full blur-3xl pointer-events-none" />
+    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
+      
+      {/* Back link */}
+      <div>
+        <Link 
+          href={profileData.role === 'owner' ? '/dashboard/admin' : profileData.role === 'seller' ? '/dashboard/seller' : '/dashboard/customer'} 
+          className="inline-flex items-center gap-2 text-xs font-bold text-[#737784] hover:text-[#00357f] transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Volver al Panel Principal
+        </Link>
+      </div>
 
-      <div className="max-w-xl mx-auto space-y-8 relative">
+      <div className="space-y-6">
 
         {/* Profile Header Card */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 rounded-2xl p-8 text-center space-y-4">
+        <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-5 text-center">
           {/* Avatar */}
           <div className="flex justify-center">
-            <div className="w-20 h-20 bg-gradient-to-tr from-cyan-400 to-indigo-500 rounded-full flex items-center justify-center shadow-xl shadow-cyan-500/15">
-              <span className="text-2xl font-black text-slate-950 select-none">
-                {getInitials(profileData.fullName || profileData.username)}
-              </span>
+            <div className="w-18 h-18 bg-[#dee8ff] text-[#00357f] rounded-full flex items-center justify-center font-black text-xl select-none">
+              {getInitials(profileData.fullName || profileData.username)}
             </div>
           </div>
 
           {/* Name & Role */}
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-100">
+            <h1 className="text-xl font-extrabold text-[#111c2d]">
               {profileData.fullName || profileData.username}
             </h1>
-            <p className="text-xs text-slate-500 mt-1 font-medium">
+            <p className="text-xs text-[#737784] font-medium mt-0.5">
               @{profileData.username}
             </p>
           </div>
 
           <div className="flex justify-center">
-            <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getRoleBadgeColor(profileData.role)}`}>
+            <span className={`px-3 py-0.5 rounded text-[10px] font-black border uppercase tracking-wider ${getRoleBadgeColor(profileData.role)}`}>
               {getRoleBadgeLabel(profileData.role)}
             </span>
           </div>
 
           {/* Theme switcher */}
           {!profileData.isSuperAdmin && (
-            <div className="pt-4 border-t border-slate-800/60 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <div className="pt-4 border-t border-[#cbd5e1]/40 flex items-center justify-between">
+              <span className="text-xs font-bold text-[#737784] uppercase tracking-wider">
                 Tema de Fondo
               </span>
-              <div className="flex items-center gap-2 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800/60">
+              <div className="flex items-center gap-2 bg-[#f0f3ff] p-1 rounded-xl border border-[#cbd5e1] shadow-sm">
                 <button
                   type="button"
                   onClick={() => handleThemeChange('dark')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     activeTheme === 'dark'
-                      ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 font-bold'
-                      : 'text-slate-500 hover:text-slate-350'
+                      ? 'bg-white text-[#00357f] shadow-sm font-black'
+                      : 'text-[#737784] hover:text-[#111c2d]'
                   }`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
                   Oscuro
                 </button>
                 <button
                   type="button"
                   onClick={() => handleThemeChange('light')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     activeTheme === 'light'
-                      ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-slate-950 font-bold'
-                      : 'text-slate-500 hover:text-slate-350'
+                      ? 'bg-white text-[#00357f] shadow-sm font-black'
+                      : 'text-[#737784] hover:text-[#111c2d]'
                   }`}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
-                  </svg>
                   Claro
                 </button>
               </div>
@@ -199,42 +202,36 @@ export default function ProfilePage() {
         </div>
 
         {/* Edit Profile Form */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-800/60 rounded-2xl p-8 space-y-6">
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            <h2 className="text-base font-bold text-slate-200 uppercase tracking-wider">
-              Editar Perfil
+        <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-5">
+          <div className="flex items-center gap-2 border-b border-[#f0f3ff] pb-3">
+            <User className="w-5 h-5 text-[#00357f]" />
+            <h2 className="text-xs font-bold text-[#00357f] uppercase tracking-wider">
+              Editar Datos de Cuenta
             </h2>
           </div>
 
           {/* Feedback Messages */}
           {state?.success && (
-            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex items-center gap-3 animate-in">
-              <svg className="w-5 h-5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p className="text-xs font-semibold text-emerald-400 leading-normal">
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3.5 flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+              <p className="text-xs font-semibold text-emerald-600 leading-normal">
                 {state.success}
               </p>
             </div>
           )}
           {state?.error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex items-center gap-3">
-              <svg className="w-5 h-5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p className="text-xs font-semibold text-red-400 leading-normal">
+            <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3.5 flex items-center gap-3">
+              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+              <p className="text-xs font-semibold text-rose-600 leading-normal">
                 {state.error}
               </p>
             </div>
           )}
 
-          <form action={formAction} className="space-y-5">
+          <form action={formAction} className="space-y-4">
             {/* Full Name */}
             <div>
-              <label htmlFor="fullName" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              <label htmlFor="fullName" className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">
                 Nombre Completo
               </label>
               <input
@@ -244,13 +241,13 @@ export default function ProfilePage() {
                 defaultValue={profileData.fullName}
                 disabled={isPending || profileData.isSuperAdmin}
                 placeholder="Tu nombre completo"
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/80 transition-all disabled:opacity-50"
+                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
               />
             </div>
 
-            {/* Username (read-only display) */}
+            {/* Username */}
             <div>
-              <label htmlFor="username" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              <label htmlFor="username" className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">
                 Nombre de Usuario
               </label>
               <input
@@ -260,23 +257,23 @@ export default function ProfilePage() {
                 defaultValue={profileData.username}
                 disabled={isPending || profileData.isSuperAdmin}
                 placeholder="nombre_usuario"
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/80 transition-all disabled:opacity-50"
+                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
               />
-              <p className="text-[10px] text-slate-600 mt-1.5 font-medium">
-                Se usa para iniciar sesión. Puedes escribir solo tu usuario o un correo completo.
+              <p className="text-[10px] text-[#737784] mt-1.5 font-semibold">
+                Se usa para iniciar sesión en la plataforma óptica.
               </p>
             </div>
 
             {/* Separator */}
-            <div className="flex items-center gap-3 pt-2">
-              <div className="h-px flex-1 bg-slate-800" />
-              <span className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Cambiar Contraseña</span>
-              <div className="h-px flex-1 bg-slate-800" />
+            <div className="flex items-center gap-3 py-2">
+              <div className="h-px flex-1 bg-[#f0f3ff]" />
+              <span className="text-[9px] text-[#737784] font-black uppercase tracking-wider">Cambiar Contraseña</span>
+              <div className="h-px flex-1 bg-[#f0f3ff]" />
             </div>
 
             {/* New Password */}
             <div>
-              <label htmlFor="newPassword" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              <label htmlFor="newPassword" className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">
                 Nueva Contraseña
               </label>
               <input
@@ -286,13 +283,13 @@ export default function ProfilePage() {
                 disabled={isPending || profileData.isSuperAdmin}
                 placeholder="Dejar vacío para no cambiar"
                 minLength={6}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/80 transition-all disabled:opacity-50"
+                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
               />
             </div>
 
             {/* Confirm Password */}
             <div>
-              <label htmlFor="confirmNewPassword" className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              <label htmlFor="confirmNewPassword" className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">
                 Confirmar Nueva Contraseña
               </label>
               <input
@@ -302,7 +299,7 @@ export default function ProfilePage() {
                 disabled={isPending || profileData.isSuperAdmin}
                 placeholder="Repite la nueva contraseña"
                 minLength={6}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/80 transition-all disabled:opacity-50"
+                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
               />
             </div>
 
@@ -311,21 +308,16 @@ export default function ProfilePage() {
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-cyan-500/15 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all duration-300 disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full bg-[#00357f] hover:bg-[#004aad] text-white font-bold py-3 px-4 rounded-lg shadow-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer text-xs uppercase"
               >
                 {isPending ? (
                   <>
-                    <svg className="animate-spin h-4 w-4 text-slate-950" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                     <span>Guardando...</span>
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                    <CheckCircle className="w-4 h-4" />
                     <span>Guardar Cambios</span>
                   </>
                 )}
@@ -333,8 +325,8 @@ export default function ProfilePage() {
             )}
 
             {profileData.isSuperAdmin && (
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center">
-                <p className="text-xs font-semibold text-amber-400">
+              <div className="bg-[#ffdad6] border border-[#ba1a1a]/20 rounded-xl p-3 text-center">
+                <p className="text-xs font-black text-[#ba1a1a] uppercase tracking-wider">
                   El perfil de Super Admin no se puede modificar.
                 </p>
               </div>
@@ -342,23 +334,78 @@ export default function ProfilePage() {
           </form>
         </div>
 
+        {/* Staff Management Quick Link (admin only) */}
+        {(profileData.role === 'owner' || profileData.role === 'dev') && (
+          <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-[#f0f3ff] pb-3">
+              <h2 className="text-xs font-bold text-[#00357f] uppercase tracking-wider flex items-center gap-1.5">
+                <User className="w-4 h-4" />
+                Gestión de Personal
+              </h2>
+              <Link href="/dashboard/admin/users"
+                className="text-xs font-bold text-[#00357f] hover:underline">Ver todo</Link>
+            </div>
+            <p className="text-xs text-[#737784] font-medium">
+              Administra los empleados, sus roles y accesos al sistema desde el panel de gestión de personal.
+            </p>
+            <Link href="/dashboard/admin/users"
+              className="w-full flex items-center justify-center gap-2 bg-[#f0f3ff] hover:bg-[#dee8ff] border border-[#cbd5e1] text-[#00357f] py-2.5 rounded-xl font-bold text-xs transition-colors">
+              <Shield className="w-4 h-4" />
+              Ir a Gestión de Personal
+            </Link>
+          </div>
+        )}
+
+        {/* Clinic Settings Summary (admin only) */}
+        {(profileData.role === 'owner' || profileData.role === 'dev') && (
+          <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-[#cbd5e1] bg-[#f9f9ff] flex justify-between items-center">
+              <h2 className="text-xs font-bold text-[#00357f] uppercase tracking-wider flex items-center gap-1.5">
+                <Key className="w-4 h-4" />
+                Resumen del Sistema
+              </h2>
+            </div>
+            <table className="w-full text-left text-xs">
+              <tbody className="divide-y divide-[#f0f3ff]">
+                <tr className="hover:bg-[#f9f9ff] transition-colors">
+                  <td className="py-3 px-5 text-[#737784] font-bold w-1/2">Plataforma</td>
+                  <td className="py-3 px-5 text-[#111c2d] font-bold">OpticaRayo — OptiGest</td>
+                </tr>
+                <tr className="hover:bg-[#f9f9ff] transition-colors">
+                  <td className="py-3 px-5 text-[#737784] font-bold">Rol de cuenta</td>
+                  <td className="py-3 px-5 text-[#111c2d] font-bold">{getRoleBadgeLabel(profileData.role)}</td>
+                </tr>
+                <tr className="hover:bg-[#f9f9ff] transition-colors">
+                  <td className="py-3 px-5 text-[#737784] font-bold">Moneda</td>
+                  <td className="py-3 px-5 text-[#111c2d] font-bold">MXN ($)</td>
+                </tr>
+                <tr className="hover:bg-[#f9f9ff] transition-colors">
+                  <td className="py-3 px-5 text-[#737784] font-bold">Base de datos</td>
+                  <td className="py-3 px-5 text-[#111c2d] font-bold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+                    Supabase (en línea)
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* Logout Section */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-rose-500/10 rounded-2xl p-6">
+        <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-center sm:text-left">
-              <h3 className="text-sm font-bold text-slate-300">Cerrar Sesión</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Finalizar la sesión activa y volver al inicio de sesión.
+              <h3 className="text-sm font-bold text-[#111c2d]">Cerrar Sesión</h3>
+              <p className="text-xs text-[#737784] mt-0.5 font-medium">
+                Finalizar la sesión activa y volver al inicio.
               </p>
             </div>
             <form action={logout}>
               <button
                 type="submit"
-                className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 hover:border-rose-500/30 px-6 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2"
+                className="bg-[#ffdad6] hover:bg-[#ffcdd0] text-[#ba1a1a] hover:text-[#93000a] border border-[#ba1a1a]/20 px-6 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
+                <LogOut className="w-4 h-4" />
                 Cerrar Sesión
               </button>
             </form>

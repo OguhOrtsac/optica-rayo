@@ -330,6 +330,50 @@ export async function getCoupons(): Promise<Coupon[]> {
 }
 
 /**
+ * Service to fetch all lens materials.
+ */
+export async function getLensMaterials(): Promise<any[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await withTimeout(
+        supabase
+          .from('lens_materials')
+          .select('*')
+          .order('price', { ascending: true })
+      )
+      if (!error && data) return data
+      console.error('Error fetching lens materials from Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase lens materials fetch failed, falling back to mocks:', e)
+    }
+  }
+  return mockDb.MOCK_LENS_MATERIALS
+}
+
+/**
+ * Service to fetch all lens treatments.
+ */
+export async function getLensTreatments(): Promise<any[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await withTimeout(
+        supabase
+          .from('lens_treatments')
+          .select('*')
+          .order('price', { ascending: true })
+      )
+      if (!error && data) return data
+      console.error('Error fetching lens treatments from Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase lens treatments fetch failed, falling back to mocks:', e)
+    }
+  }
+  return mockDb.MOCK_LENS_TREATMENTS
+}
+
+/**
  * Searches customers (profiles with role='customer') by name or username.
  */
 export async function searchCustomers(query: string = ''): Promise<any[]> {
@@ -704,4 +748,222 @@ export async function syncWishlist(userId: string, productIds: string[]): Promis
     mockDb.addMockWishlistItem(userId, pid)
   })
 }
+
+/**
+ * Service to submit a lens builder request from a client.
+ */
+export async function createLensRequest(request: {
+  frameId?: string
+  lensMaterialId?: string
+  treatmentIds: string[]
+  notes?: string
+}): Promise<any> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Usuario no autenticado')
+
+      const { data, error } = await supabase
+        .from('lens_requests')
+        .insert([{
+          customer_id: user.id,
+          frame_id: request.frameId || null,
+          lens_material_id: request.lensMaterialId || null,
+          treatment_ids: request.treatmentIds,
+          notes: request.notes || null,
+          status: 'pending'
+        }])
+        .select()
+        .single()
+
+      if (!error && data) return data
+      console.error('Error creating lens request in Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase lens request failed, falling back to mocks:', e)
+    }
+  }
+
+  // Fallback
+  const newReq = {
+    id: 'req_' + Math.random().toString(36).substr(2, 9),
+    customer_id: 'cust-1',
+    frame_id: request.frameId,
+    lens_material_id: request.lensMaterialId,
+    treatment_ids: request.treatmentIds,
+    notes: request.notes,
+    status: 'pending' as const,
+    created_at: new Date().toISOString()
+  }
+  mockDb.MOCK_LENS_REQUESTS.push(newReq)
+  return newReq
+}
+
+/**
+ * Service to fetch all lens requests (Staff view gets all, Client view gets customer_id filter).
+ */
+export async function getLensRequests(customerId?: string): Promise<any[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      let q = supabase
+        .from('lens_requests')
+        .select(`
+          *,
+          customer:profiles!lens_requests_customer_id_fkey(full_name, email),
+          customer_profiles!lens_requests_customer_id_fkey(phone),
+          frame:products!lens_requests_frame_id_fkey(name, price),
+          lens_material:lens_materials!lens_requests_lens_material_id_fkey(name, price)
+        `)
+        .order('created_at', { ascending: false })
+
+      if (customerId) {
+        q = q.eq('customer_id', customerId)
+      }
+
+      const { data, error } = await q
+      if (!error && data) {
+        // Hydrate treatments manually if needed or map values
+        return data
+      }
+      console.error('Error fetching lens requests from Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase lens requests fetch failed:', e)
+    }
+  }
+
+  // Fallback mock
+  return mockDb.MOCK_LENS_REQUESTS
+    .filter(req => !customerId || req.customer_id === customerId)
+    .map(req => {
+      const cust = mockDb.MOCK_PROFILES.find(p => p.id === req.customer_id)
+      const cp = mockDb.MOCK_CUSTOMER_PROFILES.find(p => p.id === req.customer_id)
+      const prod = mockDb.MOCK_PRODUCTS.find(p => p.id === req.frame_id)
+      const mat = mockDb.MOCK_LENS_MATERIALS.find(m => m.id === req.lens_material_id)
+      return {
+        ...req,
+        customer: cust ? { full_name: cust.full_name, email: cust.email } : { full_name: 'Cliente Nuevo', email: '' },
+        customer_profiles: cp ? { phone: cp.phone } : { phone: '' },
+        frame: prod ? { name: prod.name, price: prod.price } : null,
+        lens_material: mat ? { name: mat.name, price: mat.price } : null
+      }
+    })
+}
+
+/**
+ * Service to update lens request status (Staff only).
+ */
+export async function updateLensRequestStatus(requestId: string, status: 'pending' | 'contacted' | 'completed'): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { error } = await supabase
+        .from('lens_requests')
+        .update({ status })
+        .eq('id', requestId)
+      
+      if (!error) return true
+    } catch (e) {
+      console.error('Error updating lens request status in Supabase:', e)
+    }
+  }
+
+  const req = mockDb.MOCK_LENS_REQUESTS.find(r => r.id === requestId)
+  if (req) {
+    req.status = status
+    return true
+  }
+  return false
+}
+
+/**
+ * Service to retrieve upcoming installments for a customer.
+ */
+export async function getCustomerInstallments(customerId?: string): Promise<any[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      let q = supabase
+        .from('payment_installments')
+        .select(`
+          *,
+          sale:sales!payment_installments_sale_id_fkey(total, paid_amount, pending_balance, customer_id)
+        `)
+        .order('due_date', { ascending: true })
+
+      const { data, error } = await q
+      if (!error && data) {
+        if (customerId) {
+          return data.filter((item: any) => item.sale?.customer_id === customerId)
+        }
+        return data
+      }
+      console.error('Error fetching payment installments from Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase installments fetch failed:', e)
+    }
+  }
+
+  // Fallback mock
+  return mockDb.MOCK_PAYMENT_INSTALLMENTS
+    .map(inst => {
+      const sale = mockDb.MOCK_SALES.find(s => s.id === inst.sale_id)
+      return {
+        ...inst,
+        sale
+      }
+    })
+    .filter(inst => !customerId || inst.sale?.customer_id === customerId)
+}
+
+/**
+ * Service to retrieve user notifications.
+ */
+export async function getMyNotifications(): Promise<any[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (!error && data) return data
+    } catch (e) {
+      console.error('Supabase notifications fetch failed:', e)
+    }
+  }
+  return mockDb.MOCK_NOTIFICATIONS
+}
+
+/**
+ * Service to mark notification as read.
+ */
+export async function markNotificationRead(id: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', id)
+      
+      if (!error) return true
+    } catch (e) {
+      console.error('Supabase mark read failed:', e)
+    }
+  }
+  
+  const notif = mockDb.MOCK_NOTIFICATIONS.find(n => n.id === id)
+  if (notif) {
+    notif.is_read = true
+    return true
+  }
+  return false
+}
+
 

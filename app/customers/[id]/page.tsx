@@ -1,9 +1,23 @@
 'use client'
 
 import * as React from 'react'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { getCustomerById, getCustomerExams, getCustomerSales } from '@/lib/services'
+import { 
+  ArrowLeft, 
+  User, 
+  FileText, 
+  Phone, 
+  Calendar, 
+  Briefcase, 
+  HeartHandshake, 
+  Eye, 
+  ShoppingBag,
+  AlertTriangle,
+  PlusCircle,
+  TrendingDown
+} from 'lucide-react'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -30,7 +44,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
       ])
 
       if (!custData) {
-        setError('El paciente no fue encontrado o no existe.')
+        setError('El cliente no fue encontrado o no existe.')
       } else {
         setCustomer(custData)
         setExams(examsData)
@@ -74,25 +88,23 @@ export default function CustomerDetailPage({ params }: PageProps) {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 flex flex-col items-center justify-center space-y-4">
-        <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-slate-500 font-medium">Cargando expediente del paciente...</p>
+      <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 flex flex-col items-center justify-center space-y-4">
+        <div className="w-10 h-10 border-4 border-[#00357f] border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-[#737784] font-medium">Cargando expediente del cliente...</p>
       </main>
     )
   }
 
   if (error || !customer) {
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8">
-        <div className="max-w-2xl mx-auto space-y-6 text-center py-20">
-          <div className="w-16 h-16 bg-rose-500/10 border border-rose-500/20 rounded-full flex items-center justify-center mx-auto text-rose-400">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+      <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8">
+        <div className="max-w-2xl mx-auto space-y-6 text-center py-20 bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm">
+          <div className="w-16 h-16 bg-rose-100 border border-rose-200 rounded-full flex items-center justify-center mx-auto text-[#ba1a1a]">
+            <AlertTriangle className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-slate-100">{error || 'Expediente no disponible'}</h2>
-          <Link href="/customers" className="inline-block text-xs font-bold text-cyan-400 hover:text-cyan-300">
-            Volver a la lista de pacientes
+          <h2 className="text-xl font-bold text-[#111c2d]">{error || 'Expediente no disponible'}</h2>
+          <Link href="/customers" className="inline-block text-xs font-bold text-[#00357f] hover:underline">
+            Volver a la lista de clientes
           </Link>
         </div>
       </main>
@@ -102,426 +114,420 @@ export default function CustomerDetailPage({ params }: PageProps) {
   const cp = customer.customer_profiles || {}
   const age = calculateAge(cp.date_of_birth)
 
+  // Calculations for total debt
+  const totalPending = sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0)
+
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 pb-24">
-      {/* Background radial glow */}
-      <div className="fixed top-20 right-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="fixed bottom-0 left-0 w-80 h-80 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-4xl mx-auto pb-24 md:pb-8 text-left">
+      
+      {/* Back and Header */}
+      <div className="space-y-4">
+        <Link href="/dashboard/admin/customers" className="inline-flex items-center gap-2 text-xs font-bold text-[#737784] hover:text-[#00357f] transition-colors">
+          <ArrowLeft className="w-4 h-4" />
+          Volver a Clientes
+        </Link>
 
-      <div className="max-w-3xl mx-auto space-y-6 relative">
-        {/* Navigation & Header */}
-        <div className="space-y-4">
-          <Link href="/customers" className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-            </svg>
-            Volver a Pacientes
-          </Link>
-
-          {/* Customer Profile Card */}
-          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 p-6 bg-slate-900/40 border border-slate-800/60 rounded-3xl backdrop-blur-xl">
-            <div className="w-16 h-16 bg-gradient-to-tr from-cyan-400 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg shadow-cyan-500/10">
-              <span className="text-xl font-black text-slate-950 select-none">
-                {getInitials(customer.full_name)}
-              </span>
-            </div>
-            <div className="flex-1 text-center sm:text-left space-y-1.5">
-              <h1 className="text-xl font-extrabold text-slate-100">{customer.full_name}</h1>
-              <p className="text-xs text-slate-400">
-                @{customer.email?.replace('@opticarayo.com', '')}
-                {age !== null && ` · ${age} años`}
-                {cp.occupation && ` · ${cp.occupation}`}
-              </p>
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
-                {cp.blood_type && cp.blood_type !== 'NS' && (
-                  <span className="bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-md">
-                    🩸 Tipo: {cp.blood_type}
-                  </span>
-                )}
-                <span className="bg-slate-800 text-slate-400 text-[10px] font-bold px-2 py-0.5 rounded-md">
-                  Paciente desde: {new Date(customer.created_at).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}
+        {/* Customer Profile Header Card */}
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-6 bg-white border border-[#cbd5e1] rounded-2xl shadow-sm">
+          <div className="w-16 h-16 bg-[#dee8ff] text-[#00357f] rounded-full flex items-center justify-center font-black text-xl select-none">
+            {getInitials(customer.full_name)}
+          </div>
+          <div className="flex-1 text-center sm:text-left space-y-1.5 min-w-0">
+            <h1 className="text-2xl font-black text-[#111c2d] leading-none">{customer.full_name}</h1>
+            <p className="text-xs text-[#737784] font-medium">
+              @{customer.email?.replace('@opticarayo.com', '')}
+              {age !== null && ` · ${age} años`}
+              {cp.occupation && ` · ${cp.occupation}`}
+            </p>
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+              {cp.blood_type && cp.blood_type !== 'NS' && (
+                <span className="bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-[#ffdad6]">
+                  Tipo: {cp.blood_type}
                 </span>
-              </div>
+              )}
+              <span className="bg-[#dee8ff]/60 text-[#00357f] text-[10px] font-bold px-2 py-0.5 rounded">
+                Alta: {new Date(customer.created_at).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}
+              </span>
+              {totalPending > 0 && (
+                <span className="bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded">
+                  Saldo pendiente: {formatPrice(totalPending)}
+                </span>
+              )}
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Tabs navigation */}
-        <div className="flex border-b border-slate-800/80">
-          <button
-            onClick={() => setActiveTab('profile')}
-            className={`flex-1 py-3 text-xs font-bold transition-all border-b-2 text-center ${
-              activeTab === 'profile'
-                ? 'border-cyan-500 text-cyan-400 bg-cyan-500/5 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Expediente
-          </button>
-          <button
-            onClick={() => setActiveTab('exams')}
-            className={`flex-1 py-3 text-xs font-bold transition-all border-b-2 text-center relative ${
-              activeTab === 'exams'
-                ? 'border-cyan-500 text-cyan-400 bg-cyan-500/5 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Historial Clínico
-            {exams.length > 0 && (
-              <span className="absolute top-2.5 right-4 sm:right-6 bg-slate-800 text-[10px] text-slate-300 font-extrabold px-1.5 py-0.5 rounded-full border border-slate-700">
-                {exams.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('sales')}
-            className={`flex-1 py-3 text-xs font-bold transition-all border-b-2 text-center relative ${
-              activeTab === 'sales'
-                ? 'border-cyan-500 text-cyan-400 bg-cyan-500/5 rounded-t-xl'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Ventas y Compras
-            {sales.length > 0 && (
-              <span className="absolute top-2.5 right-4 sm:right-6 bg-slate-800 text-[10px] text-slate-300 font-extrabold px-1.5 py-0.5 rounded-full border border-slate-700">
-                {sales.length}
-              </span>
-            )}
-          </button>
-        </div>
+      {/* Tabs navigation */}
+      <div className="flex border-b border-[#cbd5e1] bg-white rounded-t-xl overflow-hidden shadow-sm">
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={`flex-1 py-3.5 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === 'profile'
+              ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
+              : 'border-transparent text-[#737784] hover:text-[#111c2d]'
+          }`}
+        >
+          <User className="w-4 h-4" />
+          Expediente
+        </button>
+        <button
+          onClick={() => setActiveTab('exams')}
+          className={`flex-1 py-3.5 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
+            activeTab === 'exams'
+              ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
+              : 'border-transparent text-[#737784] hover:text-[#111c2d]'
+          }`}
+        >
+          <Eye className="w-4 h-4" />
+          Historial Clínico
+          {exams.length > 0 && (
+            <span className="ml-1 bg-[#dee8ff] text-[#00357f] text-[9px] font-black px-1.5 py-0.5 rounded-full">
+              {exams.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('sales')}
+          className={`flex-1 py-3.5 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
+            activeTab === 'sales'
+              ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
+              : 'border-transparent text-[#737784] hover:text-[#111c2d]'
+          }`}
+        >
+          <ShoppingBag className="w-4 h-4" />
+          Ventas y Compras
+          {sales.length > 0 && (
+            <span className="ml-1 bg-[#dee8ff] text-[#00357f] text-[9px] font-black px-1.5 py-0.5 rounded-full">
+              {sales.length}
+            </span>
+          )}
+        </button>
+      </div>
 
-        {/* Tab content */}
-        <div className="space-y-6">
-          {/* TAB: PROFILE */}
-          {activeTab === 'profile' && (
-            <div className="space-y-6">
-              {/* Información de contacto y Automatizaciones CRM */}
-              <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl p-6 space-y-5">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">Datos Generales</h3>
-                  <span className="text-[10px] bg-slate-950 px-2 py-0.5 border border-slate-850 rounded text-slate-400 font-bold uppercase">
-                    CRM Activo
+      {/* Tab content */}
+      <div className="space-y-6">
+        
+        {/* TAB: PROFILE */}
+        {activeTab === 'profile' && (
+          <div className="space-y-6">
+            <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-6">
+              
+              <div className="flex justify-between items-center border-b border-[#f0f3ff] pb-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Datos Generales</h3>
+                <span className="text-[10px] bg-[#49da9f]/20 text-[#00422b] px-2 py-0.5 rounded font-black uppercase">
+                  CRM Activo
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs">
+                <div>
+                  <span className="block text-[#737784] uppercase font-bold tracking-wider mb-1">Teléfono</span>
+                  <span className="text-sm font-bold text-[#111c2d]">{cp.phone || 'No registrado'}</span>
+                </div>
+                <div>
+                  <span className="block text-[#737784] uppercase font-bold tracking-wider mb-1">Fecha de Nacimiento</span>
+                  <span className="text-sm font-bold text-[#111c2d]">{formatDate(cp.date_of_birth)}</span>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="block text-[#737784] uppercase font-bold tracking-wider mb-1">Dirección</span>
+                  <span className="text-sm font-bold text-[#111c2d] leading-normal">{cp.address || 'No registrada'}</span>
+                </div>
+              </div>
+
+              {/* WHATSAPP CRM BUTTONS */}
+              {cp.phone && (
+                <div className="border-t border-[#f0f3ff] pt-5 space-y-3">
+                  <span className="block text-[10px] font-black uppercase tracking-wider text-[#737784]">
+                    Automatización de Recordatorios por WhatsApp
                   </span>
-                </div>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    {/* Recordatorio de Cita */}
+                    <button
+                      onClick={() => {
+                        const cleanPhone = cp.phone.replace(/[^\d]/g, '')
+                        const phoneWithCode = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone
+                        const message = `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Queremos recordarte que tus lentes están próximos a cumplir un año de su última revisión. Te sugerimos agendar tu examen visual de seguimiento preventivo aquí. ¡Esperamos verte pronto!`
+                        window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(message)}`, '_blank')
+                      }}
+                      type="button"
+                      className="flex-1 bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs px-4 py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                    >
+                      <Phone className="w-4 h-4" />
+                      Enviar Recordatorio de Examen
+                    </button>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="block text-slate-500 text-[10px] uppercase font-bold tracking-wider">Teléfono</span>
-                    <span className="font-semibold text-slate-200">{cp.phone || 'No registrado'}</span>
-                  </div>
-                  <div>
-                    <span className="block text-slate-500 text-[10px] uppercase font-bold tracking-wider">Fecha de Nacimiento</span>
-                    <span className="font-semibold text-slate-200">{formatDate(cp.date_of_birth)}</span>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <span className="block text-slate-500 text-[10px] uppercase font-bold tracking-wider">Dirección</span>
-                    <span className="font-semibold text-slate-200">{cp.address || 'No registrada'}</span>
-                  </div>
-                </div>
-
-                {/* BOTONES DE AUTOMATIZACIÓN CRM WHATSAPP */}
-                {cp.phone && (
-                  <div className="border-t border-slate-850 pt-4 space-y-3">
-                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                      Automatización de Recordatorios
-                    </span>
-                    
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      {/* Recordatorio de Cita */}
+                    {/* Recordatorio de Cobranza */}
+                    {totalPending > 0 && (
                       <button
                         onClick={() => {
                           const cleanPhone = cp.phone.replace(/[^\d]/g, '')
                           const phoneWithCode = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone
-                          const message = `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Queremos recordarte que tus lentes están próximos a cumplir un año de su última revisión. Te sugerimos agendar tu examen visual de seguimiento preventivo aquí. ¡Esperamos verte pronto!`
+                          const message = `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Te recordamos cordialmente que cuentas con un saldo pendiente de ${formatPrice(totalPending)} MXN de tu compra. Puedes pasar a liquidarlo a sucursal o realizar una transferencia bancaria. ¡Muchas gracias por tu preferencia!`
                           window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(message)}`, '_blank')
                         }}
                         type="button"
-                        className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs px-4 py-3.5 rounded-xl shadow transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[44px]"
+                        className="flex-1 bg-[#ffdad6] hover:bg-[#ffcdd0] text-[#ba1a1a] font-bold text-xs px-4 py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 border border-[#ba1a1a]/25"
                       >
-                        <svg className="w-4.5 h-4.5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.731-1.456L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.37 9.864-9.799.002-2.63-1.023-5.101-2.885-6.963C16.588 1.981 14.12 1.01 11.5 1.01c-5.436 0-9.861 4.372-9.865 9.8.001 1.95.536 3.849 1.562 5.521L2.1 21.9l5.776-1.516c-1.584.877-1.127.608-.887.893z" />
-                        </svg>
-                        Recordatorio de Examen
+                        <TrendingDown className="w-4 h-4" />
+                        Cobranza de Saldo ({formatPrice(totalPending)})
                       </button>
-
-                      {/* Recordatorio de Cobranza (Si aplica saldo pendiente) */}
-                      {sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0) > 0 && (
-                        <button
-                          onClick={() => {
-                            const pendingBal = sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0)
-                            const cleanPhone = cp.phone.replace(/[^\d]/g, '')
-                            const phoneWithCode = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone
-                            const message = `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Te recordamos cordialmente que cuentas con un saldo pendiente de ${formatPrice(pendingBal)} MXN de tu compra. Puedes pasar a liquidarlo a sucursal o realizar una transferencia bancaria. ¡Muchas gracias por tu preferencia!`
-                            window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(message)}`, '_blank')
-                          }}
-                          type="button"
-                          className="flex-1 bg-rose-500 hover:bg-rose-400 text-slate-950 font-extrabold text-xs px-4 py-3.5 rounded-xl shadow transition-all cursor-pointer flex items-center justify-center gap-2 min-h-[44px]"
-                        >
-                          <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Cobranza de Saldo ({formatPrice(sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0))})
-                        </button>
-                      )}
-                    </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+            </div>
 
-              {/* Antecedentes clínicos */}
-              <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl p-6 space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">Antecedentes Médicos</h3>
-                <p className="text-sm text-slate-300 leading-relaxed bg-slate-950/40 p-4 rounded-2xl border border-slate-800/40 min-h-[80px]">
-                  {cp.medical_notes || 'Sin observaciones o condiciones registradas.'}
-                </p>
-              </div>
+            {/* Antecedentes clínicos */}
+            <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Antecedentes Médicos</h3>
+              <p className="text-xs text-[#434653] leading-relaxed bg-[#f9f9ff] p-4 rounded-xl border border-[#cbd5e1]/40 min-h-[60px] font-medium">
+                {cp.medical_notes || 'Sin observaciones o condiciones registradas.'}
+              </p>
+            </div>
 
-              {/* Contacto de Emergencia */}
-              <div className="bg-slate-900/40 border border-slate-800/60 rounded-3xl p-6 space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">Contacto de Emergencia</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="block text-slate-500 text-[10px] uppercase font-bold tracking-wider">Nombre del Contacto</span>
-                    <span className="font-semibold text-slate-200">{cp.emergency_contact_name || 'No registrado'}</span>
-                  </div>
-                  <div>
-                    <span className="block text-slate-500 text-[10px] uppercase font-bold tracking-wider">Teléfono</span>
-                    <span className="font-semibold text-slate-200">{cp.emergency_contact_phone || 'No registrado'}</span>
-                  </div>
+            {/* Contacto de Emergencia */}
+            <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Contacto de Emergencia</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <span className="block text-[#737784] uppercase font-bold tracking-wider mb-1">Nombre del Contacto</span>
+                  <span className="text-sm font-bold text-[#111c2d]">{cp.emergency_contact_name || 'No registrado'}</span>
+                </div>
+                <div>
+                  <span className="block text-[#737784] uppercase font-bold tracking-wider mb-1">Teléfono</span>
+                  <span className="text-sm font-bold text-[#111c2d]">{cp.emergency_contact_phone || 'No registrado'}</span>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* TAB: EXAMS */}
-          {activeTab === 'exams' && (
-            <div className="space-y-6">
-              {/* Header de sección */}
-              <div className="flex justify-between items-center">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">Exámenes del Paciente</h3>
-                <Link
-                  href={`/customers/${customerId}/exam/new`}
-                  className="bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-bold text-[11px] px-4 py-2 rounded-xl transition-all"
-                >
-                  + Nuevo Examen
+        {/* TAB: EXAMS */}
+        {activeTab === 'exams' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#737784]">Exámenes del Cliente</h3>
+              <Link
+                href={`/customers/${customerId}/exam/new`}
+                className="bg-[#00357f] hover:bg-[#004aad] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                <PlusCircle className="w-4.5 h-4.5" /> Nuevo Examen Clínico
+              </Link>
+            </div>
+
+            {exams.length === 0 ? (
+              <div className="bg-white border border-[#cbd5e1] rounded-2xl py-12 text-center space-y-3 shadow-sm p-6">
+                <p className="text-xs text-[#737784] font-semibold">Este cliente no tiene historial de exámenes aún.</p>
+                <Link href={`/customers/${customerId}/exam/new`} className="inline-block text-xs font-bold text-[#00357f] hover:underline">
+                  Realizar primer examen visual →
                 </Link>
               </div>
-
-              {/* Lista de exámenes */}
-              {exams.length === 0 ? (
-                <div className="bg-slate-900/20 border border-slate-800/40 rounded-3xl py-12 text-center space-y-3">
-                  <p className="text-sm text-slate-500">Este paciente no tiene historial de exámenes aún.</p>
-                  <Link href={`/customers/${customerId}/exam/new`} className="inline-block text-xs font-bold text-cyan-400 hover:text-cyan-300">
-                    Realizar primer examen visual →
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {exams.map((exam, i) => (
-                    <div key={exam.id} className="bg-slate-900/40 border border-slate-800/80 rounded-3xl overflow-hidden shadow-xl">
-                      {/* Header del examen */}
-                      <div className="bg-slate-900/80 border-b border-slate-800/80 px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div>
-                          <span className="text-[10px] font-black uppercase tracking-widest text-cyan-400">
-                            Examen #{exams.length - i}
-                          </span>
-                          <h4 className="text-xs font-bold text-slate-300">
-                            {formatDate(exam.exam_date)}
-                          </h4>
-                        </div>
-                        <span className="text-[10px] text-slate-500">
-                          Realizado por: <strong className="text-slate-300">{exam.examiner?.full_name || 'Optometrista'}</strong>
+            ) : (
+              <div className="space-y-6">
+                {exams.map((exam, i) => (
+                  <div key={exam.id} className="bg-white border border-[#cbd5e1] rounded-2xl overflow-hidden shadow-sm">
+                    {/* Header del examen */}
+                    <div className="bg-[#f9f9ff] border-b border-[#cbd5e1] px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-[#00357f]">
+                          Examen #{exams.length - i}
                         </span>
+                        <h4 className="text-xs font-bold text-[#111c2d]">
+                          {formatDate(exam.exam_date)}
+                        </h4>
+                      </div>
+                      <span className="text-[10px] text-[#737784] font-bold">
+                        Optometrista: <strong className="text-[#111c2d]">{exam.examiner?.full_name || 'Staff Óptica'}</strong>
+                      </span>
+                    </div>
+
+                    {/* Receta Grid */}
+                    <div className="p-6 space-y-5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Ojo Derecho */}
+                        <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-4 space-y-3">
+                          <span className="text-[10px] font-black text-[#00357f] uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#00357f]" />
+                            Ojo Derecho (OD)
+                          </span>
+                          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
+                              <span className="block text-[8px] text-[#737784] font-bold uppercase">Esfera</span>
+                              <span className="font-mono font-bold text-[#00357f]">{exam.od_sphere !== null ? (exam.od_sphere >= 0 ? '+' : '') + exam.od_sphere.toFixed(2) : '--'}</span>
+                            </div>
+                            <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
+                              <span className="block text-[8px] text-[#737784] font-bold uppercase">Cilindro</span>
+                              <span className="font-mono font-bold text-[#00357f]">{exam.od_cylinder !== null ? (exam.od_cylinder >= 0 ? '+' : '') + exam.od_cylinder.toFixed(2) : '--'}</span>
+                            </div>
+                            <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
+                              <span className="block text-[8px] text-[#737784] font-bold uppercase">Eje</span>
+                              <span className="font-mono font-bold text-[#00357f]">{exam.od_axis !== null ? `${exam.od_axis}°` : '--'}</span>
+                            </div>
+                          </div>
+                          <div className="flex justify-between items-center pt-1 text-[11px] text-[#434653] font-medium">
+                            <span>Adición: <strong className="font-mono text-[#00357f]">{exam.od_add !== null ? `+${exam.od_add.toFixed(2)}` : '--'}</strong></span>
+                            <span>Agudeza: <strong className="text-[#111c2d]">{exam.od_visual_acuity || 'N/A'}</strong></span>
+                          </div>
+                        </div>
+
+                        {/* Ojo Izquierdo */}
+                        <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-4 space-y-3">
+                          <span className="text-[10px] font-black text-[#00668a] uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#00668a]" />
+                            Ojo Izquierdo (OI)
+                          </span>
+                          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
+                              <span className="block text-[8px] text-[#737784] font-bold uppercase">Esfera</span>
+                              <span className="font-mono font-bold text-[#00668a]">{exam.oi_sphere !== null ? (exam.oi_sphere >= 0 ? '+' : '') + exam.oi_sphere.toFixed(2) : '--'}</span>
+                            </div>
+                            <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
+                              <span className="block text-[8px] text-[#737784] font-bold uppercase">Cilindro</span>
+                              <span className="font-mono font-bold text-[#00668a]">{exam.oi_cylinder !== null ? (exam.oi_cylinder >= 0 ? '+' : '') + exam.oi_cylinder.toFixed(2) : '--'}</span>
+                            </div>
+                            <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
+                              <span className="block text-[8px] text-[#737784] font-bold uppercase">Eje</span>
+                              <span className="font-mono font-bold text-[#00668a]">{exam.oi_axis !== null ? `${exam.oi_axis}°` : '--'}</span>
+                            </div>
+                          </div>
+                          <div className="flex justify-between items-center pt-1 text-[11px] text-[#434653] font-medium">
+                            <span>Adición: <strong className="font-mono text-[#00668a]">{exam.oi_add !== null ? `+${exam.oi_add.toFixed(2)}` : '--'}</strong></span>
+                            <span>Agudeza: <strong className="text-[#111c2d]">{exam.oi_visual_acuity || 'N/A'}</strong></span>
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Receta Grid */}
-                      <div className="p-6 space-y-5">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {/* Ojo Derecho */}
-                          <div className="bg-slate-950/60 border border-slate-800/60 rounded-2xl p-4 space-y-3">
-                            <span className="text-[10px] font-black text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                              Ojo Derecho (OD)
-                            </span>
-                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                              <div className="bg-slate-900/60 p-2 rounded-lg">
-                                <span className="block text-[9px] text-slate-500 font-bold uppercase">Esfera</span>
-                                <span className="font-mono font-bold text-slate-200">{exam.od_sphere !== null ? (exam.od_sphere >= 0 ? '+' : '') + exam.od_sphere.toFixed(2) : '--'}</span>
-                              </div>
-                              <div className="bg-slate-900/60 p-2 rounded-lg">
-                                <span className="block text-[9px] text-slate-500 font-bold uppercase">Cilindro</span>
-                                <span className="font-mono font-bold text-slate-200">{exam.od_cylinder !== null ? (exam.od_cylinder >= 0 ? '+' : '') + exam.od_cylinder.toFixed(2) : '--'}</span>
-                              </div>
-                              <div className="bg-slate-900/60 p-2 rounded-lg">
-                                <span className="block text-[9px] text-slate-500 font-bold uppercase">Eje</span>
-                                <span className="font-mono font-bold text-slate-200">{exam.od_axis !== null ? `${exam.od_axis}°` : '--'}</span>
-                              </div>
-                            </div>
-                            <div className="flex justify-between items-center pt-1 text-xs text-slate-400">
-                              <span>Adición: <strong className="font-mono text-slate-200">{exam.od_add !== null ? `+${exam.od_add.toFixed(2)}` : '--'}</strong></span>
-                              <span>Agudeza: <strong className="text-slate-200">{exam.od_visual_acuity || 'N/A'}</strong></span>
-                            </div>
-                          </div>
-
-                          {/* Ojo Izquierdo */}
-                          <div className="bg-slate-950/60 border border-slate-800/60 rounded-2xl p-4 space-y-3">
-                            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                              Ojo Izquierdo (OI)
-                            </span>
-                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                              <div className="bg-slate-900/60 p-2 rounded-lg">
-                                <span className="block text-[9px] text-slate-500 font-bold uppercase">Esfera</span>
-                                <span className="font-mono font-bold text-slate-200">{exam.oi_sphere !== null ? (exam.oi_sphere >= 0 ? '+' : '') + exam.oi_sphere.toFixed(2) : '--'}</span>
-                              </div>
-                              <div className="bg-slate-900/60 p-2 rounded-lg">
-                                <span className="block text-[9px] text-slate-500 font-bold uppercase">Cilindro</span>
-                                <span className="font-mono font-bold text-slate-200">{exam.oi_cylinder !== null ? (exam.oi_cylinder >= 0 ? '+' : '') + exam.oi_cylinder.toFixed(2) : '--'}</span>
-                              </div>
-                              <div className="bg-slate-900/60 p-2 rounded-lg">
-                                <span className="block text-[9px] text-slate-500 font-bold uppercase">Eje</span>
-                                <span className="font-mono font-bold text-slate-200">{exam.oi_axis !== null ? `${exam.oi_axis}°` : '--'}</span>
-                              </div>
-                            </div>
-                            <div className="flex justify-between items-center pt-1 text-xs text-slate-400">
-                              <span>Adición: <strong className="font-mono text-slate-200">{exam.oi_add !== null ? `+${exam.oi_add.toFixed(2)}` : '--'}</strong></span>
-                              <span>Agudeza: <strong className="text-slate-200">{exam.oi_visual_acuity || 'N/A'}</strong></span>
-                            </div>
-                          </div>
+                      {/* Datos Ópticos Adicionales */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
+                        <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-3">
+                          <span className="block text-[8px] text-[#737784] uppercase font-bold tracking-wider">Distancia Pupilar</span>
+                          <span className="text-xs font-bold text-[#111c2d]">
+                            {exam.pd_distance ? `${exam.pd_distance} mm` : '--'} / {exam.pd_near ? `${exam.pd_near} mm` : '--'}
+                          </span>
                         </div>
+                        <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-3">
+                          <span className="block text-[8px] text-[#737784] uppercase font-bold tracking-wider">Tipo Lente</span>
+                          <span className="text-xs font-bold text-[#111c2d] capitalize">{exam.lens_type || 'No especificado'}</span>
+                        </div>
+                        <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-3">
+                          <span className="block text-[8px] text-[#737784] uppercase font-bold tracking-wider">Tratamiento</span>
+                          <span className="text-xs font-bold text-[#111c2d] truncate block">{exam.treatment || 'Ninguno'}</span>
+                        </div>
+                        <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-3">
+                          <span className="block text-[8px] text-[#737784] uppercase font-bold tracking-wider">Próxima Cita</span>
+                          <span className="text-xs font-bold text-[#111c2d]">{exam.next_exam_date ? new Date(exam.next_exam_date).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                        </div>
+                      </div>
 
-                        {/* Datos Ópticos Adicionales */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
-                          <div className="bg-slate-950/30 border border-slate-800/40 rounded-xl p-3">
-                            <span className="block text-[9px] text-slate-500 uppercase font-black tracking-wider">Distancia Pupilar</span>
-                            <span className="text-xs font-bold text-slate-300">
-                              {exam.pd_distance ? `${exam.pd_distance} mm` : '--'} / {exam.pd_near ? `${exam.pd_near} mm` : '--'}
+                      {/* Recomendación de Armazón & Notas Clínicas */}
+                      {(exam.frame_recommendation || exam.clinical_notes) && (
+                        <div className="border-t border-[#cbd5e1]/40 pt-4 space-y-3 text-left">
+                          {exam.frame_recommendation && (
+                            <div className="text-xs bg-[#dee8ff]/50 border border-[#cbd5e1] p-3 rounded-xl">
+                              <span className="font-bold text-[#00357f] block mb-0.5">Armazón Recomendado:</span>
+                              <span className="text-[#434653] font-medium">{exam.frame_recommendation}</span>
+                            </div>
+                          )}
+                          {exam.clinical_notes && (
+                            <div className="text-xs bg-[#f9f9ff] border border-[#cbd5e1]/40 p-3 rounded-xl">
+                              <span className="font-bold text-[#737784] block mb-0.5">Observaciones Clínicas:</span>
+                              <span className="text-[#434653] leading-relaxed block font-medium">{exam.clinical_notes}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: SALES */}
+        {activeTab === 'sales' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#737784]">Historial de Compras</h3>
+              <Link
+                href={`/customers/${customerId}/sale/new`}
+                className="bg-[#00357f] hover:bg-[#004aad] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                <PlusCircle className="w-4.5 h-4.5" /> Registrar Nueva Venta
+              </Link>
+            </div>
+
+            {sales.length === 0 ? (
+              <div className="bg-white border border-[#cbd5e1] rounded-2xl py-12 text-center space-y-3 shadow-sm p-6">
+                <p className="text-xs text-[#737784] font-semibold">Este cliente no registra transacciones de compra.</p>
+                <Link href={`/customers/${customerId}/sale/new`} className="inline-block text-xs font-bold text-[#00357f] hover:underline">
+                  Registrar venta nueva →
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {sales.map((sale) => (
+                  <div key={sale.id} className="bg-white border border-[#cbd5e1] rounded-2xl p-5 space-y-4 shadow-sm">
+                    {/* Cabecera venta */}
+                    <div className="flex justify-between items-start border-b border-[#cbd5e1]/40 pb-3">
+                      <div>
+                        <span className="text-[9px] text-[#737784] block uppercase font-bold">Venta registrada</span>
+                        <span className="text-xs font-bold text-[#111c2d]">{formatDate(sale.created_at)}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[9px] text-[#737784] block uppercase font-bold">Total cobrado</span>
+                        <span className="text-sm font-black text-[#00357f] font-mono">{formatPrice(sale.total)}</span>
+                      </div>
+                    </div>
+
+                    {/* Items de la venta */}
+                    <div className="space-y-2 text-left">
+                      <span className="text-[9px] font-black text-[#737784] uppercase tracking-wider block">Productos</span>
+                      <div className="space-y-1.5">
+                        {sale.sale_items?.map((item: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-center text-xs bg-[#f9f9ff] px-3.5 py-2.5 rounded-xl border border-[#cbd5e1]/40">
+                            <div>
+                              <span className="font-bold text-[#111c2d]">{item.product?.name || 'Producto'}</span>
+                              <span className="text-[9px] text-[#737784] ml-2 font-bold uppercase">({item.product?.category === 'frames' ? 'Armazón' : item.product?.category === 'lenses' ? 'Micas' : item.product?.category === 'contact_lenses' ? 'Contacto' : 'Accesorio'})</span>
+                            </div>
+                            <span className="text-[#434653] font-medium">
+                              {item.quantity} x <strong className="font-mono text-[#00357f]">{formatPrice(item.price)}</strong>
                             </span>
                           </div>
-                          <div className="bg-slate-950/30 border border-slate-800/40 rounded-xl p-3">
-                            <span className="block text-[9px] text-slate-500 uppercase font-black tracking-wider">Tipo Lente</span>
-                            <span className="text-xs font-bold text-slate-300 capitalize">{exam.lens_type || 'No especificado'}</span>
-                          </div>
-                          <div className="bg-slate-950/30 border border-slate-800/40 rounded-xl p-3">
-                            <span className="block text-[9px] text-slate-500 uppercase font-black tracking-wider">Tratamiento</span>
-                            <span className="text-xs font-bold text-slate-300 truncate block">{exam.treatment || 'Ninguno'}</span>
-                          </div>
-                          <div className="bg-slate-950/30 border border-slate-800/40 rounded-xl p-3">
-                            <span className="block text-[9px] text-slate-500 uppercase font-black tracking-wider">Próxima Cita</span>
-                            <span className="text-xs font-bold text-slate-300">{exam.next_exam_date ? new Date(exam.next_exam_date).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' }) : 'N/A'}</span>
-                          </div>
-                        </div>
+                        ))}
+                      </div>
+                    </div>
 
-                        {/* Recomendación de Armazón & Notas Clínicas */}
-                        {(exam.frame_recommendation || exam.clinical_notes) && (
-                          <div className="border-t border-slate-800/60 pt-4 space-y-3">
-                            {exam.frame_recommendation && (
-                              <div className="text-xs bg-cyan-950/20 border border-cyan-800/30 p-3 rounded-xl">
-                                <span className="font-bold text-cyan-400 block mb-0.5">Armazón Recomendado:</span>
-                                <span className="text-slate-300">{exam.frame_recommendation}</span>
-                              </div>
-                            )}
-                            {exam.clinical_notes && (
-                              <div className="text-xs bg-slate-950/40 border border-slate-800/50 p-3 rounded-xl">
-                                <span className="font-bold text-slate-400 block mb-0.5">Observaciones Clínicas:</span>
-                                <span className="text-slate-300 leading-relaxed block">{exam.clinical_notes}</span>
-                              </div>
-                            )}
+                    {/* Cupones y notas adicionales */}
+                    {(sale.coupon || sale.discount_applied > 0 || sale.notes) && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs text-left">
+                        {sale.coupon && (
+                          <div className="bg-[#49da9f]/10 border border-[#49da9f]/30 p-2.5 rounded-xl flex items-center justify-between text-[#005c3e] font-bold">
+                            <span>Cupón: <strong className="font-mono uppercase">{sale.coupon.code}</strong></span>
+                            <span>-{sale.coupon.discount_percent}%</span>
+                          </div>
+                        )}
+                        {sale.discount_applied > 0 && !sale.coupon && (
+                          <div className="bg-[#49da9f]/10 border border-[#49da9f]/30 p-2.5 rounded-xl text-[#005c3e] font-bold">
+                            Descuento directo: <strong className="font-mono">{formatPrice(sale.discount_applied)}</strong>
+                          </div>
+                        )}
+                        {sale.notes && (
+                          <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 p-3 rounded-xl text-[#434653] sm:col-span-2 font-medium">
+                            <span className="font-bold text-[#737784] block mb-0.5 text-[9px] uppercase">Notas de la compra:</span>
+                            {sale.notes}
                           </div>
                         )}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB: SALES */}
-          {activeTab === 'sales' && (
-            <div className="space-y-6">
-              {/* Header de sección */}
-              <div className="flex justify-between items-center">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">Historial de Compras</h3>
-                <Link
-                  href={`/customers/${customerId}/sale/new`}
-                  className="bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-bold text-[11px] px-4 py-2 rounded-xl transition-all"
-                >
-                  + Nueva Venta
-                </Link>
+                    )}
+                  </div>
+                ))}
               </div>
-
-              {/* Lista de compras */}
-              {sales.length === 0 ? (
-                <div className="bg-slate-900/20 border border-slate-800/40 rounded-3xl py-12 text-center space-y-3">
-                  <p className="text-sm text-slate-500">Este paciente no registra transacciones de compra.</p>
-                  <Link href={`/customers/${customerId}/sale/new`} className="inline-block text-xs font-bold text-cyan-400 hover:text-cyan-300">
-                    Registrar venta nueva →
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {sales.map((sale) => (
-                    <div key={sale.id} className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-5 space-y-4 shadow-md">
-                      {/* Cabecera venta */}
-                      <div className="flex justify-between items-start border-b border-slate-800/60 pb-3">
-                        <div>
-                          <span className="text-[10px] text-slate-500 block">Venta registrada</span>
-                          <span className="text-xs font-bold text-slate-300">{formatDate(sale.created_at)}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-xs text-slate-500 block">Total cobrado</span>
-                          <span className="text-sm font-extrabold text-cyan-400">${sale.total?.toFixed(2)} MXN</span>
-                        </div>
-                      </div>
-
-                      {/* Items de la venta */}
-                      <div className="space-y-2">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">Productos</span>
-                        <div className="space-y-1.5">
-                          {sale.sale_items?.map((item: any, idx: number) => (
-                            <div key={idx} className="flex justify-between items-center text-xs bg-slate-950/30 px-3 py-2 rounded-xl border border-slate-800/40">
-                              <div>
-                                <span className="font-semibold text-slate-200">{item.product?.name || 'Producto'}</span>
-                                <span className="text-[10px] text-slate-500 ml-2">({item.product?.category || 'General'})</span>
-                              </div>
-                              <span className="text-slate-400">
-                                {item.quantity} x <strong className="font-mono text-slate-300">${item.price?.toFixed(2)}</strong>
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Cupones y notas adicionales */}
-                      {(sale.coupon || sale.discount_applied > 0 || sale.notes) && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
-                          {sale.coupon && (
-                            <div className="bg-emerald-950/20 border border-emerald-800/30 p-2.5 rounded-xl flex items-center justify-between text-emerald-400">
-                              <span>Cupón: <strong className="font-mono">{sale.coupon.code}</strong></span>
-                              <span className="font-extrabold">-{sale.coupon.discount_percent}%</span>
-                            </div>
-                          )}
-                          {sale.discount_applied > 0 && !sale.coupon && (
-                            <div className="bg-emerald-950/20 border border-emerald-800/30 p-2.5 rounded-xl text-emerald-400">
-                              Descuento directo: <strong className="font-mono">${sale.discount_applied.toFixed(2)}</strong>
-                            </div>
-                          )}
-                          {sale.notes && (
-                            <div className="bg-slate-950/40 border border-slate-800/40 p-2.5 rounded-xl text-slate-400 sm:col-span-2">
-                              <span className="font-bold text-slate-500 block mb-0.5">Notas de la compra:</span>
-                              {sale.notes}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </main>
   )

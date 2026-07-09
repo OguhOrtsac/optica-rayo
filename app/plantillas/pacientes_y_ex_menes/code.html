@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pacientes y Exámenes - OpticManager</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-highest": "#d8e3fb",
+                    "on-tertiary-container": "#49da9f",
+                    "on-surface-variant": "#434653",
+                    "surface-variant": "#d8e3fb",
+                    "secondary-fixed": "#c4e7ff",
+                    "surface": "#f9f9ff",
+                    "tertiary-fixed": "#6ffbbe",
+                    "on-secondary": "#ffffff",
+                    "surface-bright": "#f9f9ff",
+                    "on-surface": "#111c2d",
+                    "inverse-surface": "#263143",
+                    "primary-fixed-dim": "#b0c6ff",
+                    "tertiary-fixed-dim": "#4edea3",
+                    "surface-tint": "#215abd",
+                    "error": "#ba1a1a",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary": "#ffffff",
+                    "secondary": "#00668a",
+                    "on-primary-fixed": "#001945",
+                    "outline": "#737784",
+                    "error-container": "#ffdad6",
+                    "on-secondary-fixed-variant": "#004c69",
+                    "outline-variant": "#c3c6d5",
+                    "on-primary-fixed-variant": "#00429b",
+                    "tertiary-container": "#005c3e",
+                    "on-tertiary": "#ffffff",
+                    "on-tertiary-fixed": "#002113",
+                    "surface-dim": "#cfdaf2",
+                    "secondary-fixed-dim": "#7bd0ff",
+                    "on-secondary-fixed": "#001e2c",
+                    "on-error": "#ffffff",
+                    "on-primary-container": "#a9c1ff",
+                    "on-tertiary-fixed-variant": "#005236",
+                    "primary-container": "#004aad",
+                    "primary-fixed": "#d9e2ff",
+                    "on-secondary-container": "#004d6a",
+                    "secondary-container": "#40c2fd",
+                    "surface-container-low": "#f0f3ff",
+                    "on-error-container": "#93000a",
+                    "on-background": "#111c2d",
+                    "background": "#f9f9ff",
+                    "surface-container-high": "#dee8ff",
+                    "inverse-on-surface": "#ecf1ff",
+                    "tertiary": "#00422b",
+                    "surface-container": "#e7eeff",
+                    "inverse-primary": "#b0c6ff",
+                    "primary": "#00357f"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "base": "4px",
+                    "container-max": "1440px",
+                    "sm": "8px",
+                    "lg": "24px",
+                    "gutter": "24px",
+                    "md": "16px",
+                    "xs": "4px",
+                    "xl": "32px"
+            },
+            "fontFamily": {
+                    "headline-lg-mobile": [
+                            "Inter"
+                    ],
+                    "body-lg": [
+                            "Inter"
+                    ],
+                    "headline-md": [
+                            "Inter"
+                    ],
+                    "body-md": [
+                            "Inter"
+                    ],
+                    "headline-lg": [
+                            "Inter"
+                    ],
+                    "title-lg": [
+                            "Inter"
+                    ],
+                    "label-md": [
+                            "Inter"
+                    ],
+                    "display": [
+                            "Inter"
+                    ]
+            },
+            "fontSize": {
+                    "headline-lg-mobile": [
+                            "24px",
+                            {
+                                    "lineHeight": "32px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-lg": [
+                            "16px",
+                            {
+                                    "lineHeight": "24px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "32px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "20px",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-lg": [
+                            "32px",
+                            {
+                                    "lineHeight": "40px",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "title-lg": [
+                            "20px",
+                            {
+                                    "lineHeight": "28px",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "label-md": [
+                            "12px",
+                            {
+                                    "lineHeight": "16px",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "display": [
+                            "48px",
+                            {
+                                    "lineHeight": "56px",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "700"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #f9f9ff;
+            color: #111c2d;
+        }
+        /* Custom scrollbar for data tables */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f0f3ff;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c3c6d5;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #737784;
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md pt-16 pb-24 md:pb-0">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface-dim shadow-sm docked full-width top-0 border-b border-outline-variant dark:border-outline fixed top-0 left-0 w-full z-50 flex justify-between items-center px-md h-16">
+<div class="flex items-center gap-md">
+<span class="font-headline-md text-headline-md font-bold text-primary dark:text-inverse-primary">OpticManager</span>
+</div>
+<div class="flex items-center gap-sm">
+<button class="p-2 rounded-full hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors active:scale-95 text-on-surface-variant dark:text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-title-lg text-title-lg">
+<span class="material-symbols-outlined text-sm">person</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="max-w-[1440px] mx-auto px-md md:px-lg py-lg grid grid-cols-1 md:grid-cols-12 gap-lg h-[calc(100vh-4rem)]">
+<!-- Left Column: Directory & Search (4 cols) -->
+<div class="md:col-span-4 flex flex-col gap-md h-full">
+<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-md flex flex-col h-full">
+<!-- Search Bar -->
+<div class="mb-md">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 transform -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full pl-10 pr-4 py-2 border border-outline-variant rounded-lg focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all text-body-md font-body-md text-on-surface placeholder:text-on-surface-variant" placeholder="Buscar paciente por nombre o ID..." type="text"/>
+</div>
+</div>
+<!-- Patient List (Zebra Striping) -->
+<div class="flex-1 overflow-y-auto rounded-lg border border-outline-variant/50">
+<div class="flex flex-col">
+<!-- Active Patient -->
+<button class="flex items-center justify-between p-3 bg-secondary-container/20 border-l-4 border-primary text-left transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-title-lg text-title-lg">
+                                    MR
+                                </div>
+<div>
+<div class="font-title-lg text-title-lg text-on-surface text-sm">María Rodríguez</div>
+<div class="font-label-md text-label-md text-on-surface-variant">ID: PT-2023-084</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary text-sm">chevron_right</span>
+</button>
+<!-- Inactive Patient -->
+<button class="flex items-center justify-between p-3 bg-surface hover:bg-surface-container-low border-b border-outline-variant/30 text-left transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-high text-on-surface-variant flex items-center justify-center font-title-lg text-title-lg">
+                                    CG
+                                </div>
+<div>
+<div class="font-title-lg text-title-lg text-on-surface text-sm font-medium">Carlos Gómez</div>
+<div class="font-label-md text-label-md text-on-surface-variant">ID: PT-2023-083</div>
+</div>
+</div>
+</button>
+<!-- Inactive Patient -->
+<button class="flex items-center justify-between p-3 bg-surface-bright hover:bg-surface-container-low border-b border-outline-variant/30 text-left transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-high text-on-surface-variant flex items-center justify-center font-title-lg text-title-lg">
+                                    AL
+                                </div>
+<div>
+<div class="font-title-lg text-title-lg text-on-surface text-sm font-medium">Ana López</div>
+<div class="font-label-md text-label-md text-on-surface-variant">ID: PT-2023-082</div>
+</div>
+</div>
+</button>
+</div>
+</div>
+<!-- Action Button -->
+<button class="mt-md w-full py-2 px-4 bg-primary text-on-primary rounded-lg font-label-md text-label-md flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-sm active:scale-95">
+<span class="material-symbols-outlined text-sm" data-icon="person_add">person_add</span>
+                    Nueva Alta de Paciente
+                </button>
+</div>
+</div>
+<!-- Right Column: Patient Details & Exam Canvas (8 cols) -->
+<div class="md:col-span-8 flex flex-col gap-lg overflow-y-auto pr-2 pb-20 md:pb-0">
+<!-- Patient Header Card -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
+<div class="flex items-center gap-md">
+<div class="w-16 h-16 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-headline-lg text-headline-lg">
+                        MR
+                    </div>
+<div>
+<h1 class="font-headline-md text-headline-md text-on-surface">María Rodríguez</h1>
+<div class="flex gap-4 mt-1 font-body-md text-body-md text-on-surface-variant">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">badge</span> PT-2023-084</span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">cake</span> 34 años</span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-sm">phone</span> 555-0198</span>
+</div>
+</div>
+</div>
+<button class="px-4 py-2 border border-outline rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors flex items-center gap-2 font-label-md text-label-md">
+<span class="material-symbols-outlined text-sm" data-icon="edit">edit</span>
+                    Editar Perfil
+                </button>
+</div>
+<!-- Bento Grid Content -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-lg">
+<!-- Rx Card (Left) -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-md flex flex-col h-full">
+<div class="flex justify-between items-center mb-md border-b border-outline-variant/30 pb-sm">
+<h2 class="font-title-lg text-title-lg text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">visibility</span>
+                            Último Examen
+                        </h2>
+<span class="font-label-md text-label-md text-on-surface-variant">15 Oct 2023</span>
+</div>
+<!-- Prescription Grid -->
+<div class="grid grid-cols-5 gap-xs text-center mb-md flex-1">
+<!-- Headers -->
+<div class="col-span-1 text-label-md text-on-surface-variant font-medium py-2"></div>
+<div class="col-span-1 text-label-md text-on-surface-variant font-medium py-2 bg-surface-container-low rounded-t-lg">ESF</div>
+<div class="col-span-1 text-label-md text-on-surface-variant font-medium py-2 bg-surface-container-low rounded-t-lg">CIL</div>
+<div class="col-span-1 text-label-md text-on-surface-variant font-medium py-2 bg-surface-container-low rounded-t-lg">EJE</div>
+<div class="col-span-1 text-label-md text-on-surface-variant font-medium py-2 bg-surface-container-low rounded-t-lg">ADD</div>
+<!-- Right Eye (OD) -->
+<div class="col-span-1 text-body-md font-medium text-on-surface py-3 flex items-center justify-center bg-surface-bright rounded-l-lg border-y border-l border-outline-variant/30">OD</div>
+<div class="col-span-1 py-3 font-display text-lg text-on-surface bg-surface border-y border-outline-variant/30 font-mono tracking-tighter">-2.50</div>
+<div class="col-span-1 py-3 font-display text-lg text-on-surface bg-surface border-y border-outline-variant/30 font-mono tracking-tighter">-0.75</div>
+<div class="col-span-1 py-3 font-display text-lg text-on-surface bg-surface border-y border-outline-variant/30 font-mono tracking-tighter">180°</div>
+<div class="col-span-1 py-3 font-display text-lg text-on-surface bg-surface border-y border-r border-outline-variant/30 font-mono tracking-tighter rounded-r-lg">+1.00</div>
+<!-- Left Eye (OI) -->
+<div class="col-span-1 text-body-md font-medium text-on-surface py-3 flex items-center justify-center bg-surface-bright rounded-l-lg border-b border-l border-outline-variant/30 mt-xs">OI</div>
+<div class="col-span-1 py-3 font-display text-lg text-on-surface bg-surface border-b border-outline-variant/30 font-mono tracking-tighter mt-xs">-2.75</div>
+<div class="col-span-1 py-3 font-display text-lg text-on-surface bg-surface border-b border-outline-variant/30 font-mono tracking-tighter mt-xs">-0.50</div>
+<div class="col-span-1 py-3 font-display text-lg text-on-surface bg-surface border-b border-outline-variant/30 font-mono tracking-tighter mt-xs">175°</div>
+<div class="col-span-1 py-3 font-display text-lg text-on-surface bg-surface border-b border-r border-outline-variant/30 font-mono tracking-tighter rounded-r-lg mt-xs">+1.00</div>
+</div>
+<div class="flex gap-sm mt-auto">
+<div class="bg-surface-container-high px-3 py-1 rounded-full text-label-md font-label-md text-on-surface-variant flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> DIP: 62mm
+                        </div>
+<div class="bg-surface-container-high px-3 py-1 rounded-full text-label-md font-label-md text-on-surface-variant flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span> Altura: 18mm
+                        </div>
+</div>
+<button class="mt-md w-full py-2 px-4 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md flex items-center justify-center gap-2 hover:bg-secondary/90 transition-colors shadow-sm active:scale-95">
+<span class="material-symbols-outlined text-sm" data-icon="add_circle">add_circle</span>
+                        Registrar Examen
+                    </button>
+</div>
+<!-- History Card (Right) -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-md flex flex-col h-full">
+<div class="flex justify-between items-center mb-md border-b border-outline-variant/30 pb-sm">
+<h2 class="font-title-lg text-title-lg text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">shopping_bag</span>
+                            Historial de Compras
+                        </h2>
+</div>
+<div class="flex-1 overflow-y-auto">
+<div class="flex flex-col gap-sm">
+<!-- Order Item -->
+<div class="p-3 border border-outline-variant/50 rounded-lg bg-surface-bright flex flex-col gap-2">
+<div class="flex justify-between items-start">
+<span class="font-label-md text-label-md text-on-surface-variant">Orden #4928</span>
+<span class="px-2 py-1 bg-tertiary-container/20 text-tertiary font-label-md text-label-md rounded-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">check_circle</span> Entregado
+                                    </span>
+</div>
+<div class="font-body-md text-body-md text-on-surface font-medium">Armazón Ray-Ban Clubmaster</div>
+<div class="font-body-md text-body-md text-on-surface-variant text-sm">Lentes Monofocales Antirreflejante Premium</div>
+<div class="flex justify-between items-center mt-1">
+<span class="font-label-md text-label-md text-on-surface-variant">16 Oct 2023</span>
+<span class="font-title-lg text-title-lg text-primary text-sm">$3,450.00</span>
+</div>
+</div>
+<!-- Order Item -->
+<div class="p-3 border border-outline-variant/50 rounded-lg bg-surface flex flex-col gap-2 opacity-70">
+<div class="flex justify-between items-start">
+<span class="font-label-md text-label-md text-on-surface-variant">Orden #3102</span>
+<span class="px-2 py-1 bg-surface-container-high text-on-surface-variant font-label-md text-label-md rounded-md flex items-center gap-1">
+                                        Entregado
+                                    </span>
+</div>
+<div class="font-body-md text-body-md text-on-surface font-medium">Lentes de Contacto Acuvue Oasys</div>
+<div class="font-body-md text-body-md text-on-surface-variant text-sm">Caja 6 lentes (Mensual)</div>
+<div class="flex justify-between items-center mt-1">
+<span class="font-label-md text-label-md text-on-surface-variant">12 Mar 2022</span>
+<span class="font-title-lg text-title-lg text-primary text-sm">$1,200.00</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden bg-surface dark:bg-surface-dim shadow-lg docked full-width bottom-0 rounded-t-xl border-t border-outline-variant dark:border-outline fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-sm pb-safe">
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 hover:bg-surface-variant dark:hover:bg-on-surface-variant/10 active:scale-90 transition-all">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 hover:bg-surface-variant dark:hover:bg-on-surface-variant/10 active:scale-90 transition-all">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+<span class="font-label-md text-label-md">Sales</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 hover:bg-surface-variant dark:hover:bg-on-surface-variant/10 active:scale-90 transition-all">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+<span class="font-label-md text-label-md">Inventory</span>
+</button>
+<button class="flex flex-col items-center justify-center bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-full px-4 py-1 hover:bg-surface-variant dark:hover:bg-on-surface-variant/10 active:scale-90 transition-all">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label-md text-label-md">Patients</span>
+</button>
+</nav>
+</body></html>

@@ -405,6 +405,29 @@ export let MOCK_CLINICAL_EXAMS = [
   }
 ]
 
+export let MOCK_LENS_MATERIALS = [
+  { id: 'mat-1', name: 'Resina Básica CR-39', price: 350.00 },
+  { id: 'mat-2', name: 'Policarbonato (Resistente a impactos)', price: 650.00 },
+  { id: 'mat-3', name: 'Alto Índice 1.67 (Extra delgada)', price: 1290.00 },
+  { id: 'mat-4', name: 'Lente de Contacto (Par)', price: 800.00 }
+]
+
+export let MOCK_LENS_TREATMENTS = [
+  { id: 'treat-1', name: 'Antirreflejante Básico', price: 250.00 },
+  { id: 'treat-2', name: 'Filtro Luz Azul (Celular/Computadora)', price: 450.00 },
+  { id: 'treat-3', name: 'Fotocromático Transitions (Cambio con sol)', price: 950.00 },
+  { id: 'treat-4', name: 'Tratamiento Hidrofóbico (Anti-empañante)', price: 200.00 },
+  { id: 'treat-5', name: 'Espejado Estético (Sol)', price: 400.00 }
+]
+
+export interface MockSaleItemTreatment {
+  sale_item_id: string
+  treatment_id: string
+  price: number
+}
+
+export let MOCK_SALE_ITEM_TREATMENTS: MockSaleItemTreatment[] = []
+
 export function addMockCustomer(profile: any, customerProfile: any, clinicalExam?: any) {
   MOCK_PROFILES = [...MOCK_PROFILES, profile]
   MOCK_CUSTOMER_PROFILES = [...MOCK_CUSTOMER_PROFILES, customerProfile]
@@ -451,4 +474,50 @@ export function getMockWishlist(userId: string): string[] {
     .filter(w => w.user_id === userId)
     .map(w => w.product_id)
 }
+
+export interface MockPaymentInstallment {
+  id: string
+  sale_id: string
+  installment_number: number
+  due_date: string
+  amount: number
+  status: 'pending' | 'paid'
+  payment_date?: string
+  created_at: string
+}
+
+export interface MockNotification {
+  id: string
+  user_id: string
+  title: string
+  message: string
+  type: 'general' | 'payment_reminder' | 'lens_request'
+  is_read: boolean
+  created_at: string
+}
+
+export interface MockLensRequest {
+  id: string
+  customer_id: string
+  frame_id?: string
+  lens_material_id?: string
+  treatment_ids: string[]
+  notes?: string
+  status: 'pending' | 'contacted' | 'completed'
+  created_at: string
+}
+
+export let MOCK_PAYMENT_INSTALLMENTS: MockPaymentInstallment[] = []
+export let MOCK_NOTIFICATIONS: MockNotification[] = [
+  {
+    id: 'n1',
+    user_id: 'cust-1',
+    title: 'Bienvenido a Optica Rayo',
+    message: 'Gracias por registrarte en nuestro portal de salud visual.',
+    type: 'general',
+    is_read: false,
+    created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+  }
+]
+export let MOCK_LENS_REQUESTS: MockLensRequest[] = []
 

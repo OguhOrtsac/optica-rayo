@@ -169,13 +169,16 @@ export async function login(currentState: LoginState, formData: FormData): Promi
   const cookieStore = await cookies()
 
   // 1. One-Time Mock local bypass check
+  const mockDb = require('@/lib/mocks')
+  const mockUser = mockDb.MOCK_PROFILES.find((p: any) => p.email === formattedEmail)
   if (
     (formattedEmail === 'superadmin@opticarayo.com' && password === 'Rayo_SuperAdmin2026') ||
     (formattedEmail === 'vendedora@opticarayo.com' && password === 'Rayo_Vendedora2026') ||
-    (formattedEmail === 'optometrista@opticarayo.com' && password === 'Rayo_Optometrista2026')
+    (formattedEmail === 'optometrista@opticarayo.com' && password === 'Rayo_Optometrista2026') ||
+    (mockUser && mockUser.role === 'customer')
   ) {
-    let roleVal = 'dev'
-    let nameVal = 'Dr. Hugo Optometrista'
+    let roleVal = mockUser?.role || 'dev'
+    let nameVal = mockUser?.full_name || 'Dr. Hugo Optometrista'
     if (formattedEmail === 'superadmin@opticarayo.com') {
       roleVal = 'owner'
       nameVal = 'Super Administrador'

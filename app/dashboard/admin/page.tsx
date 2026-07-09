@@ -1,9 +1,31 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import { getProducts, getSales } from '@/lib/services'
+import { 
+  getProducts, 
+  getSales, 
+  getLensRequests, 
+  updateLensRequestStatus, 
+  getMyNotifications, 
+  markNotificationRead 
+} from '@/lib/services'
 import { Database } from '@/types/database.types'
+import { 
+  TrendingUp, 
+  Wallet, 
+  AlertTriangle, 
+  Activity, 
+  ArrowUp, 
+  Plus, 
+  UserPlus, 
+  TrendingDown,
+  ChevronRight,
+  MessageSquare,
+  Check,
+  Bell,
+  Clock
+} from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Sale = Database['public']['Tables']['sales']['Row']
@@ -12,17 +34,23 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState<Product[]>([])
   const [sales, setSales] = useState<(Sale & { customer_name?: string; seller_name?: string })[]>([])
+  const [lensRequests, setLensRequests] = useState<any[]>([])
+  const [notifications, setNotifications] = useState<any[]>([])
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loadAllData = async () => {
     try {
       setLoading(true)
-      const [productsData, salesData] = await Promise.all([
+      const [productsData, salesData, requestsData, notificationsData] = await Promise.all([
         getProducts(),
-        getSales()
+        getSales(),
+        getLensRequests(),
+        getMyNotifications()
       ])
       setProducts(productsData)
       setSales(salesData)
+      setLensRequests(requestsData)
+      setNotifications(notificationsData)
     } catch (e) {
       showFeedback('error', 'Error al cargar los datos del panel.')
     } finally {
@@ -39,6 +67,23 @@ export default function AdminDashboard() {
     setTimeout(() => setFeedbackMsg(null), 4000)
   }
 
+  const handleUpdateStatus = async (id: string, status: 'pending' | 'contacted' | 'completed') => {
+    const ok = await updateLensRequestStatus(id, status)
+    if (ok) {
+      showFeedback('success', 'Solicitud actualizada correctamente.')
+      loadAllData()
+    } else {
+      showFeedback('error', 'No se pudo actualizar la solicitud.')
+    }
+  }
+
+  const handleMarkNotificationRead = async (id: string) => {
+    const ok = await markNotificationRead(id)
+    if (ok) {
+      loadAllData()
+    }
+  }
+
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
@@ -46,185 +91,391 @@ export default function AdminDashboard() {
     }).format(price)
   }
 
-  // Business calculations
-  const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0)
-  const totalPaid = sales.reduce((sum, s) => sum + (s.paid_amount !== undefined ? s.paid_amount : s.total), 0)
-  const totalPending = sales.reduce((sum, s) => sum + (s.pending_balance !== undefined ? s.pending_balance : 0), 0)
-  const lowStockCount = products.filter(p => p.stock < 5).length
+  // Calculate Today's Stats
+  const todayStats = useMemo(() => {
+    const todayStr = new Date().toDateString()
+    const todaySales = sales.filter(s => new Date(s.created_at).toDateString() === todayStr)
+    const total = todaySales.reduce((sum, s) => sum + s.total, 0)
+    
+    // Compare with yesterday
+    const yesterdayStr = new Date(Date.now() - 86400000).toDateString()
+    const yesterdaySales = sales.filter(s => new Date(s.created_at).toDateString() === yesterdayStr)
+    const yesterdayTotal = yesterdaySales.reduce((sum, s) => sum + s.total, 0)
+    
+    let dayDiffPct = 0
+    if (yesterdayTotal > 0) {
+      dayDiffPct = Math.round(((total - yesterdayTotal) / yesterdayTotal) * 100)
+    }
+    
+    return {
+      total,
+      count: todaySales.length,
+      diffPct: dayDiffPct
+    }
+  }, [sales])
+
+  // Calculate Monthly Stats
+  const monthlyStats = useMemo(() => {
+    const thisMonth = new Date().getMonth()
+    const thisYear = new Date().getFullYear()
+    const monthSales = sales.filter(s => {
+      const d = new Date(s.created_at)
+      return d.getMonth() === thisMonth && d.getFullYear() === thisYear
+    })
+    const total = monthSales.reduce((sum, s) => sum + s.total, 0)
+    
+    // Compare with last month
+    const lastMonth = thisMonth === 0 ? 11 : thisMonth - 1
+    const lastMonthYear = thisMonth === 0 ? thisYear - 1 : thisYear
+    const lastMonthSales = sales.filter(s => {
+      const d = new Date(s.created_at)
+      return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear
+    })
+    const lastMonthTotal = lastMonthSales.reduce((sum, s) => sum + s.total, 0)
+    
+    let monthDiffPct = 0
+    if (lastMonthTotal > 0) {
+      monthDiffPct = Math.round(((total - lastMonthTotal) / lastMonthTotal) * 100)
+    }
+    
+    return {
+      total,
+      diffPct: monthDiffPct
+    }
+  }, [sales])
+
+  // Get Pending Balances
+  const pendingCollections = useMemo(() => {
+    return sales
+      .filter(s => (s.pending_balance !== undefined ? s.pending_balance : 0) > 0)
+      .slice(0, 5)
+  }, [sales])
 
   return (
-    <main className="min-h-screen bg-slate-955 text-slate-100 p-4 md:p-8 space-y-8 relative pb-24">
-      {/* Glow backgrounds */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
+      
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-5">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Resumen General</h1>
+          <p className="text-sm text-[#434653] mt-1 font-medium">Bienvenido, aquí está el estado de la óptica hoy.</p>
+        </div>
+        <div className="flex gap-3 w-full md:w-auto">
+          <Link 
+            href="/dashboard/seller"
+            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl font-bold text-xs shadow-sm transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Nueva Venta
+          </Link>
+          <Link 
+            href="/customers/new"
+            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 border border-[#cbd5e1] bg-white hover:bg-[#dee8ff]/30 text-[#00357f] rounded-xl font-bold text-xs shadow-sm transition-colors cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4" />
+            Nuevo Cliente
+          </Link>
+        </div>
+      </div>
 
-      <div className="max-w-7xl mx-auto space-y-6 relative">
-        
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 border-b border-slate-900 pb-6">
-          <div className="space-y-1">
-            <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
-              Panel del Dueño
-            </h1>
-            <p className="text-xs text-slate-500 font-medium">
-              Gestión integral de clientes, catálogo de inventario, finanzas y personal de la óptica.
-            </p>
-          </div>
+      {feedbackMsg && (
+        <div className={`p-4 rounded-xl text-xs font-bold border ${
+          feedbackMsg.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-600'
+        }`}>
+          {feedbackMsg.text}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
+          <p className="text-xs text-[#737784] font-bold">Recuperando información...</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
           
-          {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full lg:w-auto">
-            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 text-center min-w-[120px]">
-              <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Ventas</span>
-              <span className="text-sm font-black text-cyan-400 mt-1 block">{sales.length} trans.</span>
-            </div>
+          {/* Sales Summary Bento Column (8 cols) */}
+          <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
             
-            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 text-center min-w-[120px]">
-              <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Cobrado (Caja)</span>
-              <span className="text-sm font-black text-emerald-400 mt-1 block">{formatPrice(totalPaid)}</span>
-            </div>
-            
-            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 text-center min-w-[120px]">
-              <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Por Cobrar</span>
-              <span className={`text-sm font-black mt-1 block ${totalPending > 0 ? 'text-rose-455' : 'text-slate-400'}`}>
-                {formatPrice(totalPending)}
-              </span>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-3 text-center min-w-[120px]">
-              <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider">Alerta Stock</span>
-              <span className={`text-sm font-black mt-1 block ${lowStockCount > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
-                {lowStockCount} SKU
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Feedback message */}
-        {feedbackMsg && (
-          <div className={`p-4 rounded-xl text-xs font-bold border animate-in slide-in-from-top-2 ${
-            feedbackMsg.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-              : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-          }`}>
-            {feedbackMsg.text}
-          </div>
-        )}
-
-        {/* Premium Animated Navigation Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { id: 'summary', label: 'Resumen (General)', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10a2 2 0 01-2 2h-2a2 2 0 01-2-2zm9 0v-8a2 2 0 00-2-2h-2a2 2 0 00-2 2v8a2 2 0 002 2h2a2 2 0 002-2z', href: '/dashboard/admin', active: true },
-            { id: 'customers', label: 'Clientes (Pacientes)', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z', href: '/dashboard/admin/customers', active: false },
-            { id: 'products', label: 'Catálogo (Productos)', icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', href: '/dashboard/admin/products', active: false },
-            { id: 'users', label: 'Personal (Usuarios)', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', href: '/dashboard/admin/users', active: false }
-          ].map(tab => (
-            <Link
-              key={tab.id}
-              href={tab.href}
-              className={`flex flex-col items-center justify-center p-5 rounded-2xl border text-center transition-all duration-300 transform cursor-pointer ${
-                tab.active
-                  ? 'bg-gradient-to-tr from-cyan-500/15 to-indigo-500/15 border-cyan-500 text-cyan-400 scale-[1.03] shadow-lg shadow-cyan-550/10'
-                  : 'bg-slate-900/40 border-slate-900 hover:border-slate-800 hover:scale-[1.02] hover:-translate-y-0.5 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <svg className="w-6 h-6 mb-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} />
-              </svg>
-              <span className="text-xs font-bold tracking-wide">{tab.label}</span>
-            </Link>
-          ))}
-        </div>
-
-        {/* Loading Spinner */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-cyan-550 border-t-transparent" />
-            <p className="text-xs text-slate-500">Recuperando información...</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-200">
-            {/* Inventory stock status card */}
-            <div className="bg-slate-900/30 border border-slate-900 rounded-2xl p-6 space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Stock del Inventario</h2>
-                <span className="text-[10px] text-slate-500 font-bold">{products.length} SKU</span>
+            {/* Sales of the Day */}
+            <div className="bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ventas del Día</p>
+                  <h2 className="text-3xl font-black text-[#111c2d] mt-2 font-mono">{formatPrice(todayStats.total)}</h2>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-[#49da9f]/10 flex items-center justify-center text-[#00422b]">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
               </div>
-              <div className="overflow-y-auto max-h-[350px] pr-2 space-y-2.5">
-                {products.map(p => (
-                  <div key={p.id} className="flex justify-between items-center bg-slate-950/40 border border-slate-900 px-3.5 py-2.5 rounded-xl text-xs">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold text-slate-300 truncate">{p.name}</p>
-                      <p className="text-[10px] text-slate-500 capitalize">
-                        {p.category === 'frames' && 'Armazón'}
-                        {p.category === 'lenses' && 'Mica'}
-                        {p.category === 'contact_lenses' && 'Lente de Contacto'}
-                        {p.category === 'accessories' && 'Accesorio'}
+              <div className="mt-6 flex items-center gap-1">
+                {todayStats.diffPct >= 0 ? (
+                  <span className="text-xs font-bold text-[#00422b] flex items-center gap-0.5">
+                    <ArrowUp className="w-3.5 h-3.5" /> +{todayStats.diffPct}% vs ayer
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-[#ba1a1a] flex items-center gap-0.5">
+                    <TrendingDown className="w-3.5 h-3.5" /> {todayStats.diffPct}% vs ayer
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Sales of the Month */}
+            <div className="bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ventas del Mes</p>
+                  <h2 className="text-3xl font-black text-[#111c2d] mt-2 font-mono">{formatPrice(monthlyStats.total)}</h2>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-[#dee8ff] flex items-center justify-center text-[#00357f]">
+                  <Wallet className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="mt-6 flex items-center gap-1">
+                {monthlyStats.diffPct >= 0 ? (
+                  <span className="text-xs font-bold text-[#00422b] flex items-center gap-0.5">
+                    <ArrowUp className="w-3.5 h-3.5" /> +{monthlyStats.diffPct}% vs mes anterior
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-[#ba1a1a] flex items-center gap-0.5">
+                    <TrendingDown className="w-3.5 h-3.5" /> {monthlyStats.diffPct}% vs mes anterior
+                  </span>
+                )}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Alerts / Cobranza Column (4 cols) */}
+          <div className="md:col-span-4 bg-[#ffdad6] p-6 rounded-2xl border border-[#ffdad6]/40 shadow-sm flex flex-col justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle className="w-5 h-5 text-[#ba1a1a]" />
+                <h3 className="text-sm font-extrabold text-[#93000a] uppercase tracking-wider">Cobranza Pendiente</h3>
+              </div>
+              
+              <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
+                {pendingCollections.length === 0 ? (
+                  <p className="text-xs text-[#93000a]/80 font-bold py-2">Sin adeudos pendientes hoy.</p>
+                ) : (
+                  pendingCollections.map(s => (
+                    <div key={s.id} className="bg-white p-3 rounded-xl border border-[#cbd5e1]/45 flex justify-between items-center shadow-sm">
+                      <div className="text-left min-w-0">
+                        <p className="text-xs font-bold text-[#111c2d] truncate">{s.customer_name || 'Cliente'}</p>
+                        <p className="text-[9px] text-[#737784] font-bold uppercase tracking-wider mt-0.5">
+                          {s.payment_method === 'transfer' ? 'Transferencia' : s.payment_method === 'card' ? 'Tarjeta' : 'Efectivo'}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-black text-[#ba1a1a] font-mono">{formatPrice(s.pending_balance)}</p>
+                        <p className="text-[8px] text-[#ba1a1a] font-black uppercase tracking-widest mt-0.5">Adeudo</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <Link 
+              href="/dashboard/admin/customers"
+              className="w-full py-2.5 bg-[#ba1a1a] hover:bg-[#93000a] text-white text-center rounded-xl font-bold text-xs transition-colors shadow-sm block uppercase"
+            >
+              Ver todos los adeudos
+            </Link>
+          </div>
+
+          {/* Notifications Panel (6 cols) */}
+          <div className="md:col-span-6 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-[#cbd5e1]/40 pb-3">
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] flex items-center gap-1.5">
+                <Bell className="w-4 h-4" /> Alertas del Sistema
+              </h3>
+              {notifications.filter(n => !n.is_read).length > 0 && (
+                <span className="bg-[#ba1a1a] text-white font-black text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                  {notifications.filter(n => !n.is_read).length} nuevas
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-2.5 overflow-y-auto max-h-[300px] pr-1">
+              {notifications.length === 0 ? (
+                <p className="text-xs text-[#737784] font-semibold py-6 text-center">Sin notificaciones pendientes.</p>
+              ) : (
+                notifications.map(n => (
+                  <div 
+                    key={n.id} 
+                    className={`p-3 rounded-xl border transition-all text-xs flex justify-between items-start gap-3 ${
+                      n.is_read ? 'bg-white border-[#cbd5e1]/40 opacity-70' : 'bg-[#f0f3ff] border-[#b0c6ff]/45 shadow-sm'
+                    }`}
+                  >
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        {n.type === 'payment_reminder' ? (
+                          <AlertTriangle className="w-3.5 h-3.5 text-[#ba1a1a]" />
+                        ) : (
+                          <Bell className="w-3.5 h-3.5 text-[#00357f]" />
+                        )}
+                        <span className="font-bold text-[#111c2d]">{n.title}</span>
+                      </div>
+                      <p className="text-[11px] text-[#434653] font-medium leading-relaxed">{n.message}</p>
+                      <p className="text-[9px] text-[#737784] font-mono flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(n.created_at).toLocaleDateString('es-MX')} {new Date(n.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                    <div className="text-right pl-3 shrink-0">
-                      <p className="font-semibold text-slate-200">{formatPrice(p.price)}</p>
-                      {p.stock <= 3 ? (
-                        <span className="inline-block mt-0.5 text-[8px] font-black px-1.5 py-0.5 rounded bg-rose-500 text-slate-950 animate-pulse border border-rose-600">
-                          Stock Crítico: Solicitar Proveedor ({p.stock} pz)
-                        </span>
-                      ) : (
-                        <span className={`inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                          p.stock < 5 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-900 text-slate-400'
-                        }`}>
-                          {p.stock} pz
-                        </span>
-                      )}
-                    </div>
+                    {!n.is_read && (
+                      <button 
+                        onClick={() => handleMarkNotificationRead(n.id)}
+                        className="p-1 rounded bg-white hover:bg-[#dee8ff] border border-[#cbd5e1] text-[#00357f] hover:text-[#004aad] transition-colors cursor-pointer"
+                        title="Marcar como leído"
+                      >
+                        <Check className="w-3.5 h-3.5 font-bold" />
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Sales Ledger Card */}
-            <div className="lg:col-span-2 bg-slate-900/30 border border-slate-900 rounded-2xl p-6 space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Historial de Transacciones</h2>
-                <span className="text-[10px] text-slate-500 font-bold">{sales.length} Ventas</span>
-              </div>
-              <div className="overflow-y-auto max-h-[350px] pr-2">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-900 text-slate-500 uppercase font-bold tracking-wider text-[10px]">
-                      <th className="py-2.5 px-3">Fecha</th>
-                      <th className="py-2.5 px-3">Cliente</th>
-                      <th className="py-2.5 px-3 text-right">Total</th>
-                      <th className="py-2.5 px-3 text-right">Cobrado</th>
-                      <th className="py-2.5 px-3 text-right">Pendiente</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-950">
-                    {sales.map((s) => {
-                      const pending = s.pending_balance !== undefined ? s.pending_balance : 0
-                      const paid = s.paid_amount !== undefined ? s.paid_amount : s.total
-                      return (
-                        <tr key={s.id} className="hover:bg-slate-900/10 transition-colors">
-                          <td className="py-2.5 px-3 text-slate-500">{new Date(s.created_at).toLocaleDateString('es-MX')}</td>
-                          <td className="py-2.5 px-3 font-semibold text-slate-350">{s.customer_name || 'Anónimo'}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-300">{formatPrice(s.total)}</td>
-                          <td className="py-2.5 px-3 text-right text-emerald-500 font-semibold">{formatPrice(paid)}</td>
-                          <td className="py-2.5 px-3 text-right">
-                            {pending > 0 ? (
-                              <span className="text-rose-455 font-bold">{formatPrice(pending)}</span>
-                            ) : (
-                              <span className="text-slate-500">Liquidado</span>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                ))
+              )}
             </div>
           </div>
-        )}
 
-      </div>
+          {/* Lens Builder Requests Panel (6 cols) */}
+          <div className="md:col-span-6 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-[#cbd5e1]/40 pb-3">
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] flex items-center gap-1.5">
+                <MessageSquare className="w-4 h-4" /> Solicitudes de Lentes Armados
+              </h3>
+              {lensRequests.filter(r => r.status === 'pending').length > 0 && (
+                <span className="bg-[#00357f] text-white font-black text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  {lensRequests.filter(r => r.status === 'pending').length} pendientes
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-2.5 overflow-y-auto max-h-[300px] pr-1">
+              {lensRequests.length === 0 ? (
+                <p className="text-xs text-[#737784] font-semibold py-6 text-center">Sin solicitudes de cotización.</p>
+              ) : (
+                lensRequests.map(req => {
+                  const customerPhone = req.customer_profiles?.phone || req.customer?.phone || ''
+                  const customerName = req.customer?.full_name || 'Cliente'
+                  const frameName = req.frame?.name || 'No seleccionado'
+                  const materialName = req.lens_material?.name || 'No seleccionado'
+                  
+                  // Construct pre-filled WhatsApp link
+                  const cleanPhone = customerPhone.replace(/\D/g, '')
+                  const waNumber = cleanPhone.startsWith('52') ? cleanPhone : `52${cleanPhone}`
+                  const waMessage = encodeURIComponent(
+                    `Hola *${customerName}*, recibimos tu diseño de lentes en el portal de *Optica Rayo* 🕶️.\n\n` +
+                    `- Armazón: *${frameName}*\n` +
+                    `- Mica: *${materialName}*\n` +
+                    `${req.notes ? `- Notas: _"${req.notes}"_\n` : ''}\n` +
+                    `¿Te gustaría que agendemos tu visita para confirmar la graduación y cerrar tu orden?`
+                  )
+                  const waUrl = `https://wa.me/${waNumber}?text=${waMessage}`
+
+                  return (
+                    <div 
+                      key={req.id} 
+                      className={`p-3 rounded-xl border transition-all text-xs space-y-2.5 ${
+                        req.status === 'pending' ? 'bg-[#f0f3ff] border-[#b0c6ff]/45 shadow-sm' : 'bg-white border-[#cbd5e1]/40 opacity-75'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-[#111c2d]">{customerName}</p>
+                          <span className="text-[9px] text-[#737784] font-mono">Tel: {customerPhone || 'Sin teléfono'}</span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                          req.status === 'pending' ? 'bg-[#dee8ff] text-[#00357f]' : req.status === 'contacted' ? 'bg-amber-100 text-amber-800' : 'bg-[#e2f9ee] text-[#00422b]'
+                        }`}>
+                          {req.status === 'pending' ? 'Pendiente' : req.status === 'contacted' ? 'Contactado' : 'Completado'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white border border-[#cbd5e1]/20 p-2 rounded-lg text-[10px] space-y-1">
+                        <p className="text-[#434653]"><strong className="text-[#111c2d]">Armazón:</strong> {frameName}</p>
+                        <p className="text-[#434653]"><strong className="text-[#111c2d]">Mica:</strong> {materialName}</p>
+                        {req.notes && (
+                          <p className="text-[#434653] italic"><strong className="text-[#111c2d] not-italic">Notas:</strong> "{req.notes}"</p>
+                        )}
+                      </div>
+
+                      {req.status === 'pending' && (
+                        <div className="flex gap-2">
+                          <a 
+                            href={customerPhone ? waUrl : '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => handleUpdateStatus(req.id, 'contacted')}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[10px] font-bold text-white transition-colors cursor-pointer ${
+                              customerPhone ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-600/50 cursor-not-allowed'
+                            }`}
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            Contactar por WhatsApp
+                          </a>
+                          <button
+                            onClick={() => handleUpdateStatus(req.id, 'completed')}
+                            className="px-3 py-1.5 rounded-lg border border-[#cbd5e1] hover:bg-[#dee8ff]/30 text-[#00357f] text-[10px] font-bold transition-colors cursor-pointer"
+                          >
+                            Cerrar Orden
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Recent Activity Section (12 cols) */}
+          <div className="md:col-span-12 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left">
+            <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] mb-4">Actividad Reciente</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#cbd5e1]/65 text-[#737784] font-black uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-4">Tipo</th>
+                    <th className="py-3 px-4">Cliente</th>
+                    <th className="py-3 px-4">Detalle</th>
+                    <th className="py-3 px-4">Fecha/Hora</th>
+                    <th className="py-3 px-4 text-right">Monto</th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs font-medium">
+                  {sales.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-[#737784] font-bold">Sin actividad registrada.</td>
+                    </tr>
+                  ) : (
+                    sales.slice(0, 5).map(s => (
+                      <tr key={s.id} className="border-b border-[#cbd5e1]/30 hover:bg-[#f9f9ff] transition-colors">
+                        <td className="py-3.5 px-4">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#dee8ff] text-[#00357f] font-bold text-[10px]">
+                            <Activity className="w-3 h-3" /> Venta
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-[#111c2d] font-bold">{s.customer_name || 'Cliente'}</td>
+                        <td className="py-3.5 px-4 text-[#434653]">Venta registrada por {s.seller_name || 'Personal'}</td>
+                        <td className="py-3.5 px-4 text-[#737784] text-xs font-mono">
+                          {new Date(s.created_at).toLocaleDateString('es-MX')} {new Date(s.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="py-3.5 px-4 text-right text-[#00357f] font-black font-mono">{formatPrice(s.total)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
     </main>
   )
 }

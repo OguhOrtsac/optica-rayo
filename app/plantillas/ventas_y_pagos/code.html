@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>OpticManager - Ventas y Pagos</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Theme Config -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-highest": "#d8e3fb",
+                    "on-tertiary-container": "#49da9f",
+                    "on-surface-variant": "#434653",
+                    "surface-variant": "#d8e3fb",
+                    "secondary-fixed": "#c4e7ff",
+                    "surface": "#f9f9ff",
+                    "tertiary-fixed": "#6ffbbe",
+                    "on-secondary": "#ffffff",
+                    "surface-bright": "#f9f9ff",
+                    "on-surface": "#111c2d",
+                    "inverse-surface": "#263143",
+                    "primary-fixed-dim": "#b0c6ff",
+                    "tertiary-fixed-dim": "#4edea3",
+                    "surface-tint": "#215abd",
+                    "error": "#ba1a1a",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary": "#ffffff",
+                    "secondary": "#00668a",
+                    "on-primary-fixed": "#001945",
+                    "outline": "#737784",
+                    "error-container": "#ffdad6",
+                    "on-secondary-fixed-variant": "#004c69",
+                    "outline-variant": "#c3c6d5",
+                    "on-primary-fixed-variant": "#00429b",
+                    "tertiary-container": "#005c3e",
+                    "on-tertiary": "#ffffff",
+                    "on-tertiary-fixed": "#002113",
+                    "surface-dim": "#cfdaf2",
+                    "secondary-fixed-dim": "#7bd0ff",
+                    "on-secondary-fixed": "#001e2c",
+                    "on-error": "#ffffff",
+                    "on-primary-container": "#a9c1ff",
+                    "on-tertiary-fixed-variant": "#005236",
+                    "primary-container": "#004aad",
+                    "primary-fixed": "#d9e2ff",
+                    "on-secondary-container": "#004d6a",
+                    "secondary-container": "#40c2fd",
+                    "surface-container-low": "#f0f3ff",
+                    "on-error-container": "#93000a",
+                    "on-background": "#111c2d",
+                    "background": "#f9f9ff",
+                    "surface-container-high": "#dee8ff",
+                    "inverse-on-surface": "#ecf1ff",
+                    "tertiary": "#00422b",
+                    "surface-container": "#e7eeff",
+                    "inverse-primary": "#b0c6ff",
+                    "primary": "#00357f"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "base": "4px",
+                    "container-max": "1440px",
+                    "sm": "8px",
+                    "lg": "24px",
+                    "gutter": "24px",
+                    "md": "16px",
+                    "xs": "4px",
+                    "xl": "32px"
+            },
+            "fontFamily": {
+                    "headline-lg-mobile": ["Inter"],
+                    "body-lg": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "body-md": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "title-lg": ["Inter"],
+                    "label-md": ["Inter"],
+                    "display": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "title-lg": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                    "display": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+            }
+          },
+        }
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #f9f9ff; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-background text-on-background antialiased min-h-screen flex flex-col pt-16 md:pb-0 pb-20">
+<!-- TopAppBar (Web) -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-md h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant dark:border-outline shadow-sm">
+<div class="flex items-center gap-lg">
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-inverse-primary tracking-tight">OpticManager</h1>
+<!-- Web Navigation Links based on JSON labels -->
+<nav class="hidden md:flex items-center gap-sm">
+<a class="px-md py-sm rounded-full font-label-md text-label-md text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors flex items-center gap-xs" href="#">
+<span class="material-symbols-outlined text-[18px]">dashboard</span>
+                    Dashboard
+                </a>
+<a class="px-md py-sm rounded-full font-label-md text-label-md text-primary dark:text-inverse-primary bg-secondary-container/20 flex items-center gap-xs pointer-events-none" href="#">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">payments</span>
+                    Sales
+                </a>
+<a class="px-md py-sm rounded-full font-label-md text-label-md text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors flex items-center gap-xs" href="#">
+<span class="material-symbols-outlined text-[18px]">inventory_2</span>
+                    Inventory
+                </a>
+<a class="px-md py-sm rounded-full font-label-md text-label-md text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors flex items-center gap-xs" href="#">
+<span class="material-symbols-outlined text-[18px]">group</span>
+                    Patients
+                </a>
+</nav>
+</div>
+<div class="flex items-center gap-sm">
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-title-lg text-title-lg overflow-hidden border border-outline-variant">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="A close-up, high-key lighting portrait of a professional clinic administrator in a clean, modern medical setting. White coat, neutral background, crisp clinical aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCFJY8eXy8q-DqjtRIM3qYvEsossJMUFqsr0pZrCk-IgA-S9WeKRZg4iLou0_FZRLcQIpZTj-yzuwtq_8vdB2p0W-gtahRiAXHZjxWgUWatEXcdSahhPGr8KMEsMsbDnKjSCgcOlc4Q5XraF3k3vlmGkP8lcMOyOZ91gX709GdSug66JhfmqK81sBw9MnFIMGUmV1wAtOtv3sVMCK84klNSKSgGvGwZSJkLLt0YDO4u_TVHGJSfqX4yGw"/>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="flex-1 w-full max-w-container-max mx-auto p-md lg:p-lg grid grid-cols-1 lg:grid-cols-12 gap-lg items-start">
+<!-- Header Area -->
+<div class="col-span-1 lg:col-span-12 flex flex-col md:flex-row md:items-end justify-between gap-sm mb-sm">
+<div>
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">Cierre de Venta</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1">Paciente: <strong class="text-on-surface">María González Pérez</strong> • Ref: #VT-8842</p>
+</div>
+<button class="bg-surface-container border border-outline-variant text-on-surface px-md py-sm rounded-lg font-label-md text-label-md hover:bg-surface-container-high transition-colors flex items-center justify-center gap-xs w-full md:w-auto">
+<span class="material-symbols-outlined text-[18px]">print</span>
+                Imprimir Presupuesto
+            </button>
+</div>
+<!-- Left Column: Cart Summary (Bento Card) -->
+<div class="col-span-1 lg:col-span-4 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
+<div class="p-md border-b border-outline-variant bg-surface flex justify-between items-center">
+<h3 class="font-title-lg text-title-lg text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">shopping_cart</span>
+                    Carrito Actual
+                </h3>
+<span class="bg-primary-container text-on-primary-container px-2 py-1 rounded-full font-label-md text-label-md">2 Items</span>
+</div>
+<div class="p-md flex-1 flex flex-col gap-sm overflow-y-auto max-h-[400px]">
+<!-- Item 1 -->
+<div class="flex items-start justify-between gap-sm p-sm rounded-lg hover:bg-surface-container-low transition-colors group">
+<div class="flex items-start gap-sm">
+<div class="w-12 h-12 rounded bg-surface-variant flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant">eyeglasses</span>
+</div>
+<div>
+<p class="font-body-md text-body-md font-semibold text-on-surface leading-tight">Armazón Ray-Ban RX5154</p>
+<p class="font-label-md text-label-md text-on-surface-variant mt-1">Color: Tortoise • Talla: 51</p>
+</div>
+</div>
+<p class="font-body-md text-body-md font-semibold text-on-surface">$1,450.00</p>
+</div>
+<hr class="border-outline-variant border-t"/>
+<!-- Item 2 -->
+<div class="flex items-start justify-between gap-sm p-sm rounded-lg hover:bg-surface-container-low transition-colors group">
+<div class="flex items-start gap-sm">
+<div class="w-12 h-12 rounded bg-surface-variant flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-on-surface-variant">visibility</span>
+</div>
+<div>
+<p class="font-body-md text-body-md font-semibold text-on-surface leading-tight">Lentes Progresivos Essilor</p>
+<p class="font-label-md text-label-md text-on-surface-variant mt-1">Tratamiento: Antirreflejante Crizal</p>
+</div>
+</div>
+<p class="font-body-md text-body-md font-semibold text-on-surface">$3,200.00</p>
+</div>
+</div>
+<!-- Totals Footer -->
+<div class="p-md bg-surface-container-low border-t border-outline-variant">
+<div class="flex justify-between items-center mb-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Subtotal</span>
+<span class="font-body-md text-body-md text-on-surface">$4,650.00</span>
+</div>
+<div class="flex justify-between items-center mb-sm">
+<span class="font-body-md text-body-md text-on-surface-variant">IVA (16%)</span>
+<span class="font-body-md text-body-md text-on-surface">$744.00</span>
+</div>
+<div class="flex justify-between items-center pt-sm border-t border-outline-variant border-dashed">
+<span class="font-title-lg text-title-lg text-on-surface">Total</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">$5,394.00</span>
+</div>
+</div>
+</div>
+<!-- Right Column: Payment Configuration (Bento Card) -->
+<div class="col-span-1 lg:col-span-8 flex flex-col gap-lg">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden">
+<div class="p-md border-b border-outline-variant bg-surface flex justify-between items-center">
+<h3 class="font-title-lg text-title-lg text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">settings_applications</span>
+                        Configuración de Pago
+                    </h3>
+</div>
+<div class="p-md">
+<!-- Toggle Type -->
+<div class="flex p-1 bg-surface-container-low rounded-lg mb-lg border border-outline-variant w-full md:w-max">
+<button class="flex-1 md:w-32 py-2 text-center rounded font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors">
+                            Pago Único
+                        </button>
+<button class="flex-1 md:w-32 py-2 text-center rounded bg-surface-container-lowest shadow-sm border border-outline-variant font-label-md text-label-md text-primary font-semibold">
+                            A Plazos (Cuotas)
+                        </button>
+</div>
+<!-- Installment Settings Form -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+<!-- Down payment -->
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface-variant">Anticipo Requerido</label>
+<div class="relative">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant font-body-md text-body-md">$</span>
+<input class="w-full pl-8 pr-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest focus:border-primary focus:ring-2 focus:ring-primary-container outline-none transition-all font-body-md text-body-md text-on-surface" type="text" value="1,500.00"/>
+</div>
+<p class="text-[10px] text-on-surface-variant leading-tight">Mínimo sugerido: 20% ($1,078.80)</p>
+</div>
+<!-- Finance Amount (Calculated) -->
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface-variant">Monto a Financiar</label>
+<div class="w-full px-3 py-2 rounded-lg border border-surface-container-high bg-surface-container-low font-body-md text-body-md text-on-surface font-semibold flex items-center">
+                                $3,894.00
+                            </div>
+</div>
+<!-- Empty space on desktop for alignment -->
+<div class="hidden md:block"></div>
+<!-- Frequency -->
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface-variant">Frecuencia de Pago</label>
+<div class="relative">
+<select class="w-full pl-3 pr-10 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest focus:border-primary focus:ring-2 focus:ring-primary-container outline-none transition-all font-body-md text-body-md text-on-surface appearance-none">
+<option>Semanal</option>
+<option selected="">Quincenal</option>
+<option>Mensual</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+<!-- Number of payments -->
+<div class="flex flex-col gap-xs">
+<label class="font-label-md text-label-md text-on-surface-variant">Número de Cuotas</label>
+<div class="relative">
+<select class="w-full pl-3 pr-10 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest focus:border-primary focus:ring-2 focus:ring-primary-container outline-none transition-all font-body-md text-body-md text-on-surface appearance-none">
+<option>2 Pagos</option>
+<option>4 Pagos</option>
+<option selected="">6 Pagos</option>
+<option>12 Pagos</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+<!-- Action -->
+<div class="flex items-end">
+<button class="w-full bg-surface-container hover:bg-surface-container-high text-primary border border-outline-variant font-label-md text-label-md py-2 rounded-lg transition-colors flex items-center justify-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">calculate</span>
+                                Recalcular
+                            </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Table: Payment Schedule -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
+<div class="p-md border-b border-outline-variant bg-surface flex justify-between items-center">
+<h3 class="font-title-lg text-title-lg text-on-surface flex items-center gap-sm">
+<span class="material-symbols-outlined text-primary">calendar_month</span>
+                        Plan de Pagos
+                    </h3>
+<div class="flex gap-sm">
+<span class="flex items-center gap-xs text-[12px] text-on-surface-variant"><span class="w-2 h-2 rounded-full bg-tertiary-container border border-on-tertiary-container"></span> Cobrado</span>
+<span class="flex items-center gap-xs text-[12px] text-on-surface-variant"><span class="w-2 h-2 rounded-full bg-secondary-container border border-on-secondary-container"></span> Pendiente</span>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse min-w-[600px]">
+<thead>
+<tr class="bg-surface border-b border-outline-variant">
+<th class="font-label-md text-label-md text-on-surface-variant p-sm px-md w-24">Cuota #</th>
+<th class="font-label-md text-label-md text-on-surface-variant p-sm px-md">Fecha de Vencimiento</th>
+<th class="font-label-md text-label-md text-on-surface-variant p-sm px-md text-right">Monto</th>
+<th class="font-label-md text-label-md text-on-surface-variant p-sm px-md text-center">Estado</th>
+<th class="font-label-md text-label-md text-on-surface-variant p-sm px-md text-right">Acción</th>
+</tr>
+</thead>
+<tbody class="font-body-md text-body-md text-on-surface">
+<!-- Downpayment Row (Always paid immediately in this context usually, or pending collection) -->
+<tr class="border-b border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
+<td class="p-sm px-md text-on-surface-variant">Anticipo</td>
+<td class="p-sm px-md font-semibold text-on-surface">Hoy (24 Oct 2023)</td>
+<td class="p-sm px-md text-right font-semibold text-on-surface">$1,500.00</td>
+<td class="p-sm px-md text-center">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-[11px] font-medium border border-on-secondary-container/20">
+                                        Por Cobrar
+                                    </span>
+</td>
+<td class="p-sm px-md text-right">
+<button class="text-primary hover:text-on-primary-fixed-variant bg-primary-fixed hover:bg-primary-fixed-dim px-3 py-1 rounded text-[12px] font-medium transition-colors">Cobrar</button>
+</td>
+</tr>
+<!-- Installment 1 -->
+<tr class="border-b border-outline-variant bg-surface-container-low/50 hover:bg-surface-container-low transition-colors">
+<td class="p-sm px-md text-on-surface-variant">1 de 6</td>
+<td class="p-sm px-md">08 Nov 2023</td>
+<td class="p-sm px-md text-right">$649.00</td>
+<td class="p-sm px-md text-center">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-surface-variant text-on-surface-variant text-[11px] font-medium border border-outline-variant/50">
+                                        Pendiente
+                                    </span>
+</td>
+<td class="p-sm px-md text-right">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Installment 2 -->
+<tr class="border-b border-outline-variant bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
+<td class="p-sm px-md text-on-surface-variant">2 de 6</td>
+<td class="p-sm px-md">23 Nov 2023</td>
+<td class="p-sm px-md text-right">$649.00</td>
+<td class="p-sm px-md text-center">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-surface-variant text-on-surface-variant text-[11px] font-medium border border-outline-variant/50">
+                                        Pendiente
+                                    </span>
+</td>
+<td class="p-sm px-md text-right">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</td>
+</tr>
+<!-- Installment 3-6 (Omitted for brevity but implies scrolling) -->
+<tr class="bg-surface-container-low/50 hover:bg-surface-container-low transition-colors">
+<td class="p-sm px-md text-center text-on-surface-variant text-[12px] italic" colspan="5">... 4 cuotas más programadas</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Action Footer -->
+<div class="p-md bg-surface border-t border-outline-variant flex justify-end gap-sm">
+<button class="px-md py-2 border border-outline text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-high transition-colors">Cancelar</button>
+<button class="px-lg py-2 bg-primary text-on-primary rounded-lg font-label-md text-label-md hover:bg-on-primary-fixed-variant shadow-sm transition-colors flex items-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">check_circle</span>
+                        Confirmar Plan y Cobrar Anticipo
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-sm pb-safe bg-surface dark:bg-surface-dim border-t border-outline-variant dark:border-outline shadow-lg rounded-t-xl">
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 hover:bg-surface-variant dark:hover:bg-on-surface-variant/10 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined mb-1">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<!-- Active State for Sales -->
+<a class="flex flex-col items-center justify-center bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-full px-4 py-1 active:scale-90 transition-all pointer-events-none" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">payments</span>
+<span class="font-label-md text-label-md">Sales</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 hover:bg-surface-variant dark:hover:bg-on-surface-variant/10 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined mb-1">inventory_2</span>
+<span class="font-label-md text-label-md">Inventory</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 hover:bg-surface-variant dark:hover:bg-on-surface-variant/10 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined mb-1">group</span>
+<span class="font-label-md text-label-md">Patients</span>
+</a>
+</nav>
+</body></html>

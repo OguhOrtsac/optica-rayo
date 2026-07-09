@@ -46,13 +46,13 @@ export default async function Navbar() {
         links.push({ label: 'Descuentos', href: '/dashboard/customer', icon: 'discounts' })
       }
       if (role === 'seller') {
-        links.push({ label: 'Pacientes', href: '/customers', icon: 'patients' })
-        links.push({ label: 'Ventas POS', href: '/dashboard/seller', icon: 'pos' })
+        links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
+        links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
       }
       if (role === 'owner' || role === 'dev') {
         links.push({ label: 'Panel', href: '/dashboard/admin', icon: 'admin' })
-        links.push({ label: 'Pacientes', href: '/customers', icon: 'patients' })
-        links.push({ label: 'POS', href: '/dashboard/seller', icon: 'pos' })
+        links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
+        links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
       }
     }
     return links
@@ -99,36 +99,40 @@ export default async function Navbar() {
     }
   }
 
+  if (!isAuthenticated) {
+    return null
+  }
+
   return (
     <>
       {/* Desktop Top Navbar (Hidden on mobile) */}
-      <nav className="w-full bg-slate-950/80 backdrop-blur-md border-b border-slate-900 sticky top-0 z-50 px-6 py-4 hidden md:block">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <nav className="w-full bg-[#f9f9ff] dark:bg-slate-950 border-b border-[#c3c6d5] dark:border-slate-800 sticky top-0 z-50 px-6 h-16 hidden md:block shadow-sm">
+        <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-9 h-9 bg-gradient-to-tr from-cyan-400 to-indigo-500 rounded-lg flex items-center justify-center shadow shadow-cyan-500/10">
-              <svg className="w-5 h-5 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+            <div className="w-8 h-8 rounded-full bg-[#d9e2ff] dark:bg-slate-900 flex items-center justify-center text-[#00357f] dark:text-cyan-400 font-bold overflow-hidden">
+              {initials || "OR"}
             </div>
-            <span className="text-lg font-black tracking-tight text-slate-100 group-hover:text-cyan-400 transition-colors">
-              Óptica <span className="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">Rayo</span>
+            <span className="text-lg font-bold tracking-tight text-[#00357f] dark:text-cyan-400 transition-colors">
+              Óptica Rayo
             </span>
           </Link>
 
           {/* Links */}
-          <div className="flex items-center gap-6">
-            {navLinks.map(link => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="text-sm font-semibold text-slate-350 hover:text-cyan-400 py-1.5 transition-colors"
-              >
-                {link.label}
-              </Link>
-            ))}
+          <div className="flex items-center gap-6 h-full">
+            <div className="flex gap-4 h-full items-center">
+              {navLinks.map(link => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="text-sm font-semibold text-[#434653] dark:text-slate-350 hover:text-[#00357f] dark:hover:text-cyan-400 px-3 py-2 rounded-lg hover:bg-[#dee8ff]/40 dark:hover:bg-slate-900 transition-colors"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
 
-            <div className="h-4 w-px bg-slate-800 mx-2" />
+            <div className="h-4 w-px bg-[#c3c6d5] dark:bg-slate-800 mx-2" />
 
             {/* Auth Profile / Login */}
             {isAuthenticated ? (
@@ -137,19 +141,14 @@ export default async function Navbar() {
                 className="flex items-center gap-2.5 group/profile py-1"
                 title={`Perfil de ${displayName}`}
               >
-                <div className="w-8 h-8 bg-gradient-to-tr from-cyan-400 to-indigo-500 rounded-full flex items-center justify-center shadow shadow-cyan-500/15 group-hover/profile:shadow-cyan-500/30 group-hover/profile:scale-105 transition-all duration-200">
-                  <span className="text-[11px] font-black text-slate-950 select-none">
-                    {initials}
-                  </span>
-                </div>
-                <span className="text-xs font-bold text-slate-400 group-hover/profile:text-cyan-400 transition-colors">
-                  Mi Perfil
+                <span className="text-xs font-bold text-[#434653] dark:text-slate-450 group-hover/profile:text-[#00357f] transition-colors">
+                  {displayName}
                 </span>
               </Link>
             ) : (
               <Link
                 href="/login"
-                className="bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-bold text-xs px-5 py-2.5 rounded-xl shadow shadow-cyan-500/10 transition-all duration-300"
+                className="bg-[#00357f] hover:bg-[#00429b] text-white font-bold text-xs px-5 py-2 rounded-full transition-all duration-300 h-9 flex items-center"
               >
                 Iniciar Sesión
               </Link>
@@ -159,23 +158,18 @@ export default async function Navbar() {
       </nav>
 
       {/* Mobile Top Header (Minimalist for PWA view) */}
-      <header className="w-full bg-slate-950/80 backdrop-blur-md border-b border-slate-900 sticky top-0 z-50 px-4 py-3 flex md:hidden justify-between items-center">
+      <header className="w-full bg-[#f9f9ff] dark:bg-slate-950 border-b border-[#c3c6d5] dark:border-slate-900 sticky top-0 z-50 px-4 py-3 flex md:hidden justify-between items-center shadow-sm">
         <Link href="/" className="flex items-center gap-1.5">
-          <div className="w-7.5 h-7.5 bg-gradient-to-tr from-cyan-400 to-indigo-500 rounded-lg flex items-center justify-center">
-            <svg className="w-4 h-4 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </div>
-          <span className="text-sm font-black tracking-tight text-slate-100">
-            Óptica <span className="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">Rayo</span>
+          <span className="text-sm font-bold tracking-tight text-[#00357f] dark:text-cyan-400">
+            Óptica Rayo
           </span>
         </Link>
 
         {/* Small Profile Quick Link */}
         {isAuthenticated ? (
           <Link href="/profile" className="flex items-center">
-            <div className="w-7 h-7 bg-gradient-to-tr from-cyan-400 to-indigo-500 rounded-full flex items-center justify-center border border-slate-900">
-              <span className="text-[10px] font-black text-slate-950">
+            <div className="w-7 h-7 bg-[#d9e2ff] dark:bg-slate-900 rounded-full flex items-center justify-center border border-[#c3c6d5] dark:border-slate-800">
+              <span className="text-[10px] font-bold text-[#00357f] dark:text-cyan-400">
                 {initials}
               </span>
             </div>
@@ -183,23 +177,23 @@ export default async function Navbar() {
         ) : (
           <Link
             href="/login"
-            className="text-[10px] bg-slate-900 border border-slate-800 text-slate-300 font-bold px-3 py-1.5 rounded-lg"
+            className="text-[10px] bg-white border border-[#c3c6d5] text-[#00357f] font-bold px-3 py-1.5 rounded-lg"
           >
             Entrar
           </Link>
         )}
       </header>
 
-      {/* Mobile Bottom Navigation Bar (App Shell style, h-16 + touch friendly >= 44px) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-slate-950/90 backdrop-blur-xl border-t border-slate-900/60 flex md:hidden justify-around items-center h-16 pb-safe px-2 shadow-2xl">
+      {/* Mobile Bottom Navigation Bar (App Shell style, h-20 + touch friendly >= 44px) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#f9f9ff] dark:bg-slate-950 border-t border-[#c3c6d5] dark:border-slate-900/60 flex md:hidden justify-around items-center h-20 pb-safe px-2 shadow-lg rounded-t-xl">
         {navLinks.map(link => (
           <Link
             key={link.href}
             href={link.href}
-            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-slate-400 hover:text-cyan-400 transition-colors"
+            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-[#434653] dark:text-slate-400 hover:text-[#00357f] transition-colors"
           >
             {renderIcon(link.icon)}
-            <span className="text-[9px] font-extrabold mt-1 tracking-tight select-none">
+            <span className="text-[9px] font-bold mt-1 tracking-tight select-none">
               {link.label}
             </span>
           </Link>
@@ -207,26 +201,26 @@ export default async function Navbar() {
         {isAuthenticated ? (
           <Link
             href="/profile"
-            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-slate-400 hover:text-cyan-400 transition-colors"
+            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-[#434653] dark:text-slate-400 hover:text-[#00357f] transition-colors"
           >
-            <div className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
-              <span className="text-[8px] font-bold text-slate-300">
+            <div className="w-5 h-5 rounded-full bg-[#dee8ff] dark:bg-slate-800 border border-[#c3c6d5] dark:border-slate-700 flex items-center justify-center">
+              <span className="text-[8px] font-bold text-[#00357f] dark:text-slate-350">
                 {initials}
               </span>
             </div>
-            <span className="text-[9px] font-extrabold mt-1 tracking-tight select-none">
+            <span className="text-[9px] font-bold mt-1 tracking-tight select-none">
               Perfil
             </span>
           </Link>
         ) : (
           <Link
             href="/login"
-            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-slate-400 hover:text-cyan-400 transition-colors"
+            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-[#434653] dark:text-slate-400 hover:text-[#00357f] transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
             </svg>
-            <span className="text-[9px] font-extrabold mt-1 tracking-tight select-none">
+            <span className="text-[9px] font-bold mt-1 tracking-tight select-none">
               Login
             </span>
           </Link>

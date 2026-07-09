@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Perfil del Cliente - OpticManager</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "secondary": "#00668a",
+                      "surface-container-high": "#dee8ff",
+                      "on-primary-container": "#a9c1ff",
+                      "on-error": "#ffffff",
+                      "on-primary-fixed": "#001945",
+                      "background": "#f9f9ff",
+                      "surface-container-low": "#f0f3ff",
+                      "surface-variant": "#d8e3fb",
+                      "primary-container": "#004aad",
+                      "inverse-on-surface": "#ecf1ff",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-dim": "#cfdaf2",
+                      "error": "#ba1a1a",
+                      "surface": "#f9f9ff",
+                      "surface-tint": "#215abd",
+                      "outline": "#737784",
+                      "on-secondary-container": "#004d6a",
+                      "tertiary-fixed-dim": "#4edea3",
+                      "tertiary-container": "#005c3e",
+                      "on-error-container": "#93000a",
+                      "primary-fixed-dim": "#b0c6ff",
+                      "on-secondary": "#ffffff",
+                      "secondary-fixed-dim": "#7bd0ff",
+                      "on-secondary-fixed": "#001e2c",
+                      "surface-container": "#e7eeff",
+                      "on-tertiary-container": "#49da9f",
+                      "on-primary-fixed-variant": "#00429b",
+                      "surface-bright": "#f9f9ff",
+                      "inverse-primary": "#b0c6ff",
+                      "surface-container-highest": "#d8e3fb",
+                      "secondary-container": "#40c2fd",
+                      "primary-fixed": "#d9e2ff",
+                      "on-surface": "#111c2d",
+                      "on-background": "#111c2d",
+                      "on-tertiary-fixed": "#002113",
+                      "error-container": "#ffdad6",
+                      "tertiary": "#00422b",
+                      "inverse-surface": "#263143",
+                      "on-surface-variant": "#434653",
+                      "secondary-fixed": "#c4e7ff",
+                      "on-primary": "#ffffff",
+                      "on-tertiary": "#ffffff",
+                      "on-tertiary-fixed-variant": "#005236",
+                      "outline-variant": "#c3c6d5",
+                      "on-secondary-fixed-variant": "#004c69",
+                      "tertiary-fixed": "#6ffbbe",
+                      "primary": "#00357f"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "xs": "4px",
+                      "sm": "8px",
+                      "lg": "24px",
+                      "base": "4px",
+                      "md": "16px",
+                      "xl": "32px",
+                      "container-max": "1440px",
+                      "gutter": "24px"
+              },
+              "fontFamily": {
+                      "headline-lg": ["Inter"],
+                      "headline-md": ["Inter"],
+                      "body-md": ["Inter"],
+                      "body-lg": ["Inter"],
+                      "headline-lg-mobile": ["Inter"],
+                      "title-lg": ["Inter"],
+                      "label-md": ["Inter"],
+                      "display": ["Inter"]
+              },
+              "fontSize": {
+                      "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                      "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                      "title-lg": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                      "display": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        .accordion-content {
+            transition: max-height 0.3s ease-out, opacity 0.3s ease-out, padding 0.3s ease-out;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+        .accordion-content.open {
+            max-height: 1000px; /* Arbitrary large max-height for transition */
+            opacity: 1;
+        }
+        /* Hide number input spinners */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col antialiased selection:bg-primary selection:text-on-primary">
+<!-- TopAppBar (from JSON) -->
+<header class="bg-surface font-title-lg text-title-lg docked full-width top-0 border-b border-outline-variant shadow-sm fixed top-0 left-0 w-full z-50 flex justify-between items-center px-md h-16 transition-all duration-300">
+<!-- Leading: Avatar -->
+<div class="flex items-center gap-sm">
+<div class="w-10 h-10 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center overflow-hidden">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">person</span>
+</div>
+</div>
+<!-- Headline/Brand -->
+<div class="font-headline-md text-headline-md font-bold text-primary">
+            OpticManager
+        </div>
+<!-- Trailing: Icon -->
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 transition-transform">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 mt-16 pt-lg pb-xl px-4 md:px-gutter max-w-4xl mx-auto w-full flex flex-col gap-lg">
+<!-- Profile Overview Card (Glassmorphism inspired) -->
+<section class="bg-surface-container-lowest/90 backdrop-blur-sm border border-outline-variant rounded-xl p-md md:p-lg shadow-sm flex flex-col md:flex-row items-center md:items-start justify-between gap-md relative overflow-hidden">
+<!-- Decorative subtle gradient -->
+<div class="absolute -top-24 -right-24 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+<div class="flex flex-col md:flex-row items-center md:items-start gap-md z-10 w-full text-center md:text-left">
+<div class="w-24 h-24 rounded-full bg-surface-container-high border-2 border-surface shadow-sm overflow-hidden flex-shrink-0 relative group">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a young woman with glasses, neutral expression, high-key bright medical clinic lighting, light mode aesthetic, pristine white background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCletz6nudikdtGlcefjd52aZU70edRmeFj_LZUPurXxR6_8hG6GWF4af4eK_Iq66voRKWWCxgm_HBPG-l7TAtfZqu_90E8GNugkMw73HNCuD8iyHblB8o4iyssFHWDf0YOVCOk9C1H1CTaqdrj0Sm_sAtLK6MFZKWryqFycnd_maYrRmlYJf6gvBWUxDV2Ea9HVPnDH31eZb5XrH-pbNBruIekzhYFUlejSQtcOfWWMlPBDhPufr6xOg"/>
+</div>
+<div class="flex-1 space-y-1 mt-2">
+<h1 class="font-headline-md text-headline-md text-on-surface">María López</h1>
+<p class="font-body-md text-on-surface-variant flex items-center justify-center md:justify-start gap-xs">
+<span class="material-symbols-outlined text-[16px]">id_card</span> ID: 8492-PAC
+                    </p>
+<div class="mt-sm inline-flex items-center gap-xs px-2 py-1 rounded-full bg-tertiary-container/10 text-tertiary-container font-label-md text-label-md border border-tertiary-container/20">
+<span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+                        Paciente Activo
+                    </div>
+</div>
+</div>
+<!-- Logout Button -->
+<button class="mt-4 md:mt-0 z-10 flex items-center gap-xs px-4 py-2 rounded-lg border border-error text-error hover:bg-error-container hover:text-on-error-container transition-colors active:scale-95">
+<span class="material-symbols-outlined text-[20px]">logout</span>
+<span class="font-label-md text-label-md">Cerrar Sesión</span>
+</button>
+</section>
+<!-- Editable Glasses Nickname Section -->
+<section class="bg-surface-container-low border border-outline-variant rounded-xl p-md shadow-sm">
+<div class="flex items-start gap-md">
+<div class="w-12 h-12 rounded-lg bg-primary-container text-on-primary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">eyeglasses</span>
+</div>
+<div class="flex-1 min-w-0 pt-1">
+<p class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider mb-xs">Lentes Actuales</p>
+<!-- View State -->
+<div class="flex items-center gap-sm group" id="glasses-name-view">
+<h2 class="font-title-lg text-title-lg text-on-surface truncate" id="glasses-name-text">Mis lentes de lectura</h2>
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:text-primary hover:bg-surface-variant transition-colors" onclick="toggleEditMode()" title="Editar nombre">
+<span class="material-symbols-outlined text-[18px]">edit</span>
+</button>
+</div>
+<!-- Edit State (Hidden by default) -->
+<div class="hidden flex items-center gap-sm mt-1" id="glasses-name-edit">
+<input class="flex-1 bg-surface-container-lowest border border-outline rounded-md px-3 py-1.5 font-body-md text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all" id="glasses-name-input" type="text" value="Mis lentes de lectura"/>
+<button class="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:bg-primary/90 transition-colors shadow-sm" onclick="saveEditMode()">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</button>
+<button class="w-8 h-8 rounded-lg border border-outline-variant text-on-surface-variant flex items-center justify-center hover:bg-surface-variant transition-colors" onclick="cancelEditMode()">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Accordions Container -->
+<div class="space-y-4">
+<!-- Accordion 1: Último Examen -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md">
+<button class="w-full px-md py-4 flex items-center justify-between text-left focus:outline-none group accordion-toggle">
+<div class="flex items-center gap-sm">
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 text-secondary flex items-center justify-center group-hover:bg-secondary-container/40 transition-colors">
+<span class="material-symbols-outlined">visibility</span>
+</div>
+<div>
+<h3 class="font-title-lg text-title-lg text-on-surface">Último Examen de la Vista</h3>
+<p class="font-body-md text-on-surface-variant mt-0.5">Realizado el 15 de Octubre, 2023</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline transition-transform duration-300 chevron">expand_more</span>
+</button>
+<div class="accordion-content border-t border-outline-variant/30 bg-surface">
+<div class="p-md">
+<!-- Prescription Widget -->
+<div class="border border-outline-variant rounded-lg overflow-hidden">
+<div class="grid grid-cols-5 bg-surface-container-low font-label-md text-label-md text-on-surface-variant border-b border-outline-variant text-center divide-x divide-outline-variant">
+<div class="py-2 px-1">Ojo</div>
+<div class="py-2 px-1">Esf (SPH)</div>
+<div class="py-2 px-1">Cil (CYL)</div>
+<div class="py-2 px-1">Eje (AXIS)</div>
+<div class="py-2 px-1">Add</div>
+</div>
+<!-- OD Row -->
+<div class="grid grid-cols-5 bg-surface-container-lowest font-body-md text-on-surface border-b border-outline-variant text-center divide-x divide-outline-variant items-center">
+<div class="py-3 px-1 font-semibold text-primary">OD <span class="block text-[10px] font-normal text-on-surface-variant">Derecho</span></div>
+<div class="py-3 px-1">-1.25</div>
+<div class="py-3 px-1">-0.50</div>
+<div class="py-3 px-1">180</div>
+<div class="py-3 px-1 text-on-surface-variant">--</div>
+</div>
+<!-- OI Row -->
+<div class="grid grid-cols-5 bg-surface-container-low font-body-md text-on-surface text-center divide-x divide-outline-variant items-center">
+<div class="py-3 px-1 font-semibold text-primary">OI <span class="block text-[10px] font-normal text-on-surface-variant">Izquierdo</span></div>
+<div class="py-3 px-1">-1.50</div>
+<div class="py-3 px-1">-0.75</div>
+<div class="py-3 px-1">175</div>
+<div class="py-3 px-1 text-on-surface-variant">--</div>
+</div>
+</div>
+<div class="mt-4 flex items-start gap-xs p-3 bg-surface-variant/30 rounded-lg border border-outline-variant/50">
+<span class="material-symbols-outlined text-[18px] text-secondary mt-0.5">info</span>
+<p class="font-body-md text-[13px] text-on-surface-variant leading-tight">Distancia pupilar (DP): 62mm. Uso recomendado para visión lejana y conducción.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Accordion 2: Estado de Pagos -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md">
+<button class="w-full px-md py-4 flex items-center justify-between text-left focus:outline-none group accordion-toggle">
+<div class="flex items-center gap-sm">
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 text-secondary flex items-center justify-center group-hover:bg-secondary-container/40 transition-colors">
+<span class="material-symbols-outlined">payments</span>
+</div>
+<div>
+<h3 class="font-title-lg text-title-lg text-on-surface">Estado de Pagos</h3>
+<div class="flex items-center gap-2 mt-0.5">
+<p class="font-body-md text-on-surface-variant">Saldo pendiente: $120.00</p>
+<span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-md text-[10px]">En Cuotas</span>
+</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline transition-transform duration-300 chevron">expand_more</span>
+</button>
+<div class="accordion-content border-t border-outline-variant/30 bg-surface">
+<div class="p-md space-y-4">
+<!-- Progress -->
+<div>
+<div class="flex justify-between font-label-md text-label-md mb-xs">
+<span class="text-on-surface-variant">Pagado: $240.00</span>
+<span class="text-primary font-bold">Total: $360.00</span>
+</div>
+<div class="w-full h-2 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 66%;"></div>
+</div>
+</div>
+<!-- Next Payment Detail -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-3 flex justify-between items-center shadow-sm">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 bg-surface-variant rounded-lg flex flex-col items-center justify-center text-on-surface">
+<span class="font-label-md text-[10px] uppercase">Nov</span>
+<span class="font-headline-md text-[18px] leading-none">15</span>
+</div>
+<div>
+<p class="font-title-lg text-[16px] text-on-surface">Próximo Pago</p>
+<p class="font-body-md text-[13px] text-on-surface-variant">Cuota 2 de 3</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-headline-md text-headline-md text-primary">$60.00</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Accordion 3: Historial de Compras -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md">
+<button class="w-full px-md py-4 flex items-center justify-between text-left focus:outline-none group accordion-toggle">
+<div class="flex items-center gap-sm">
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 text-secondary flex items-center justify-center group-hover:bg-secondary-container/40 transition-colors">
+<span class="material-symbols-outlined">receipt_long</span>
+</div>
+<div>
+<h3 class="font-title-lg text-title-lg text-on-surface">Historial de Compras</h3>
+<p class="font-body-md text-on-surface-variant mt-0.5">2 artículos comprados</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline transition-transform duration-300 chevron">expand_more</span>
+</button>
+<div class="accordion-content border-t border-outline-variant/30 bg-surface">
+<div class="p-0">
+<ul class="divide-y divide-outline-variant/50">
+<!-- Item 1 -->
+<li class="px-md py-3 hover:bg-surface-container-low transition-colors flex justify-between items-center gap-4">
+<div>
+<p class="font-title-lg text-[15px] text-on-surface mb-0.5">Lentes + Armazón Ray-Ban RX5154</p>
+<p class="font-body-md text-[13px] text-on-surface-variant">15 Oct 2023</p>
+</div>
+<div class="text-right shrink-0">
+<p class="font-title-lg text-[15px] text-on-surface">$360.00</p>
+<span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-label-md bg-surface-variant text-on-surface-variant">En plan</span>
+</div>
+</li>
+<!-- Item 2 -->
+<li class="px-md py-3 hover:bg-surface-container-low transition-colors flex justify-between items-center gap-4">
+<div>
+<p class="font-title-lg text-[15px] text-on-surface mb-0.5">Gotas Lubricantes Systane</p>
+<p class="font-body-md text-[13px] text-on-surface-variant">10 Ago 2023</p>
+</div>
+<div class="text-right shrink-0">
+<p class="font-title-lg text-[15px] text-on-surface">$25.00</p>
+<span class="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-label-md bg-tertiary/10 text-tertiary">Pagado</span>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Accordion Logic
+        document.querySelectorAll('.accordion-toggle').forEach(button => {
+            button.addEventListener('click', () => {
+                const content = button.nextElementSibling;
+                const chevron = button.querySelector('.chevron');
+                
+                // Close others (Optional, for pure accordion feel)
+                document.querySelectorAll('.accordion-content').forEach(otherContent => {
+                    if (otherContent !== content && otherContent.classList.contains('open')) {
+                        otherContent.classList.remove('open');
+                        otherContent.style.paddingTop = '0px';
+                        otherContent.style.paddingBottom = '0px';
+                        otherContent.previousElementSibling.querySelector('.chevron').style.transform = 'rotate(0deg)';
+                    }
+                });
+
+                // Toggle current
+                if (content.classList.contains('open')) {
+                    content.classList.remove('open');
+                    content.style.paddingTop = '0px';
+                    content.style.paddingBottom = '0px';
+                    chevron.style.transform = 'rotate(0deg)';
+                } else {
+                    content.classList.add('open');
+                    // Add subtle padding via js to avoid jumping, or rely on css classes
+                    chevron.style.transform = 'rotate(180deg)';
+                }
+            });
+        });
+
+        // Inline Editing Logic
+        const viewState = document.getElementById('glasses-name-view');
+        const editState = document.getElementById('glasses-name-edit');
+        const textDisplay = document.getElementById('glasses-name-text');
+        const inputField = document.getElementById('glasses-name-input');
+        let originalName = textDisplay.innerText;
+
+        function toggleEditMode() {
+            viewState.classList.add('hidden');
+            editState.classList.remove('hidden');
+            inputField.value = textDisplay.innerText;
+            inputField.focus();
+        }
+
+        function cancelEditMode() {
+            editState.classList.add('hidden');
+            viewState.classList.remove('hidden');
+            inputField.value = originalName;
+        }
+
+        function saveEditMode() {
+            const newName = inputField.value.trim();
+            if (newName) {
+                textDisplay.innerText = newName;
+                originalName = newName;
+                
+                // Add a subtle flash effect to show it saved
+                textDisplay.classList.add('text-primary');
+                setTimeout(() => textDisplay.classList.remove('text-primary'), 300);
+            }
+            editState.classList.add('hidden');
+            viewState.classList.remove('hidden');
+        }
+
+        // Handle Enter key for saving
+        inputField.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                saveEditMode();
+            }
+        });
+        
+        // Handle Escape key for canceling
+        inputField.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                cancelEditMode();
+            }
+        });
+    </script>
+</body></html>

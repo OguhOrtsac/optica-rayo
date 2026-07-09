@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { getAllProfiles } from '@/lib/services'
 import {
@@ -9,6 +9,21 @@ import {
   adminDeleteUserAction
 } from '@/app/auth/actions'
 import { Database } from '@/types/database.types'
+import { 
+  User, 
+  Settings, 
+  Shield, 
+  Users, 
+  Plus, 
+  Search, 
+  Edit, 
+  Trash2, 
+  ArrowLeft,
+  X,
+  Clock,
+  UserPlus,
+  AlertCircle
+} from 'lucide-react'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 
@@ -22,20 +37,20 @@ interface ToggleSwitchProps {
 
 function ToggleSwitch({ checked, onChange, label, description }: ToggleSwitchProps) {
   return (
-    <div className="flex items-center justify-between p-3.5 bg-slate-950/60 border border-slate-900 rounded-xl hover:border-slate-850 transition-all select-none">
+    <div className="flex items-center justify-between p-3.5 bg-[#f0f3ff] border border-[#cbd5e1] rounded-xl hover:border-[#cbd5e1] transition-all select-none text-left">
       <div>
-        <span className="block text-xs font-bold text-slate-200">{label}</span>
-        {description && <span className="block text-[10px] text-slate-500 mt-0.5">{description}</span>}
+        <span className="block text-xs font-bold text-[#111c2d]">{label}</span>
+        {description && <span className="block text-[10px] text-[#737784] mt-0.5">{description}</span>}
       </div>
       <button
         type="button"
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-6.5 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
-          checked ? 'bg-cyan-500' : 'bg-slate-850'
+          checked ? 'bg-[#00357f]' : 'bg-[#cbd5e1]'
         }`}
       >
         <span
-          className={`pointer-events-none inline-block h-5.5 w-5.5 transform rounded-full bg-slate-100 dark:bg-slate-950 shadow-md ring-0 transition duration-200 ease-in-out ${
+          className={`pointer-events-none inline-block h-5.5 w-5.5 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
             checked ? 'translate-x-5.5' : 'translate-x-0'
           }`}
         />
@@ -49,6 +64,9 @@ export default function RegisterUsersPage() {
   const [users, setUsers] = useState<Profile[]>([])
   const [userSearch, setUserSearch] = useState('')
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // Tabs state
+  const [activeTab, setActiveTab] = useState<'staff' | 'config'>('staff')
 
   // Modals state
   const [showAddUserModal, setShowAddUserModal] = useState(false)
@@ -100,7 +118,7 @@ export default function RegisterUsersPage() {
     if (editingUser) {
       setEditIsAdmin(editingUser.role === 'owner')
       setEditIsSeller(editingUser.role === 'seller')
-      setEditIsOptometrist(editingUser.role === 'dev') // mapping dev as Optometrist/Dev control
+      setEditIsOptometrist(editingUser.role === 'dev')
     }
   }, [editingUser])
 
@@ -155,11 +173,10 @@ export default function RegisterUsersPage() {
       return
     }
 
-    // Determine role based on toggles
     let roleVal: 'owner' | 'seller' | 'customer' | 'dev' = 'customer'
     if (uIsAdmin) roleVal = 'owner'
     else if (uIsSeller) roleVal = 'seller'
-    else if (uIsOptometrist) roleVal = 'dev' // mapping optometrist to dev in current schema
+    else if (uIsOptometrist) roleVal = 'dev'
 
     setSubmittingUser(true)
     const formData = new FormData()
@@ -195,7 +212,6 @@ export default function RegisterUsersPage() {
     e.preventDefault()
     if (!editingUser) return
 
-    // Determine role based on toggles
     let roleVal: 'owner' | 'seller' | 'customer' | 'dev' = 'customer'
     if (editIsAdmin) roleVal = 'owner'
     else if (editIsSeller) roleVal = 'seller'
@@ -242,175 +258,255 @@ export default function RegisterUsersPage() {
     }
   }
 
-  // Filter calculation
-  const filteredUsers = users.filter(u => 
-    u.full_name.toLowerCase().includes(userSearch.toLowerCase()) ||
-    u.email.toLowerCase().includes(userSearch.toLowerCase())
-  )
+  // Filter staff profiles only (role !== 'customer')
+  const filteredStaff = useMemo(() => {
+    return users
+      .filter(u => u.role !== 'customer')
+      .filter(u => 
+        u.full_name.toLowerCase().includes(userSearch.toLowerCase()) ||
+        u.email.toLowerCase().includes(userSearch.toLowerCase())
+      )
+  }, [users, userSearch])
+
+  // Get active user initials
+  const getInitials = (name: string) => {
+    if (!name) return 'US'
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+  }
 
   return (
-    <main className="min-h-screen bg-slate-955 text-slate-100 p-4 md:p-8 pb-24 relative">
-      <div className="absolute top-0 left-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-7xl mx-auto pb-24 md:pb-8 text-left">
+      
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Configuración y Perfil</h1>
+          </div>
+          <p className="text-sm text-[#434653] mt-1 font-medium pl-8">Gestiona el personal del staff, accesos y opciones de la óptica.</p>
+        </div>
+      </div>
 
-      <div className="max-w-6xl mx-auto space-y-6 relative">
+      {feedbackMsg && (
+        <div className={`p-4 rounded-xl text-xs font-bold border ${
+          feedbackMsg.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-600'
+        }`}>
+          {feedbackMsg.text}
+        </div>
+      )}
+
+      {/* Grid Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* Back and Header */}
-        <div className="space-y-4">
-          <Link
-            href="/dashboard/admin"
-            className="text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1.5 w-fit min-h-[44px]"
+        {/* Left Side: Navigation Tabs (3 cols) */}
+        <div className="lg:col-span-3 flex lg:flex-col overflow-x-auto lg:overflow-x-visible gap-2 pb-2 lg:pb-0 scrollbar-none">
+          <button 
+            onClick={() => setActiveTab('staff')}
+            className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-xs transition-colors text-left cursor-pointer ${
+              activeTab === 'staff'
+                ? 'bg-[#dee8ff]/80 text-[#00357f]'
+                : 'bg-white border border-[#cbd5e1] text-[#434653] hover:bg-[#f0f3ff]'
+            }`}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Volver al Panel Principal
-          </Link>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
-                Control de Personal y Accesos
-              </h1>
-              <p className="text-xs text-slate-500 mt-1">
-                Registra tu staff, asigna roles de administración o ventas, y gestiona sus permisos con interruptores interactivos.
-              </p>
-            </div>
-            
-            <button
-              onClick={() => setShowAddUserModal(true)}
-              className="bg-gradient-to-r from-cyan-500 to-indigo-650 hover:from-cyan-400 hover:to-indigo-500 text-slate-955 font-bold text-xs px-5 py-3 rounded-xl shadow transition-all cursor-pointer flex items-center gap-1.5 min-h-[44px]"
-            >
-              <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-              </svg>
-              Alta de Personal
-            </button>
-          </div>
+            <Users className="w-4 h-4" />
+            Gestión de Personal
+          </button>
+          <button 
+            onClick={() => setActiveTab('config')}
+            className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-xs transition-colors text-left cursor-pointer ${
+              activeTab === 'config'
+                ? 'bg-[#dee8ff]/80 text-[#00357f]'
+                : 'bg-white border border-[#cbd5e1] text-[#434653] hover:bg-[#f0f3ff]'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            Configuración de Óptica
+          </button>
         </div>
 
-        {/* Feedback Messages */}
-        {feedbackMsg && (
-          <div className={`p-4 rounded-xl text-xs font-bold border animate-in slide-in-from-top-2 ${
-            feedbackMsg.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-              : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-          }`}>
-            {feedbackMsg.text}
-          </div>
-        )}
-
-        {/* Search */}
-        <div className="relative max-w-md">
-          <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-            <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </span>
-          <input
-            type="text"
-            placeholder="Buscar por nombre o usuario de acceso..."
-            value={userSearch}
-            onChange={(e) => setUserSearch(e.target.value)}
-            className="w-full bg-slate-900/40 border border-slate-900 rounded-xl pl-11 pr-4 py-2.5 text-xs text-slate-200 placeholder-slate-650 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 transition-all min-h-[44px]"
-          />
-        </div>
-
-        {/* Main List */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="animate-spin rounded-full h-10 w-10 border-2 border-cyan-550 border-t-transparent" />
-            <p className="text-xs text-slate-500 font-bold">Recuperando listado del personal...</p>
-          </div>
-        ) : filteredUsers.length === 0 ? (
-          <div className="text-center py-20 bg-slate-900/15 border border-slate-900 rounded-2xl text-slate-500 text-xs">
-            No se encontraron usuarios para tu búsqueda.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredUsers.map(u => (
-              <div
-                key={u.id}
-                className="bg-slate-900/30 border border-slate-900/60 hover:border-cyan-500/20 rounded-2xl p-5 flex flex-col justify-between gap-4 transition-all duration-300 hover:scale-[1.01] hover:shadow-lg hover:shadow-cyan-950/5 group"
-              >
-                <div className="flex gap-4">
-                  <div className="w-11 h-11 bg-slate-950 border border-slate-850 rounded-xl flex items-center justify-center font-black text-cyan-400 text-xs shrink-0 select-none">
-                    {u.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <h3 className="font-bold text-sm text-slate-200 group-hover:text-cyan-400 transition-colors truncate">
-                      {u.full_name}
-                    </h3>
-                    <p className="text-[10px] text-slate-500 truncate">@{u.email.replace('@opticarayo.com', '')}</p>
-                    
-                    {/* Role Badge */}
-                    <div className="pt-1">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${
-                        u.role === 'owner' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' :
-                        u.role === 'seller' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                        u.role === 'dev' ? 'bg-violet-500/10 text-violet-400 border-violet-500/20' :
-                        'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                      }`}>
-                        {u.role === 'owner' ? 'Administrador' : u.role === 'seller' ? 'Vendedor POS' : u.role === 'dev' ? 'Optometrista/Dev' : 'Paciente/Cliente'}
-                      </span>
-                    </div>
-                  </div>
+        {/* Right Side: Content Area (9 cols) */}
+        <div className="lg:col-span-9 space-y-6">
+          
+          {activeTab === 'staff' && (
+            <div className="space-y-6">
+              
+              {/* Staff Title & Add button */}
+              <div className="flex justify-between items-center gap-4">
+                <div className="relative max-w-xs flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#737784]" />
+                  <input 
+                    value={userSearch}
+                    onChange={(e) => setUserSearch(e.target.value)}
+                    className="w-full bg-white border border-[#cbd5e1] rounded-lg py-2 pl-10 pr-3 text-xs focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none" 
+                    placeholder="Buscar personal..." 
+                    type="text"
+                  />
                 </div>
-
-                <div className="border-t border-slate-950 pt-3 flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => setEditingUser(u)}
-                    className="text-[10px] font-bold text-slate-400 hover:text-slate-200 bg-slate-955 border border-slate-900 px-3.5 py-2 rounded-lg transition-all cursor-pointer min-h-[34px]"
-                  >
-                    Modificar
-                  </button>
-                  <button
-                    onClick={() => setDeletingUser(u)}
-                    className="text-[10px] font-bold text-rose-455 hover:text-rose-400 bg-rose-50/5 border border-rose-500/10 px-3.5 py-2 rounded-lg transition-all cursor-pointer min-h-[34px]"
-                  >
-                    Eliminar
-                  </button>
-                </div>
+                <button
+                  onClick={() => setShowAddUserModal(true)}
+                  className="bg-[#00357f] hover:bg-[#004aad] text-white px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  Nuevo Empleado
+                </button>
               </div>
-            ))}
-          </div>
-        )}
+
+              {/* Staff Grid */}
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
+                  <p className="text-xs text-[#737784] font-bold">Cargando personal...</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  
+                  {filteredStaff.map(u => (
+                    <div key={u.id} className="bg-white rounded-2xl border border-[#cbd5e1] p-4 flex flex-col justify-between hover:shadow-md transition-shadow relative">
+                      <div>
+                        {/* Header Role tag */}
+                        <div className="flex items-center justify-between mb-4">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                            u.role === 'owner' 
+                              ? 'bg-[#dee8ff] text-[#00357f]' 
+                              : u.role === 'seller' 
+                              ? 'bg-[#dee8ff]/60 text-[#00668a]' 
+                              : 'bg-[#49da9f]/20 text-[#00422b]'
+                          }`}>
+                            {u.role === 'owner' ? 'Administrador' : u.role === 'seller' ? 'Ventas' : 'Optometrista/Dev'}
+                          </span>
+                        </div>
+
+                        {/* Profile Info */}
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-12 h-12 rounded-full bg-[#f0f3ff] text-[#00357f] border border-[#cbd5e1] flex items-center justify-center font-bold text-sm shrink-0">
+                            {getInitials(u.full_name)}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-sm text-[#111c2d] truncate">{u.full_name}</h4>
+                            <p className="text-[10px] text-[#737784] truncate">@{u.email.replace('@opticarayo.com', '')}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-xs text-[#737784] mb-4 font-medium">
+                          <Clock className="w-3.5 h-3.5 text-[#00668a]" /> Turno Completo
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex gap-2 border-t border-[#f0f3ff] pt-3">
+                        <button 
+                          onClick={() => setEditingUser(u)}
+                          className="flex-1 bg-[#f0f3ff] hover:bg-[#dee8ff] text-[#111c2d] py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                        >
+                          Editar
+                        </button>
+                        <button 
+                          onClick={() => setDeletingUser(u)}
+                          className="flex-1 border border-[#ba1a1a] hover:bg-[#ffdad6] text-[#ba1a1a] py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                        >
+                          Borrar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Add New Placeholder Card */}
+                  <div 
+                    onClick={() => setShowAddUserModal(true)}
+                    className="rounded-2xl border-2 border-dashed border-[#cbd5e1] hover:border-[#00357f] hover:bg-[#f0f3ff]/40 transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[190px] text-[#737784] group"
+                  >
+                    <UserPlus className="w-8 h-8 mb-1.5 group-hover:text-[#00357f] transition-colors" />
+                    <span className="font-bold text-xs group-hover:text-[#00357f] transition-colors">Invitar Personal</span>
+                  </div>
+
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {activeTab === 'config' && (
+            <div className="bg-white rounded-2xl border border-[#cbd5e1] shadow-sm overflow-hidden text-left">
+              <div className="p-4 border-b border-[#cbd5e1] bg-[#f9f9ff] flex justify-between items-center">
+                <h3 className="font-bold text-sm text-[#00357f] uppercase tracking-wider">Ajustes Generales de Óptica</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <tbody className="divide-y divide-[#f0f3ff]">
+                    <tr className="hover:bg-[#f9f9ff] transition-colors">
+                      <td className="py-3.5 px-4 text-[#737784] font-bold w-1/3">Nombre de la Óptica</td>
+                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">Óptica Rayo Centro</td>
+                    </tr>
+                    <tr className="hover:bg-[#f9f9ff] transition-colors">
+                      <td className="py-3.5 px-4 text-[#737784] font-bold">Moneda Principal</td>
+                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">Peso Mexicano (MXN)</td>
+                    </tr>
+                    <tr className="hover:bg-[#f9f9ff] transition-colors">
+                      <td className="py-3.5 px-4 text-[#737784] font-bold">Horario de Atención</td>
+                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">Lun - Sáb, 10:00 - 20:00</td>
+                    </tr>
+                    <tr className="hover:bg-[#f9f9ff] transition-colors">
+                      <td className="py-3.5 px-4 text-[#737784] font-bold">Ciudad / Sede</td>
+                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">México D.F.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+        </div>
 
       </div>
 
       {/* ========================================================
-         MODAL: ALTA DE PERSONAL CON TOGGLES
+         MODAL: CREATE STAFF USER
          ======================================================== */}
       {showAddUserModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/85 backdrop-blur-md">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-2xl animate-in zoom-in-95">
-            <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Registrar Nuevo Empleado</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-[#cbd5e1] flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-[#cbd5e1] flex justify-between items-center bg-[#f9f9ff]">
+              <h2 className="font-bold text-sm text-[#00357f] uppercase tracking-wider">Registrar Nuevo Empleado</h2>
+              <button 
+                onClick={() => setShowAddUserModal(false)}
+                className="text-[#737784] hover:text-[#111c2d] p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             
-            <form onSubmit={handleAddUserSubmit} className="space-y-4">
+            <form onSubmit={handleAddUserSubmit} className="p-6 space-y-4 overflow-y-auto">
               <div>
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Nombre Completo *</label>
+                <label className="block text-xs font-bold text-[#434653] mb-1">Nombre Completo *</label>
                 <input
                   type="text"
                   required
                   value={uFullName}
                   onChange={(e) => setUFullName(e.target.value)}
                   placeholder="Ej. Patricia Gómez"
-                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500 min-h-[44px]"
+                  className="w-full bg-white border border-[#cbd5e1] rounded-lg p-2 text-xs focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Nombre de Usuario (Login) *</label>
+                <label className="block text-xs font-bold text-[#434653] mb-1">Nombre de Usuario (Acceso) *</label>
                 <input
                   type="text"
                   required
                   value={uUsername}
                   onChange={(e) => setUUsername(e.target.value)}
-                  placeholder="Ej. patricia_pos"
-                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500 min-h-[44px]"
+                  placeholder="Ej. patricia_gomez"
+                  className="w-full bg-white border border-[#cbd5e1] rounded-lg p-2 text-xs focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Contraseña Inicial *</label>
+                <label className="block text-xs font-bold text-[#434653] mb-1">Contraseña Inicial *</label>
                 <input
                   type="password"
                   required
@@ -418,50 +514,46 @@ export default function RegisterUsersPage() {
                   onChange={(e) => setUPassword(e.target.value)}
                   placeholder="Mínimo 6 caracteres"
                   minLength={6}
-                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500 min-h-[44px]"
+                  className="w-full bg-white border border-[#cbd5e1] rounded-lg p-2 text-xs focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none"
                 />
               </div>
 
-              {/* IOS TOGGLES FOR PERMISSIONS & ROLES */}
-              <div className="space-y-2.5 pt-2">
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                  Permisos y Asignación de Roles
-                </label>
+              {/* iOS-style toggle configuration */}
+              <div className="space-y-3 pt-2">
+                <label className="block text-xs font-bold text-[#434653]">Permisos y Rol</label>
                 
                 <ToggleSwitch
                   checked={uIsAdmin}
                   onChange={(val) => handleAddToggleChange('admin', val)}
                   label="Administrador / Dueño"
-                  description="Acceso completo a inventario, finanzas y personal."
+                  description="Acceso total a finanzas, catálogo y empleados."
                 />
-                
                 <ToggleSwitch
                   checked={uIsSeller}
                   onChange={(val) => handleAddToggleChange('seller', val)}
-                  label="Ventas / Punto de Venta"
-                  description="Acceso para cotizar, cobrar y registrar pacientes."
+                  label="Vendedor POS / Cajero"
+                  description="Registra ventas, abonos y alta de clientes."
                 />
-
                 <ToggleSwitch
                   checked={uIsOptometrist}
                   onChange={(val) => handleAddToggleChange('optometrist', val)}
                   label="Optometrista / Clínico"
-                  description="Acceso para diagnosticar y guardar recetas ópticas."
+                  description="Realiza y registra exámenes de vista y recetas."
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-950">
-                <button
+              <div className="px-6 py-4 border-t border-[#cbd5e1] flex justify-end gap-2 bg-[#f9f9ff] -mx-6 -mb-6">
+                <button 
                   type="button"
                   onClick={() => setShowAddUserModal(false)}
-                  className="text-xs font-bold text-slate-400 hover:text-slate-200 bg-slate-955 border border-slate-900 px-4 py-2.5 rounded-xl cursor-pointer min-h-[44px]"
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-[#737784] hover:bg-[#dee8ff] transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
-                <button
+                <button 
                   type="submit"
                   disabled={submittingUser}
-                  className="text-xs font-bold text-slate-955 bg-gradient-to-r from-cyan-500 to-indigo-650 hover:from-cyan-400 hover:to-indigo-500 px-5 py-2.5 rounded-xl shadow cursor-pointer disabled:opacity-50 min-h-[44px]"
+                  className="px-5 py-2 rounded-lg text-xs font-bold bg-[#00357f] hover:bg-[#004aad] text-white transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
                 >
                   {submittingUser ? 'Registrando...' : 'Dar de Alta'}
                 </button>
@@ -472,41 +564,46 @@ export default function RegisterUsersPage() {
       )}
 
       {/* ========================================================
-         MODAL: MODIFICAR PERSONAL CON TOGGLES
+         MODAL: EDIT STAFF USER
          ======================================================== */}
       {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/85 backdrop-blur-md">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-2xl animate-in zoom-in-95">
-            <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Modificar Información y Permisos</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-[#cbd5e1] flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-[#cbd5e1] flex justify-between items-center bg-[#f9f9ff]">
+              <h2 className="font-bold text-sm text-[#00357f] uppercase tracking-wider">Modificar Permisos y Datos</h2>
+              <button 
+                onClick={() => setEditingUser(null)}
+                className="text-[#737784] hover:text-[#111c2d] p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
             
-            <form onSubmit={handleUpdateUserSubmit} className="space-y-4">
+            <form onSubmit={handleUpdateUserSubmit} className="p-6 space-y-4 overflow-y-auto">
               <div>
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Nombre Completo *</label>
+                <label className="block text-xs font-bold text-[#434653] mb-1">Nombre Completo</label>
                 <input
                   type="text"
                   required
                   value={editingUser.full_name}
                   onChange={(e) => setEditingUser({ ...editingUser, full_name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none min-h-[44px]"
+                  className="w-full bg-white border border-[#cbd5e1] rounded-lg p-2 text-xs focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Usuario (Acceso) *</label>
+                <label className="block text-xs font-bold text-[#434653] mb-1">Nombre de Usuario</label>
                 <input
                   type="text"
                   required
                   value={editingUser.email.replace('@opticarayo.com', '')}
                   onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value + '@opticarayo.com' })}
-                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none min-h-[44px]"
+                  className="w-full bg-white border border-[#cbd5e1] rounded-lg p-2 text-xs focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none"
                 />
               </div>
 
-              {/* IOS TOGGLES FOR PERMISSIONS & ROLES IN EDIT MODE */}
-              <div className="space-y-2.5 pt-2">
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                  Modificar Permisos y Roles
-                </label>
+              <div className="space-y-3 pt-2">
+                <label className="block text-xs font-bold text-[#434653]">Modificar Permisos y Rol</label>
                 
                 <ToggleSwitch
                   checked={editIsAdmin}
@@ -514,44 +611,42 @@ export default function RegisterUsersPage() {
                   label="Administrador / Dueño"
                   description="Acceso completo a inventario, finanzas y personal."
                 />
-                
                 <ToggleSwitch
                   checked={editIsSeller}
                   onChange={(val) => handleEditToggleChange('seller', val)}
-                  label="Ventas / Punto de Venta"
-                  description="Acceso para cotizar, cobrar y registrar pacientes."
+                  label="Vendedor POS / Cajero"
+                  description="Registra ventas, abonos y alta de clientes."
                 />
-
                 <ToggleSwitch
                   checked={editIsOptometrist}
                   onChange={(val) => handleEditToggleChange('optometrist', val)}
                   label="Optometrista / Clínico"
-                  description="Acceso para diagnosticar y guardar recetas ópticas."
+                  description="Realiza y registra exámenes de vista y recetas."
                 />
               </div>
 
               <div>
-                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Cambiar Contraseña (Opcional)</label>
+                <label className="block text-xs font-bold text-[#434653] mb-1">Nueva Contraseña (Opcional)</label>
                 <input
                   type="password"
                   id="edit-user-pwd"
                   placeholder="Dejar vacío para mantener la actual"
                   minLength={6}
-                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-650 focus:outline-none focus:ring-1 focus:ring-cyan-500 min-h-[44px]"
+                  className="w-full bg-white border border-[#cbd5e1] rounded-lg p-2 text-xs focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-950">
-                <button
+              <div className="px-6 py-4 border-t border-[#cbd5e1] flex justify-end gap-2 bg-[#f9f9ff] -mx-6 -mb-6">
+                <button 
                   type="button"
                   onClick={() => setEditingUser(null)}
-                  className="text-xs font-bold text-slate-400 hover:text-slate-200 bg-slate-955 border border-slate-900 px-4 py-2.5 rounded-xl cursor-pointer min-h-[44px]"
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-[#737784] hover:bg-[#dee8ff] transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
-                <button
+                <button 
                   type="submit"
-                  className="text-xs font-bold text-slate-955 bg-gradient-to-r from-cyan-500 to-indigo-650 hover:from-cyan-400 hover:to-indigo-500 px-5 py-2.5 rounded-xl shadow cursor-pointer min-h-[44px]"
+                  className="px-5 py-2 rounded-lg text-xs font-bold bg-[#00357f] hover:bg-[#004aad] text-white transition-colors shadow-sm cursor-pointer"
                 >
                   Guardar Cambios
                 </button>
@@ -565,33 +660,31 @@ export default function RegisterUsersPage() {
          MODAL: CONFIRM DELETE
          ======================================================== */}
       {deletingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/85 backdrop-blur-md">
-          <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl text-center animate-in zoom-in-95">
-            <div className="w-12 h-12 bg-rose-500/10 text-rose-455 border border-rose-500/20 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white border border-[#cbd5e1] rounded-2xl p-6 space-y-4 shadow-xl text-center">
+            <div className="w-12 h-12 bg-rose-100 text-[#ba1a1a] rounded-full flex items-center justify-center mx-auto shadow-sm">
+              <AlertCircle className="w-6 h-6" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">Confirmar Eliminación</h3>
-              <p className="text-xs text-slate-400 leading-normal">
+              <h3 className="text-sm font-bold text-[#111c2d] uppercase tracking-wider">Confirmar Eliminación</h3>
+              <p className="text-xs text-[#434653] leading-normal font-medium">
                 ¿Estás seguro de que deseas eliminar a <strong>{deletingUser.full_name}</strong>?
-                Esta acción borrará permanentemente sus credenciales de acceso del sistema.
+                Esta acción revocará su acceso del sistema.
               </p>
             </div>
 
             <div className="flex gap-3 pt-2">
-              <button
+              <button 
                 type="button"
                 onClick={() => setDeletingUser(null)}
-                className="flex-1 text-xs font-bold text-slate-400 hover:text-slate-200 bg-slate-955 border border-slate-900 py-2.5 rounded-xl cursor-pointer min-h-[44px]"
+                className="flex-1 text-xs font-bold text-[#737784] hover:bg-[#dee8ff] py-2.5 rounded-xl border border-[#cbd5e1] transition-all cursor-pointer"
               >
                 Cancelar
               </button>
-              <button
+              <button 
                 type="button"
                 onClick={handleDeleteUser}
-                className="flex-1 text-xs font-bold text-slate-955 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-450 hover:to-red-500 py-2.5 rounded-xl shadow cursor-pointer min-h-[44px]"
+                className="flex-1 text-xs font-bold text-white bg-[#ba1a1a] hover:bg-[#93000a] py-2.5 rounded-xl transition-all cursor-pointer shadow-sm"
               >
                 Eliminar
               </button>

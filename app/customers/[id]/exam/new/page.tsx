@@ -48,7 +48,7 @@ export default function NewExamPage({ params }: PageProps) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 flex flex-col items-center justify-center space-y-4">
         <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-slate-500 font-medium">Cargando expediente del paciente...</p>
+        <p className="text-sm text-slate-500 font-medium">Cargando expediente del cliente...</p>
       </main>
     )
   }
@@ -62,9 +62,9 @@ export default function NewExamPage({ params }: PageProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-slate-100">El paciente no fue encontrado</h2>
+          <h2 className="text-xl font-bold text-slate-100">El cliente no fue encontrado</h2>
           <Link href="/customers" className="inline-block text-xs font-bold text-cyan-400 hover:text-cyan-300">
-            Volver a pacientes
+            Volver a clientes
           </Link>
         </div>
       </main>
@@ -87,7 +87,7 @@ export default function NewExamPage({ params }: PageProps) {
           </Link>
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight text-slate-100">Nuevo Examen Clínico</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Paciente: <strong className="text-slate-300">{customer.full_name}</strong></p>
+            <p className="text-xs text-slate-500 mt-0.5">Cliente: <strong className="text-slate-300">{customer.full_name}</strong></p>
           </div>
         </div>
 
