@@ -93,8 +93,8 @@
     - [x] Diseñar y crear la interfaz interactiva de registro de pagos y búsqueda de clientes en `app/payments/page.tsx`.
     - [x] Realizar pruebas de compilación y calidad local con `npm run build`.
     - [x] Desplegar cambios en producción en Vercel y enviar notificación de Telegram.
-- [ ] **Fase 17: Reestructuración de Barra Inferior de Navegación Móvil (BottomNav)**
+- [x] **Fase 17: Reestructuración de Barra Inferior de Navegación Móvil (BottomNav)**
     - [x] Crear el componente cliente `components/mobile-bottom-nav.tsx` para permitir resaltado dinámico de ruta activa y orden de botones personalizado.
     - [x] Integrar `MobileBottomNav` en el layout de navegación principal (`components/navbar.tsx`).
     - [x] Validar compilación local con `npm run build`.
-    - [ ] Subir a producción en Vercel y notificar por Telegram.
+    - [x] Subir a producción en Vercel y notificar por Telegram.
