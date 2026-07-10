@@ -87,9 +87,9 @@
     - [x] Agregar comportamiento de toggle (clic para contraer) en acordeón móvil de clientes y evitar auto-selección inicial.
     - [x] Corregir falla crítica de renderizado en la pestaña de Historial Clínico (`app/customers/[id]/page.tsx`) debido al formateo con toFixed de tipos devueltos por Supabase/mocks.
     - [x] Desplegar en producción y notificar por Telegram.
-- [ ] **Fase 16: Módulo de Abonos e Historial de Pagos con Notificaciones en Tiempo Real**
+- [x] **Fase 16: Módulo de Abonos e Historial de Pagos con Notificaciones en Tiempo Real**
     - [x] Crear la acción del servidor `registerInstallmentPaymentAction` en `app/customers/actions.ts` para registrar abonos de cuotas, actualizar ventas y añadir alertas.
     - [x] Agregar la opción "Registrar Pago" en la barra de navegación `components/navbar.tsx` y su respectivo ícono SVG.
     - [x] Diseñar y crear la interfaz interactiva de registro de pagos y búsqueda de clientes en `app/payments/page.tsx`.
-    - [ ] Realizar pruebas de compilación y calidad local con `npm run build`.
-    - [ ] Desplegar cambios en producción en Vercel y enviar notificación de Telegram.
+    - [x] Realizar pruebas de compilación y calidad local con `npm run build`.
+    - [x] Desplegar cambios en producción en Vercel y enviar notificación de Telegram.

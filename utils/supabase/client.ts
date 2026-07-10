@@ -1,11 +1,15 @@
 import { createBrowserClient } from '@supabase/ssr'
 
+let clientSingleton: any = null
+
 /**
  * Creates a Supabase client for use in Client Components.
  * Fallbacks are provided to ensure the application builds successfully
  * even if environment variables are not yet configured.
  */
 export function createClient() {
+  if (clientSingleton) return clientSingleton
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key'
 
@@ -54,5 +58,6 @@ export function createClient() {
     }
   }
 
-  return client
+  clientSingleton = client
+  return clientSingleton
 }
