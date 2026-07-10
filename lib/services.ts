@@ -630,7 +630,21 @@ export async function getAllProfiles(): Promise<any[]> {
       console.error('Supabase profiles fetch failed:', e)
     }
   }
-  // Fallback
+  // Fallback with client-side localStorage persistence
+  if (typeof window !== 'undefined') {
+    const localData = localStorage.getItem('optica_rayo_mock_profiles')
+    if (localData) {
+      try {
+        const parsed = JSON.parse(localData)
+        cachedProfiles = parsed
+        return parsed
+      } catch (err) {
+        // ignore parsing errors
+      }
+    }
+    // If not in localStorage, seed it
+    localStorage.setItem('optica_rayo_mock_profiles', JSON.stringify(mockDb.MOCK_PROFILES))
+  }
   return mockDb.MOCK_PROFILES
 }
 

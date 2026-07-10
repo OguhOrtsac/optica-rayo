@@ -189,6 +189,22 @@ export default function RegisterUsersPage() {
       if (res.error) {
         showFeedback('error', res.error)
       } else {
+        // Update localStorage mock profiles for offline sync
+        if (typeof window !== 'undefined') {
+          const formattedEmail = uUsername.includes('@') ? uUsername : `${uUsername}@opticarayo.com`
+          const localData = localStorage.getItem('optica_rayo_mock_profiles')
+          const mockList = localData ? JSON.parse(localData) : []
+          const newProfile = {
+            id: 'mock-' + Math.random().toString(36).substr(2, 9),
+            email: formattedEmail,
+            full_name: uFullName,
+            role: roleVal,
+            temporal_password_changed: false,
+            created_at: new Date().toISOString()
+          }
+          localStorage.setItem('optica_rayo_mock_profiles', JSON.stringify([...mockList, newProfile]))
+        }
+
         showFeedback('success', res.success || 'Usuario registrado con éxito.')
         setShowAddUserModal(false)
         setUFullName('')
@@ -231,6 +247,24 @@ export default function RegisterUsersPage() {
       if (res.error) {
         showFeedback('error', res.error)
       } else {
+        // Update localStorage mock profiles for offline sync
+        if (typeof window !== 'undefined') {
+          const localData = localStorage.getItem('optica_rayo_mock_profiles')
+          if (localData) {
+            try {
+              const mockList = JSON.parse(localData)
+              const updatedList = mockList.map((u: any) => 
+                u.id === editingUser.id 
+                  ? { ...u, full_name: editingUser.full_name, email: editingUser.email, role: roleVal }
+                  : u
+              )
+              localStorage.setItem('optica_rayo_mock_profiles', JSON.stringify(updatedList))
+            } catch (err) {
+              // ignore
+            }
+          }
+        }
+
         showFeedback('success', res.success || 'Usuario actualizado correctamente.')
         setEditingUser(null)
         await loadUsersData()
@@ -246,6 +280,20 @@ export default function RegisterUsersPage() {
     try {
       const res = await adminDeleteUserAction(deletingUser.id)
       if (res.success) {
+        // Update localStorage mock profiles for offline sync
+        if (typeof window !== 'undefined') {
+          const localData = localStorage.getItem('optica_rayo_mock_profiles')
+          if (localData) {
+            try {
+              const mockList = JSON.parse(localData)
+              const updatedList = mockList.filter((u: any) => u.id !== deletingUser.id)
+              localStorage.setItem('optica_rayo_mock_profiles', JSON.stringify(updatedList))
+            } catch (err) {
+              // ignore
+            }
+          }
+        }
+
         showFeedback('success', res.success)
       } else if (res.error) {
         showFeedback('error', res.error)

@@ -119,3 +119,8 @@
     - [x] Implementar la función `handleStartEdit` para inicializar explícitamente los estados de los toggles de rol al abrir el modal de edición de usuario.
     - [x] Validar compilación local con `npm run build`.
     - [x] Subir a producción en Vercel y notificar por Telegram.
+- [ ] **Fase 22: Sincronización e Interactividad Híbrida de Mocks en localStorage**
+    - [x] Modificar `getAllProfiles` en `lib/services.ts` para leer y sembrar la base de datos simulada en `localStorage` bajo la clave `'optica_rayo_mock_profiles'`.
+    - [x] Actualizar `handleAddUserSubmit`, `handleUpdateUserSubmit`, y `handleDeleteUser` en `app/dashboard/admin/users/page.tsx` para sincronizar las mutaciones de personal en caliente en `localStorage`.
+    - [x] Validar compilación local con `npm run build`.
+    - [ ] Subir a producción en Vercel y notificar por Telegram.
