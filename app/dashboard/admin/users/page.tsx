@@ -113,14 +113,13 @@ export default function RegisterUsersPage() {
   const [editIsSeller, setEditIsSeller] = useState(false)
   const [editIsCustomer, setEditIsCustomer] = useState(false)
 
-  // Set edit toggles when editingUser changes
-  useEffect(() => {
-    if (editingUser) {
-      setEditIsAdmin(editingUser.role === 'owner')
-      setEditIsSeller(editingUser.role === 'seller')
-      setEditIsCustomer(editingUser.role === 'customer')
-    }
-  }, [editingUser])
+  // Start editing user and initialize toggle states explicitly
+  const handleStartEdit = (u: Profile) => {
+    setEditingUser(u)
+    setEditIsAdmin(u.role === 'owner')
+    setEditIsSeller(u.role === 'seller')
+    setEditIsCustomer(u.role === 'customer')
+  }
 
   const handleEditToggleChange = (roleType: 'admin' | 'seller' | 'customer', val: boolean) => {
     if (roleType === 'admin') {
@@ -400,7 +399,7 @@ export default function RegisterUsersPage() {
                       {/* Actions */}
                       <div className="flex gap-2 border-t border-[#f0f3ff] pt-3">
                         <button 
-                          onClick={() => setEditingUser(u)}
+                          onClick={() => handleStartEdit(u)}
                           className="flex-1 bg-[#f0f3ff] hover:bg-[#dee8ff] text-[#111c2d] py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer"
                         >
                           Editar

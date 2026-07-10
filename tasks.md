@@ -114,3 +114,8 @@
     - [x] Integrar control de errores de red y llamadas de fallback al almacenamiento mock en `createUserAction`, `adminUpdateUserAction` y `adminDeleteUserAction` en `app/auth/actions.ts`.
     - [x] Validar compilación local con `npm run build`.
     - [x] Subir a producción en Vercel y notificar por Telegram.
+- [ ] **Fase 21: Solución a Re-renderizado y Destrucción de Estado de Roles en Edición**
+    - [x] Eliminar el gancho de efecto `useEffect` dependiente de `[editingUser]` que reiniciaba los switches de rol al escribir en los inputs de texto del modal.
+    - [x] Implementar la función `handleStartEdit` para inicializar explícitamente los estados de los toggles de rol al abrir el modal de edición de usuario.
+    - [x] Validar compilación local con `npm run build`.
+    - [ ] Subir a producción en Vercel y notificar por Telegram.
