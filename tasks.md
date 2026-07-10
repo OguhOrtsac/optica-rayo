@@ -124,7 +124,7 @@
     - [x] Actualizar `handleAddUserSubmit`, `handleUpdateUserSubmit`, y `handleDeleteUser` en `app/dashboard/admin/users/page.tsx` para sincronizar las mutaciones de personal en caliente en `localStorage`.
     - [x] Validar compilación local con `npm run build`.
     - [x] Subir a producción en Vercel y notificar por Telegram.
-- [ ] **Fase 23: Bypass de RLS mediante Admin Client para Chequeo de Permisos de Backend**
+- [x] **Fase 23: Bypass de RLS mediante Admin Client para Chequeo de Permisos de Backend**
     - [x] Modificar el chequeo de seguridad de rol en `adminUpdateUserAction` y `adminDeleteUserAction` en `app/auth/actions.ts` para que utilicen `adminClient` y hagan bypass seguro del RLS restrictivo de Supabase.
     - [x] Validar compilación local con `npm run build`.
-    - [ ] Subir a producción en Vercel y notificar por Telegram.
+    - [x] Subir a producción en Vercel y notificar por Telegram.
