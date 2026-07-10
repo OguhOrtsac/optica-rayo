@@ -521,3 +521,18 @@ export let MOCK_NOTIFICATIONS: MockNotification[] = [
 ]
 export let MOCK_LENS_REQUESTS: MockLensRequest[] = []
 
+export function addMockStaffProfile(profile: any) {
+  MOCK_PROFILES = [...MOCK_PROFILES, profile]
+}
+
+export function updateMockStaffProfile(id: string, data: any) {
+  MOCK_PROFILES = MOCK_PROFILES.map(p => 
+    p.id === id 
+      ? { ...p, full_name: data.fullName, email: data.username.includes('@') ? data.username : `${data.username}@opticarayo.com`, role: data.role } 
+      : p
+  )
+}
+
+export function deleteMockStaffProfile(id: string) {
+  MOCK_PROFILES = MOCK_PROFILES.filter(p => p.id !== id)
+}

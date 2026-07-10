@@ -44,6 +44,7 @@ Los siguientes agentes están configurados y listos en este entorno. Puedes llam
 | **Fase 17** | Reestructuración de Barra Inferior de Navegación Móvil (BottomNav) | ✅ Completada |
 | **Fase 18** | Reemplazo de Rol Optometrista por Cliente y Corrección de Errores GET | ✅ Completada |
 | **Fase 19** | Solución a Gestión de Personal e Implementación de Caché de Staff | ✅ Completada |
+| **Fase 20** | Fallback Offline y Resiliencia en Creación, Edición y Baja de Staff | ⏳ En Progreso |
 
 
 

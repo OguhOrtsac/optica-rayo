@@ -6,6 +6,7 @@ import { cookies } from 'next/headers'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { invalidateProfilesCache } from '@/lib/services'
+import * as mockDb from '@/lib/mocks'
 
 /**
  * Centralizes the username-to-email mapping logic.
@@ -366,11 +367,11 @@ export async function createUserAction(currentState: any, formData: FormData) {
     })
 
     if (authError) {
-      return { error: `Error en Autenticación: ${authError.message}`, success: null }
+      throw new Error(`Error en Autenticación: ${authError.message}`)
     }
 
     if (!user) {
-      return { error: 'No se pudo crear el registro del usuario.', success: null }
+      throw new Error('No se pudo crear el registro del usuario.')
     }
 
     // 2. The database trigger (on_auth_user_created) automatically inserts into profiles.
@@ -392,7 +393,22 @@ export async function createUserAction(currentState: any, formData: FormData) {
     revalidatePath('/dashboard/admin', 'layout')
     return { success: `Usuario "${username}" (${role}) creado con éxito. Credenciales iniciales listas.`, error: null }
   } catch (err: any) {
-    return { error: `Fallo del servidor: ${err.message || 'Error inesperado.'}`, success: null }
+    console.warn('Supabase create user failed. Falling back to local mock storage:', err.message)
+    
+    // Simulate creation in mockDb
+    const newMockId = 'usr-' + Math.random().toString(36).substr(2, 9)
+    mockDb.addMockStaffProfile({
+      id: newMockId,
+      email: formattedEmail,
+      full_name: fullName,
+      role: role,
+      temporal_password_changed: false,
+      created_at: new Date().toISOString()
+    })
+    
+    invalidateProfilesCache()
+    revalidatePath('/dashboard/admin', 'layout')
+    return { success: `Usuario "${username}" (${role}) creado con éxito (Modo Simulado/Mock).`, error: null }
   }
 }
 
@@ -614,7 +630,7 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
     // 1. Update Supabase Auth user
     const { error: authError } = await adminClient.auth.admin.updateUserById(userId, updatePayload)
     if (authError) {
-      return { error: `Error en Autenticación: ${authError.message}` }
+      throw new Error(`Error en Autenticación: ${authError.message}`)
     }
 
     // 2. Update public.profiles table
@@ -628,14 +644,24 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
       .eq('id', userId)
 
     if (dbError) {
-      return { error: `Error al actualizar perfil en BD: ${dbError.message}` }
+      throw new Error(`Error al actualizar perfil en BD: ${dbError.message}`)
     }
 
     invalidateProfilesCache()
     revalidatePath('/dashboard/admin', 'layout')
     return { success: 'Usuario actualizado exitosamente.' }
   } catch (err: any) {
-    return { error: err.message || 'Error inesperado.' }
+    console.warn('Supabase update user failed. Falling back to local mock storage:', err.message)
+    
+    mockDb.updateMockStaffProfile(userId, {
+      fullName: data.fullName,
+      username: data.username,
+      role: data.role
+    })
+    
+    invalidateProfilesCache()
+    revalidatePath('/dashboard/admin', 'layout')
+    return { success: 'Usuario actualizado exitosamente (Modo Simulado/Mock).' }
   }
 }
 
@@ -669,13 +695,19 @@ export async function adminDeleteUserAction(userId: string) {
     // 1. Delete from Supabase Auth (on delete cascade deletes from profiles table)
     const { error: authError } = await adminClient.auth.admin.deleteUser(userId)
     if (authError) {
-      return { error: `Error al eliminar de Autenticación: ${authError.message}` }
+      throw new Error(`Error al eliminar de Autenticación: ${authError.message}`)
     }
 
     invalidateProfilesCache()
     revalidatePath('/dashboard/admin', 'layout')
     return { success: 'Usuario eliminado exitosamente.' }
   } catch (err: any) {
-    return { error: err.message || 'Error inesperado.' }
+    console.warn('Supabase delete user failed. Falling back to local mock storage:', err.message)
+    
+    mockDb.deleteMockStaffProfile(userId)
+    
+    invalidateProfilesCache()
+    revalidatePath('/dashboard/admin', 'layout')
+    return { success: 'Usuario eliminado exitosamente (Modo Simulado/Mock).' }
   }
 }

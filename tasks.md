@@ -109,3 +109,8 @@
     - [x] Implementar caché en memoria local `cachedProfiles` en `lib/services.ts` e invalidación automática en Server Actions para eliminar la latencia al navegar por la gestión de personal.
     - [x] Validar compilación local con `npm run build`.
     - [x] Subir a producción en Vercel y notificar por Telegram.
+- [ ] **Fase 20: Fallback Offline y Resiliencia en Creación, Edición y Baja de Staff**
+    - [x] Crear funciones de mutación mock (`addMockStaffProfile`, `updateMockStaffProfile`, `deleteMockStaffProfile`) en `lib/mocks.ts` para persistir los cambios simulados localmente en memoria.
+    - [x] Integrar control de errores de red y llamadas de fallback al almacenamiento mock en `createUserAction`, `adminUpdateUserAction` y `adminDeleteUserAction` en `app/auth/actions.ts`.
+    - [x] Validar compilación local con `npm run build`.
+    - [ ] Subir a producción en Vercel y notificar por Telegram.
