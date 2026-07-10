@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { invalidateProfilesCache } from '@/lib/services'
 
 /**
  * Centralizes the username-to-email mapping logic.
@@ -387,6 +388,7 @@ export async function createUserAction(currentState: any, formData: FormData) {
       console.error('Verify Profiles update warning:', dbError.message)
     }
 
+    invalidateProfilesCache()
     revalidatePath('/dashboard/admin', 'layout')
     return { success: `Usuario "${username}" (${role}) creado con éxito. Credenciales iniciales listas.`, error: null }
   } catch (err: any) {
@@ -587,7 +589,9 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
       .eq('id', currentUser?.id || '')
       .single()
 
-    if (!profile || !['owner', 'dev'].includes(profile.role)) {
+    const userRole = currentUser?.user_metadata?.role || profile?.role
+
+    if (!userRole || !['owner', 'dev'].includes(userRole)) {
       return { error: 'No tienes permisos para modificar usuarios.' }
     }
 
@@ -627,6 +631,7 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
       return { error: `Error al actualizar perfil en BD: ${dbError.message}` }
     }
 
+    invalidateProfilesCache()
     revalidatePath('/dashboard/admin', 'layout')
     return { success: 'Usuario actualizado exitosamente.' }
   } catch (err: any) {
@@ -653,7 +658,9 @@ export async function adminDeleteUserAction(userId: string) {
       .eq('id', currentUser?.id || '')
       .single()
 
-    if (!profile || !['owner', 'dev'].includes(profile.role)) {
+    const userRole = currentUser?.user_metadata?.role || profile?.role
+
+    if (!userRole || !['owner', 'dev'].includes(userRole)) {
       return { error: 'No tienes permisos para eliminar usuarios.' }
     }
 
@@ -665,6 +672,7 @@ export async function adminDeleteUserAction(userId: string) {
       return { error: `Error al eliminar de Autenticación: ${authError.message}` }
     }
 
+    invalidateProfilesCache()
     revalidatePath('/dashboard/admin', 'layout')
     return { success: 'Usuario eliminado exitosamente.' }
   } catch (err: any) {

@@ -593,10 +593,23 @@ export async function getMyReminder(): Promise<any | null> {
   return null
 }
 
+let cachedProfiles: any[] | null = null
+
+/**
+ * Invalidates the staff profiles cache to force a reload from the database.
+ */
+export function invalidateProfilesCache() {
+  cachedProfiles = null
+}
+
 /**
  * Service to fetch all users/profiles (Admin only).
  */
 export async function getAllProfiles(): Promise<any[]> {
+  if (cachedProfiles) {
+    return cachedProfiles
+  }
+
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
@@ -604,10 +617,14 @@ export async function getAllProfiles(): Promise<any[]> {
         supabase
           .from('profiles')
           .select('*')
-          .order('full_name', { ascending: true })
+          .order('full_name', { ascending: true }),
+        1500 // Optimized timeout for faster fallback
       )
 
-      if (!error && data) return data
+      if (!error && data) {
+        cachedProfiles = data
+        return data
+      }
       console.error('Error fetching all profiles:', error?.message)
     } catch (e) {
       console.error('Supabase profiles fetch failed:', e)

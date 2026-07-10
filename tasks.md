@@ -104,3 +104,8 @@
     - [x] Corregir la ruta de los iconos dinámicos en el manifiesto `app/manifest.ts` a `/icon.png` y `/apple-icon.png` para evitar llamadas 404.
     - [x] Validar compilación local con `npm run build`.
     - [x] Subir a producción en Vercel y notificar por Telegram.
+- [ ] **Fase 19: Solución a Gestión de Personal e Implementación de Caché de Staff**
+    - [x] Corregir la validación de permisos de administración en `adminUpdateUserAction` y `adminDeleteUserAction` en `app/auth/actions.ts` para soportar de forma segura roles simulados y JWT metadatos.
+    - [x] Implementar caché en memoria local `cachedProfiles` en `lib/services.ts` e invalidación automática en Server Actions para eliminar la latencia al navegar por la gestión de personal.
+    - [x] Validar compilación local con `npm run build`.
+    - [ ] Subir a producción en Vercel y notificar por Telegram.
