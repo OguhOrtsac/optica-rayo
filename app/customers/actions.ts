@@ -952,3 +952,119 @@ export async function getMySalesAction(): Promise<any[]> {
   return []
 }
 
+/**
+ * Registers a payment for a specific installment, updates sales balance and inserts a notification.
+ */
+export async function registerInstallmentPaymentAction(
+  installmentId: string,
+  amountPaid: number,
+  paymentMethod: 'cash' | 'card' | 'transfer'
+): Promise<{ success: string | null; error: string | null }> {
+  try {
+    const supabase = await createClient()
+
+    // 1. Get the installment and joined sale
+    const { data: installment, error: instError } = await supabase
+      .from('payment_installments')
+      .select(`
+        *,
+        sale:sales(*)
+      `)
+      .eq('id', installmentId)
+      .single()
+
+    if (instError || !installment) {
+      throw new Error('No se encontró la cuota de pago: ' + (instError?.message || ''))
+    }
+
+    const sale = (installment as any).sale
+    if (!sale) {
+      throw new Error('No se encontró la venta asociada a la cuota.')
+    }
+
+    const newPaidAmount = Number(sale.paid_amount) + amountPaid
+    const newPendingBalance = Math.max(0, Number(sale.pending_balance) - amountPaid)
+
+    // 2. Update installment status
+    const { error: updateInstError } = await supabase
+      .from('payment_installments')
+      .update({
+        status: 'paid',
+        payment_date: new Date().toISOString()
+      })
+      .eq('id', installmentId)
+
+    if (updateInstError) {
+      throw new Error('Error al actualizar la cuota: ' + updateInstError.message)
+    }
+
+    // 3. Update sale balance
+    const { error: updateSaleError } = await supabase
+      .from('sales')
+      .update({
+        paid_amount: newPaidAmount,
+        pending_balance: newPendingBalance,
+        payment_method: paymentMethod
+      })
+      .eq('id', sale.id)
+
+    if (updateSaleError) {
+      throw new Error('Error al actualizar la venta: ' + updateSaleError.message)
+    }
+
+    // 4. Create customer notification
+    if (sale.customer_id) {
+      const formattedAmount = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amountPaid)
+      const formattedBalance = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(newPendingBalance)
+      
+      await supabase
+        .from('notifications')
+        .insert([{
+          user_id: sale.customer_id,
+          title: 'Pago Recibido Exitosamente ✅',
+          message: `Confirmamos tu abono de ${formattedAmount}. Tu saldo restante es de ${formattedBalance}.`,
+          type: 'general',
+          is_read: false
+        }])
+    }
+
+    revalidatePath('/', 'layout')
+    return { success: '¡Pago registrado exitosamente y saldo actualizado!', error: null }
+  } catch (err: any) {
+    console.warn('registerInstallmentPaymentAction Supabase failed, falling back to mockDb:', err.message)
+    
+    // Fallback Mock
+    const inst = mockDb.MOCK_PAYMENT_INSTALLMENTS.find(i => i.id === installmentId)
+    if (inst) {
+      inst.status = 'paid'
+      inst.payment_date = new Date().toISOString()
+
+      const sale = mockDb.MOCK_SALES.find(s => s.id === inst.sale_id)
+      if (sale) {
+        sale.paid_amount = (sale.paid_amount || 0) + amountPaid
+        sale.pending_balance = Math.max(0, (sale.pending_balance || 0) - amountPaid)
+        sale.payment_method = paymentMethod
+
+        if (sale.customer_id) {
+          const formattedAmount = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amountPaid)
+          const formattedBalance = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(sale.pending_balance)
+
+          mockDb.MOCK_NOTIFICATIONS.push({
+            id: 'n_' + Math.random().toString(36).substr(2, 9),
+            user_id: sale.customer_id,
+            title: 'Pago Recibido Exitosamente ✅',
+            message: `Confirmamos tu abono de ${formattedAmount}. Tu saldo restante es de ${formattedBalance}.`,
+            type: 'general',
+            is_read: false,
+            created_at: new Date().toISOString()
+          })
+        }
+      }
+      return { success: '¡Pago registrado exitosamente (Offline fallback)!', error: null }
+    }
+
+    return { error: 'Fallo al registrar el pago: ' + err.message, success: null }
+  }
+}
+
+
