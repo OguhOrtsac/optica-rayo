@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import { cookies } from 'next/headers'
+import MobileBottomNav from './mobile-bottom-nav'
 
 /**
  * Global Navigation Bar with App Shell Architecture.
@@ -192,48 +193,8 @@ export default async function Navbar() {
         )}
       </header>
 
-      {/* Mobile Bottom Navigation Bar (App Shell style, h-20 + touch friendly >= 44px) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#f9f9ff] dark:bg-slate-950 border-t border-[#c3c6d5] dark:border-slate-900/60 flex md:hidden justify-around items-center h-20 pb-safe px-2 shadow-lg rounded-t-xl">
-        {navLinks.map(link => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-[#434653] dark:text-slate-400 hover:text-[#00357f] transition-colors"
-          >
-            {renderIcon(link.icon)}
-            <span className="text-[9px] font-bold mt-1 tracking-tight select-none">
-              {link.label}
-            </span>
-          </Link>
-        ))}
-        {isAuthenticated ? (
-          <Link
-            href="/profile"
-            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-[#434653] dark:text-slate-400 hover:text-[#00357f] transition-colors"
-          >
-            <div className="w-5 h-5 rounded-full bg-[#dee8ff] dark:bg-slate-800 border border-[#c3c6d5] dark:border-slate-700 flex items-center justify-center">
-              <span className="text-[8px] font-bold text-[#00357f] dark:text-slate-350">
-                {initials}
-              </span>
-            </div>
-            <span className="text-[9px] font-bold mt-1 tracking-tight select-none">
-              Perfil
-            </span>
-          </Link>
-        ) : (
-          <Link
-            href="/login"
-            className="flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 text-[#434653] dark:text-slate-400 hover:text-[#00357f] transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-            </svg>
-            <span className="text-[9px] font-bold mt-1 tracking-tight select-none">
-              Login
-            </span>
-          </Link>
-        )}
-      </nav>
+      {/* Mobile Bottom Navigation Bar */}
+      <MobileBottomNav isAuthenticated={isAuthenticated} role={role} initials={initials} />
     </>
   )
 }
