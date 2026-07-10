@@ -81,26 +81,26 @@ export default function RegisterUsersPage() {
   // Toggles for roles (iOS-style switch state)
   const [uIsAdmin, setUIsAdmin] = useState(false)
   const [uIsSeller, setUIsSeller] = useState(true)
-  const [uIsOptometrist, setUIsOptometrist] = useState(false)
+  const [uIsCustomer, setUIsCustomer] = useState(false)
   
   const [submittingUser, setSubmittingUser] = useState(false)
 
   // Handle mutually exclusive toggle select
-  const handleAddToggleChange = (roleType: 'admin' | 'seller' | 'optometrist', val: boolean) => {
+  const handleAddToggleChange = (roleType: 'admin' | 'seller' | 'customer', val: boolean) => {
     if (roleType === 'admin') {
       setUIsAdmin(val)
       if (val) {
         setUIsSeller(false)
-        setUIsOptometrist(false)
+        setUIsCustomer(false)
       }
     } else if (roleType === 'seller') {
       setUIsSeller(val)
       if (val) {
         setUIsAdmin(false)
-        setUIsOptometrist(false)
+        setUIsCustomer(false)
       }
     } else {
-      setUIsOptometrist(val)
+      setUIsCustomer(val)
       if (val) {
         setUIsAdmin(false)
         setUIsSeller(false)
@@ -111,32 +111,32 @@ export default function RegisterUsersPage() {
   // Edit Toggles state
   const [editIsAdmin, setEditIsAdmin] = useState(false)
   const [editIsSeller, setEditIsSeller] = useState(false)
-  const [editIsOptometrist, setEditIsOptometrist] = useState(false)
+  const [editIsCustomer, setEditIsCustomer] = useState(false)
 
   // Set edit toggles when editingUser changes
   useEffect(() => {
     if (editingUser) {
       setEditIsAdmin(editingUser.role === 'owner')
       setEditIsSeller(editingUser.role === 'seller')
-      setEditIsOptometrist(editingUser.role === 'dev')
+      setEditIsCustomer(editingUser.role === 'customer')
     }
   }, [editingUser])
 
-  const handleEditToggleChange = (roleType: 'admin' | 'seller' | 'optometrist', val: boolean) => {
+  const handleEditToggleChange = (roleType: 'admin' | 'seller' | 'customer', val: boolean) => {
     if (roleType === 'admin') {
       setEditIsAdmin(val)
       if (val) {
         setEditIsSeller(false)
-        setEditIsOptometrist(false)
+        setEditIsCustomer(false)
       }
     } else if (roleType === 'seller') {
       setEditIsSeller(val)
       if (val) {
         setEditIsAdmin(false)
-        setEditIsOptometrist(false)
+        setEditIsCustomer(false)
       }
     } else {
-      setEditIsOptometrist(val)
+      setEditIsCustomer(val)
       if (val) {
         setEditIsAdmin(false)
         setEditIsSeller(false)
@@ -176,7 +176,7 @@ export default function RegisterUsersPage() {
     let roleVal: 'owner' | 'seller' | 'customer' | 'dev' = 'customer'
     if (uIsAdmin) roleVal = 'owner'
     else if (uIsSeller) roleVal = 'seller'
-    else if (uIsOptometrist) roleVal = 'dev'
+    else if (uIsCustomer) roleVal = 'customer'
 
     setSubmittingUser(true)
     const formData = new FormData()
@@ -197,7 +197,7 @@ export default function RegisterUsersPage() {
         setUPassword('')
         setUIsAdmin(false)
         setUIsSeller(true)
-        setUIsOptometrist(false)
+        setUIsCustomer(false)
         await loadUsersData()
       }
     } catch (e) {
@@ -215,7 +215,7 @@ export default function RegisterUsersPage() {
     let roleVal: 'owner' | 'seller' | 'customer' | 'dev' = 'customer'
     if (editIsAdmin) roleVal = 'owner'
     else if (editIsSeller) roleVal = 'seller'
-    else if (editIsOptometrist) roleVal = 'dev'
+    else if (editIsCustomer) roleVal = 'customer'
 
     try {
       const editPasswordInput = document.getElementById('edit-user-pwd') as HTMLInputElement
@@ -535,10 +535,10 @@ export default function RegisterUsersPage() {
                   description="Registra ventas, abonos y alta de clientes."
                 />
                 <ToggleSwitch
-                  checked={uIsOptometrist}
-                  onChange={(val) => handleAddToggleChange('optometrist', val)}
-                  label="Optometrista / Clínico"
-                  description="Realiza y registra exámenes de vista y recetas."
+                  checked={uIsCustomer}
+                  onChange={(val) => handleAddToggleChange('customer', val)}
+                  label="Cliente / Paciente"
+                  description="Acceso de consulta para recetas, compras y promociones."
                 />
               </div>
 
@@ -618,10 +618,10 @@ export default function RegisterUsersPage() {
                   description="Registra ventas, abonos y alta de clientes."
                 />
                 <ToggleSwitch
-                  checked={editIsOptometrist}
-                  onChange={(val) => handleEditToggleChange('optometrist', val)}
-                  label="Optometrista / Clínico"
-                  description="Realiza y registra exámenes de vista y recetas."
+                  checked={editIsCustomer}
+                  onChange={(val) => handleEditToggleChange('customer', val)}
+                  label="Cliente / Paciente"
+                  description="Acceso de consulta para recetas, compras y promociones."
                 />
               </div>
 

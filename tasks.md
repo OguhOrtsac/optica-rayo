@@ -98,3 +98,9 @@
     - [x] Integrar `MobileBottomNav` en el layout de navegación principal (`components/navbar.tsx`).
     - [x] Validar compilación local con `npm run build`.
     - [x] Subir a producción en Vercel y notificar por Telegram.
+- [ ] **Fase 18: Reemplazo de Rol Optometrista por Cliente y Corrección de Errores GET**
+    - [x] Quitar el rol Optometrista del modal de creación y edición en `app/dashboard/admin/users/page.tsx` y mapear a creación directa de rol `customer` (Cliente / Paciente).
+    - [x] Corregir la etiqueta `<img>` en `app/catalog/page.tsx` para evitar llamadas GET fantasma con string vacío `src=""` que arrojaban errores 404 en consola.
+    - [x] Corregir la ruta de los iconos dinámicos en el manifiesto `app/manifest.ts` a `/icon.png` y `/apple-icon.png` para evitar llamadas 404.
+    - [x] Validar compilación local con `npm run build`.
+    - [ ] Subir a producción en Vercel y notificar por Telegram.

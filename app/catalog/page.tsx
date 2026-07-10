@@ -461,11 +461,18 @@ function CatalogContent() {
                     </div>
 
                     <div className="w-full h-40 md:h-64 rounded-xl overflow-hidden bg-[#f9f9ff] border border-[#cbd5e1]/40 shadow-sm order-1 md:order-2 relative">
-                      <img 
-                        src={p.image_url || ''} 
-                        alt={p.name} 
-                        className="w-full h-full object-contain p-2 hover:scale-105 transition-transform duration-700"
-                      />
+                      {p.image_url ? (
+                        <img 
+                          src={p.image_url} 
+                          alt={p.name} 
+                          className="w-full h-full object-contain p-2 hover:scale-105 transition-transform duration-700"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-[#f0f3ff] text-[#00357f]/30">
+                          <Eye className="w-12 h-12 stroke-[1.5]" />
+                          <span className="text-[10px] font-bold mt-2 uppercase tracking-wider">Sin Imagen</span>
+                        </div>
+                      )}
                     </div>
 
                   </div>
