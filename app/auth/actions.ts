@@ -598,8 +598,11 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
     const supabase = await createClient()
     const { data: { user: currentUser } } = await supabase.auth.getUser()
     
+    const adminClient = createAdminClient() as any
+
     // Safety check: only owners or dev can modify users
-    const { data: profile } = await supabase
+    // Querying with adminClient to bypass RLS restrictions
+    const { data: profile } = await adminClient
       .from('profiles')
       .select('role')
       .eq('id', currentUser?.id || '')
@@ -610,8 +613,6 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
     if (!userRole || !['owner', 'dev'].includes(userRole)) {
       return { error: 'No tienes permisos para modificar usuarios.' }
     }
-
-    const adminClient = createAdminClient() as any
     const formattedEmail = formatToEmail(data.username)
 
     // Build auth update payload
@@ -677,8 +678,11 @@ export async function adminDeleteUserAction(userId: string) {
       return { error: 'No puedes eliminar tu propia cuenta.' }
     }
 
+    const adminClient = createAdminClient() as any
+
     // Safety check: only owners or dev can delete users
-    const { data: profile } = await supabase
+    // Querying with adminClient to bypass RLS restrictions
+    const { data: profile } = await adminClient
       .from('profiles')
       .select('role')
       .eq('id', currentUser?.id || '')
@@ -689,8 +693,6 @@ export async function adminDeleteUserAction(userId: string) {
     if (!userRole || !['owner', 'dev'].includes(userRole)) {
       return { error: 'No tienes permisos para eliminar usuarios.' }
     }
-
-    const adminClient = createAdminClient() as any
 
     // 1. Delete from Supabase Auth (on delete cascade deletes from profiles table)
     const { error: authError } = await adminClient.auth.admin.deleteUser(userId)
