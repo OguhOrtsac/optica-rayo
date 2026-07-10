@@ -79,6 +79,20 @@ export default function CustomerDetailPage({ params }: PageProps) {
     })
   }
 
+  const formatExamValue = (val: any) => {
+    if (val === null || val === undefined || val === '') return '--'
+    const num = typeof val === 'number' ? val : parseFloat(val)
+    if (isNaN(num)) return '--'
+    return (num >= 0 ? '+' : '') + num.toFixed(2)
+  }
+
+  const formatAddValue = (val: any) => {
+    if (val === null || val === undefined || val === '') return '--'
+    const num = typeof val === 'number' ? val : parseFloat(val)
+    if (isNaN(num)) return '--'
+    return `+${num.toFixed(2)}`
+  }
+
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
@@ -355,11 +369,11 @@ export default function CustomerDetailPage({ params }: PageProps) {
                           <div className="grid grid-cols-3 gap-2 text-center text-xs">
                             <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
                               <span className="block text-[8px] text-[#737784] font-bold uppercase">Esfera</span>
-                              <span className="font-mono font-bold text-[#00357f]">{exam.od_sphere !== null ? (exam.od_sphere >= 0 ? '+' : '') + exam.od_sphere.toFixed(2) : '--'}</span>
+                              <span className="font-mono font-bold text-[#00357f]">{formatExamValue(exam.od_sphere)}</span>
                             </div>
                             <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
                               <span className="block text-[8px] text-[#737784] font-bold uppercase">Cilindro</span>
-                              <span className="font-mono font-bold text-[#00357f]">{exam.od_cylinder !== null ? (exam.od_cylinder >= 0 ? '+' : '') + exam.od_cylinder.toFixed(2) : '--'}</span>
+                              <span className="font-mono font-bold text-[#00357f]">{formatExamValue(exam.od_cylinder)}</span>
                             </div>
                             <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
                               <span className="block text-[8px] text-[#737784] font-bold uppercase">Eje</span>
@@ -367,7 +381,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                             </div>
                           </div>
                           <div className="flex justify-between items-center pt-1 text-[11px] text-[#434653] font-medium">
-                            <span>Adición: <strong className="font-mono text-[#00357f]">{exam.od_add !== null ? `+${exam.od_add.toFixed(2)}` : '--'}</strong></span>
+                            <span>Adición: <strong className="font-mono text-[#00357f]">{formatAddValue(exam.od_add)}</strong></span>
                             <span>Agudeza: <strong className="text-[#111c2d]">{exam.od_visual_acuity || 'N/A'}</strong></span>
                           </div>
                         </div>
@@ -381,11 +395,11 @@ export default function CustomerDetailPage({ params }: PageProps) {
                           <div className="grid grid-cols-3 gap-2 text-center text-xs">
                             <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
                               <span className="block text-[8px] text-[#737784] font-bold uppercase">Esfera</span>
-                              <span className="font-mono font-bold text-[#00668a]">{exam.oi_sphere !== null ? (exam.oi_sphere >= 0 ? '+' : '') + exam.oi_sphere.toFixed(2) : '--'}</span>
+                              <span className="font-mono font-bold text-[#00668a]">{formatExamValue(exam.oi_sphere)}</span>
                             </div>
                             <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
                               <span className="block text-[8px] text-[#737784] font-bold uppercase">Cilindro</span>
-                              <span className="font-mono font-bold text-[#00668a]">{exam.oi_cylinder !== null ? (exam.oi_cylinder >= 0 ? '+' : '') + exam.oi_cylinder.toFixed(2) : '--'}</span>
+                              <span className="font-mono font-bold text-[#00668a]">{formatExamValue(exam.oi_cylinder)}</span>
                             </div>
                             <div className="bg-white border border-[#cbd5e1]/40 p-2 rounded-lg">
                               <span className="block text-[8px] text-[#737784] font-bold uppercase">Eje</span>
@@ -393,7 +407,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                             </div>
                           </div>
                           <div className="flex justify-between items-center pt-1 text-[11px] text-[#434653] font-medium">
-                            <span>Adición: <strong className="font-mono text-[#00668a]">{exam.oi_add !== null ? `+${exam.oi_add.toFixed(2)}` : '--'}</strong></span>
+                            <span>Adición: <strong className="font-mono text-[#00668a]">{formatAddValue(exam.oi_add)}</strong></span>
                             <span>Agudeza: <strong className="text-[#111c2d]">{exam.oi_visual_acuity || 'N/A'}</strong></span>
                           </div>
                         </div>

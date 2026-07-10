@@ -45,10 +45,6 @@ export default function CustomersPage() {
     try {
       const data = await searchCustomers(q)
       setCustomers(data)
-      // Auto-select first customer if none selected
-      if (data.length > 0 && !selectedCustomer) {
-        handleSelectCustomer(data[0])
-      }
     } catch (err) {
       console.error('Error loading customers:', err)
     } finally {
@@ -64,6 +60,14 @@ export default function CustomersPage() {
   }, [query, loadCustomers])
 
   const handleSelectCustomer = async (customer: Customer) => {
+    // Toggle: si se hace clic en el mismo cliente, colapsar
+    if (selectedCustomer?.id === customer.id) {
+      setSelectedCustomer(null)
+      setExams([])
+      setSales([])
+      return
+    }
+
     setSelectedCustomer(customer)
     setDetailLoading(true)
     try {

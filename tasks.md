@@ -80,8 +80,8 @@
     - [x] Realizar verificación visual del menú móvil, tarjetas y botones utilizando el subagente del navegador.
     - [x] Validar con `npm run build` que el proyecto compile sin problemas.
     - [x] Notificar de forma remota a Telegram.
-- [/] **Fase 15: Optimización Responsiva del Detalle de Clientes en Móviles**
+- [x] **Fase 15: Optimización Responsiva del Detalle de Clientes en Móviles**
     - [x] Modificar `app/customers/page.tsx` para inyectar el detalle colapsable/acordeón de cliente en móviles (`md:hidden`) y ocultar el panel lateral derecho (`hidden md:flex`).
     - [x] Modificar `app/dashboard/admin/customers/page.tsx` para inyectar el detalle colapsable/acordeón de cliente en móviles (`lg:hidden`) y ocultar el panel lateral derecho (`hidden lg:flex`).
     - [x] Probar la compilación local con `npm run build`.
-    - [/] Desplegar en producción y notificar por Telegram.
+    - [x] Desplegar en producción y notificar por Telegram.
