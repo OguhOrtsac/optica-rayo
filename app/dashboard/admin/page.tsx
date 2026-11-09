@@ -12,12 +12,12 @@ import {
 } from '@/lib/services'
 import { Database } from '@/types/database.types'
 import ReminderTray from '@/components/reminder-tray'
-import { 
-  TrendingUp, 
-  Wallet, 
-  AlertTriangle, 
-  Activity, 
-  ArrowUp, 
+import RecentActivity from '@/components/recent-activity'
+import {
+  TrendingUp,
+  Wallet,
+  AlertTriangle,
+  ArrowUp,
   Plus, 
   UserPlus, 
   TrendingDown,
@@ -25,7 +25,8 @@ import {
   MessageSquare,
   Check,
   Bell,
-  Clock
+  Clock,
+  CalendarDays
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -175,6 +176,13 @@ export default function AdminDashboard() {
           >
             <UserPlus className="w-4 h-4" />
             Nuevo Cliente
+          </Link>
+          <Link 
+            href="/dashboard/appointments"
+            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 border border-[#cbd5e1] bg-white hover:bg-[#dee8ff]/30 text-[#00357f] rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
+          >
+            <CalendarDays className="w-4 h-4" />
+            Agenda
           </Link>
         </div>
       </div>
@@ -438,53 +446,8 @@ export default function AdminDashboard() {
             <ReminderTray />
           </div>
 
-          {/* Recent Activity Section (12 cols) */}
-          <div className="anim-stagger-item md:col-span-12 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
-            <div className="flex items-center gap-2.5 mb-4">
-              <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#00357f] to-[#00668a] flex items-center justify-center text-white shadow-sm shadow-[#00357f]/25">
-                <Activity className="w-4 h-4" />
-              </span>
-              <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f]">Actividad Reciente</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#f0f3ff]/70 border-b border-[#cbd5e1]/65 text-[#737784] font-black uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-4 rounded-tl-xl">Tipo</th>
-                    <th className="py-3 px-4">Cliente</th>
-                    <th className="py-3 px-4">Detalle</th>
-                    <th className="py-3 px-4">Fecha/Hora</th>
-                    <th className="py-3 px-4 text-right rounded-tr-xl">Monto</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs font-medium">
-                  {sales.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 text-center text-[#737784] font-bold">Sin actividad registrada.</td>
-                    </tr>
-                  ) : (
-                    sales.slice(0, 5).map(s => (
-                      <tr key={s.id} className="border-b border-[#cbd5e1]/30 hover:bg-[#f0f3ff]/60 transition-colors">
-                        <td className="py-4 px-4">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#dee8ff] text-[#00357f] font-bold text-[10px]">
-                            <Activity className="w-3 h-3" /> Venta
-                          </span>
-                        </td>
-                        <td className="py-4 px-4 text-[#111c2d] font-bold text-[13px]">{s.customer_name || 'Cliente'}</td>
-                        <td className="py-4 px-4 text-[#434653]">Venta registrada por {s.seller_name || 'Personal'}</td>
-                        <td className="py-4 px-4 text-[#737784] text-xs font-mono whitespace-nowrap">
-                          {new Date(s.created_at).toLocaleDateString('es-MX')} {new Date(s.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
-                        </td>
-                        <td className="py-4 px-4 text-right">
-                          <span className="inline-block bg-[#dee8ff]/70 text-[#00357f] font-black font-mono text-[13px] px-2.5 py-1 rounded-lg">{formatPrice(s.total)}</span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Recent Activity Section (12 cols) — tabla extraída a components/recent-activity.tsx */}
+          <RecentActivity sales={sales} />
 
         </div>
       )}

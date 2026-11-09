@@ -17,6 +17,14 @@ import {
   createLensRequest
 } from '@/lib/services'
 import { getMySalesAction } from '@/app/customers/actions'
+import Link from 'next/link'
+import {
+  cancelAppointment as cancelAppointmentSvc,
+  formatAppointmentDate,
+  formatAppointmentTime,
+  listAppointmentsForCustomer,
+  type Appointment
+} from '@/lib/appointments'
 import { Database } from '@/types/database.types'
 import { 
   User, 
@@ -33,6 +41,7 @@ import {
   Bell,
   Sliders,
   Calendar,
+  CalendarDays,
   AlertTriangle,
   Clock
 } from 'lucide-react'
@@ -69,6 +78,14 @@ export default function CustomerDashboard() {
 
   // Selected sale for receipt modal details
   const [selectedSaleDetail, setSelectedSaleDetail] = useState<any | null>(null)
+
+  // Mis citas (appointments module)
+  const [myAppointments, setMyAppointments] = useState<Appointment[]>([])
+  const [appointmentsLoaded, setAppointmentsLoaded] = useState(false)
+  const [apptCancelTargetId, setApptCancelTargetId] = useState<string | null>(null)
+  const [apptCancelReason, setApptCancelReason] = useState('')
+  const [apptCancellingId, setApptCancellingId] = useState<string | null>(null)
+  const [apptFeedback, setApptFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Editable glasses nickname states
   const [glassesNickname, setGlassesNickname] = useState('Mis lentes actuales')
@@ -131,6 +148,40 @@ export default function CustomerDashboard() {
     }
     loadData()
   }, [])
+
+  // Mis citas: the customer's own exam appointments (appointments module).
+  useEffect(() => {
+    async function loadAppointments() {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        const list = await listAppointmentsForCustomer(user.id)
+        setMyAppointments(list)
+      } catch (err) {
+        console.error('Error loading customer appointments:', err)
+      } finally {
+        setAppointmentsLoaded(true)
+      }
+    }
+    loadAppointments()
+  }, [])
+
+  const handleCancelMyAppointment = async (appt: Appointment) => {
+    setApptCancellingId(appt.id)
+    setApptFeedback(null)
+    try {
+      const updated = await cancelAppointmentSvc(appt.id, apptCancelReason || null, 'customer')
+      setMyAppointments(prev => prev.map(a => (a.id === appt.id ? updated : a)))
+      setApptCancelTargetId(null)
+      setApptCancelReason('')
+      setApptFeedback({ type: 'success', text: 'Tu cita quedó cancelada. El horario volvió a estar disponible.' })
+    } catch (err: any) {
+      setApptFeedback({ type: 'error', text: err.message || 'No se pudo cancelar la cita.' })
+    } finally {
+      setApptCancellingId(null)
+    }
+  }
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'N/A'
@@ -767,6 +818,122 @@ export default function CustomerDashboard() {
           </div>
         </section>
       )}
+
+      {/* Mis Citas Section (appointments module) */}
+      <section className="space-y-4 pt-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="text-xs font-black uppercase tracking-wider text-[#737784] flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#00357f]" />
+            Mis Citas de Examen
+          </h3>
+          <Link
+            href="/agendar"
+            className="inline-flex items-center gap-1.5 bg-[#00357f] hover:bg-[#004aad] active:scale-[0.98] text-white text-xs font-black px-3.5 py-2 rounded-lg transition-all shadow-sm"
+          >
+            <CalendarDays className="w-4 h-4" /> Agendar examen gratis
+          </Link>
+        </div>
+
+        {apptFeedback && (
+          <p className={`text-sm font-semibold rounded-lg px-3 py-2 border ${
+            apptFeedback.type === 'success'
+              ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+              : 'text-[#ba1a1a] bg-red-50 border-red-200'
+          }`}>
+            {apptFeedback.text}
+          </p>
+        )}
+
+        {!appointmentsLoaded ? (
+          <p className="text-sm text-[#737784] font-medium">Cargando tus citas…</p>
+        ) : myAppointments.length === 0 ? (
+          <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-6 text-center">
+            <CalendarDays className="w-8 h-8 text-[#737784] mx-auto" />
+            <p className="text-sm text-[#737784] font-bold mt-2">
+              Aún no tienes citas apartadas. Tu examen de la vista es gratis: aparta la tuya.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {myAppointments.map(appt => {
+              const isLive = appt.status === 'pending' || appt.status === 'confirmed'
+              const isCancelling = apptCancelTargetId === appt.id
+              return (
+                <article key={appt.id} className={`bg-white border rounded-2xl shadow-sm p-4 ${appt.status === 'cancelled' ? 'border-[#cbd5e1]/60 opacity-80' : 'border-[#cbd5e1]'}`}>
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <p className="font-extrabold text-[#111c2d] text-sm capitalize">
+                        {formatAppointmentDate(appt.scheduled_date)}
+                      </p>
+                      <p className="text-xs text-[#434653] font-semibold flex items-center gap-1.5 mt-0.5">
+                        <Clock className="w-3.5 h-3.5 text-[#00357f]" /> {formatAppointmentTime(appt.scheduled_time)}
+                      </p>
+                    </div>
+                    <span className={`inline-flex px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${
+                      appt.status === 'pending'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : appt.status === 'confirmed'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-red-50 text-[#ba1a1a] border-red-200'
+                    }`}>
+                      {appt.status === 'pending' ? 'Pendiente de confirmación' : appt.status === 'confirmed' ? 'Confirmada' : 'Cancelada'}
+                    </span>
+                  </div>
+
+                  {appt.status === 'cancelled' && (
+                    <div className="mt-3 text-xs font-semibold text-[#ba1a1a] bg-red-50 border border-red-100 rounded-lg px-3 py-2 space-y-0.5">
+                      <p>{appt.cancelled_by === 'admin' ? 'La óptica canceló esta cita.' : 'Tú cancelaste esta cita.'}</p>
+                      {appt.cancel_reason && <p>Motivo: {appt.cancel_reason}</p>}
+                    </div>
+                  )}
+
+                  {isLive && !isCancelling && (
+                    <button
+                      onClick={() => { setApptCancelTargetId(appt.id); setApptCancelReason(''); setApptFeedback(null) }}
+                      className="mt-3 inline-flex items-center gap-1.5 border border-red-200 text-[#ba1a1a] hover:bg-red-50 active:scale-[0.98] text-xs font-black px-3.5 py-2 rounded-lg transition-all cursor-pointer"
+                    >
+                      <X className="w-4 h-4" /> Cancelar cita
+                    </button>
+                  )}
+
+                  {isLive && isCancelling && (
+                    <div className="mt-3 space-y-2 border-t border-[#f0f3ff] pt-3">
+                      <label className="block">
+                        <span className="text-[11px] font-black uppercase tracking-wider text-[#737784]">
+                          Motivo (opcional)
+                        </span>
+                        <input
+                          type="text"
+                          value={apptCancelReason}
+                          onChange={e => setApptCancelReason(e.target.value)}
+                          placeholder="Ej. Se me presentó un compromiso"
+                          className="mt-1 w-full border border-[#cbd5e1] rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#ba1a1a]/30 focus:border-[#ba1a1a] bg-white"
+                          autoFocus
+                        />
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleCancelMyAppointment(appt)}
+                          disabled={apptCancellingId === appt.id}
+                          className="bg-[#ba1a1a] hover:bg-[#a31515] active:scale-[0.98] disabled:opacity-50 text-white text-xs font-black px-3.5 py-2 rounded-lg transition-all cursor-pointer"
+                        >
+                          {apptCancellingId === appt.id ? 'Cancelando…' : 'Confirmar cancelación'}
+                        </button>
+                        <button
+                          onClick={() => setApptCancelTargetId(null)}
+                          className="border border-[#cbd5e1] text-[#434653] hover:bg-[#f0f3ff] text-xs font-black px-3.5 py-2 rounded-lg transition-all cursor-pointer"
+                        >
+                          Volver
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Detailed Receipt Modal */}
       {selectedSaleDetail && (

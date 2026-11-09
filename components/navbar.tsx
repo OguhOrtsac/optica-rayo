@@ -36,6 +36,7 @@ export default async function Navbar() {
   // Setup navigation items based on the canonical role model.
   const getNavLinks = (): MainMenuLink[] => {
     const links: MainMenuLink[] = [{ label: 'Catálogo', href: '/catalog', icon: 'catalog' }]
+    links.push({ label: 'Agendar examen gratis', href: '/agendar', icon: 'agenda' })
     if (!isAuthenticated) return links
 
     if (role === 'customer') {
@@ -48,6 +49,7 @@ export default async function Navbar() {
       links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
       links.push({ label: 'Registrar Pago', href: '/payments', icon: 'payment' })
       links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
+      links.push({ label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' })
     }
     if (role === 'owner' || role === 'super_admin') {
       links.push({ label: 'Panel', href: '/dashboard/admin', icon: 'admin' })
@@ -55,6 +57,7 @@ export default async function Navbar() {
       links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
       links.push({ label: 'Registrar Pago', href: '/payments', icon: 'payment' })
       links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
+      links.push({ label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' })
     }
     return links
   }

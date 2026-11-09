@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import Navbar from "@/components/navbar";
 import PWARegister from "@/components/pwa-register";
 import "./globals.css";
@@ -12,6 +12,14 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// Primary UI typeface: clean, modern geometric sans (400-800) chosen for
+// the catalog redesign — friendlier at small mobile sizes than Geist.
+const jakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-jakarta-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 // Viewport setup for responsive scaling and theme color formatting
@@ -58,7 +66,7 @@ export default async function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased ${theme}`}
+      className={`${geistSans.variable} ${geistMono.variable} ${jakartaSans.variable} h-full antialiased ${theme}`}
     >
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
         <PWARegister />

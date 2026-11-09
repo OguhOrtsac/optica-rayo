@@ -3,7 +3,8 @@
 import * as React from 'react'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getCustomerSales, getReminderConfig, type ReminderConfig } from '@/lib/services'
+import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, type ReminderConfig } from '@/lib/services'
+import { registerInstallmentPaymentAction } from '@/app/customers/actions'
 import { buildReminderMessage } from '@/lib/reminder-config'
 import { 
   ArrowLeft, 
@@ -17,11 +18,110 @@ import {
   ShoppingBag,
   AlertTriangle,
   PlusCircle,
-  TrendingDown
+  TrendingDown,
+  Wallet,
+  CreditCard,
+  DollarSign,
+  Check,
+  RefreshCw
 } from 'lucide-react'
 
 interface PageProps {
   params: Promise<{ id: string }>
+}
+
+// Formulario en línea de abono para UNA cuota pendiente de la pestaña
+// Cobranza. Usa EXACTAMENTE la misma acción que la página de pagos
+// (registerInstallmentPaymentAction): monto + método, y al terminar el
+// padre recarga los datos de dinero.
+function InstallmentPayForm({ installment, formatPrice, onDone }: {
+  installment: any
+  formatPrice: (n: number) => string
+  onDone: () => void
+}) {
+  const saldo = Math.max(Number(installment.amount || 0) - Number(installment.amount_paid || 0), 0)
+  const [amount, setAmount] = useState<string>(saldo ? saldo.toString() : '')
+  const [method, setMethod] = useState<'cash' | 'card' | 'transfer'>('cash')
+  const [submitting, setSubmitting] = useState(false)
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (submitting) return
+    const val = parseFloat(amount)
+    if (isNaN(val) || val <= 0) {
+      setFeedback({ type: 'error', text: 'Introduce un monto de abono válido.' })
+      return
+    }
+    try {
+      setSubmitting(true)
+      setFeedback(null)
+      const result = await registerInstallmentPaymentAction(installment.id, val, method)
+      if (result.error) {
+        setFeedback({ type: 'error', text: result.error })
+      } else {
+        setFeedback({ type: 'success', text: result.success || '¡Abono registrado correctamente!' })
+        onDone()
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Error al procesar el abono.' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="mt-2.5 border-t border-[#cbd5e1]/40 pt-2.5">
+      {feedback && (
+        <div className={`mb-2 p-2 rounded-lg text-[11px] font-bold border ${
+          feedback.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-600'
+        }`}>
+          {feedback.text}
+        </div>
+      )}
+      <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+        <div className="flex-1 min-w-[110px]">
+          <label className="block text-[9px] font-bold text-[#434653] uppercase mb-1">
+            Registrar abono (saldo {formatPrice(saldo)})
+          </label>
+          <div className="relative">
+            <DollarSign className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#737784]" />
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg pl-8 pr-2 py-2 text-xs font-bold text-[#111c2d] outline-none focus:border-[#00357f]"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-[9px] font-bold text-[#434653] uppercase mb-1">Método</label>
+          <select
+            value={method}
+            onChange={e => setMethod(e.target.value as any)}
+            className="bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#00357f]"
+          >
+            <option value="cash">Efectivo</option>
+            <option value="card">Tarjeta</option>
+            <option value="transfer">Transferencia</option>
+          </select>
+        </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="py-2 px-3.5 bg-[#00357f] hover:bg-[#004aad] text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+        >
+          {submitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+          Confirmar
+        </button>
+      </form>
+    </div>
+  )
 }
 
 export default function CustomerDetailPage({ params }: PageProps) {
@@ -30,23 +130,33 @@ export default function CustomerDetailPage({ params }: PageProps) {
   const [customer, setCustomer] = useState<any>(null)
   const [exams, setExams] = useState<any[]>([])
   const [sales, setSales] = useState<any[]>([])
+  const [installments, setInstallments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'profile' | 'exams' | 'sales'>('profile')
+  const [activeTab, setActiveTab] = useState<'profile' | 'exams' | 'sales' | 'billing'>('profile')
   const [reminderCfg, setReminderCfg] = useState<ReminderConfig | null>(null)
 
   useEffect(() => {
     getReminderConfig().then(setReminderCfg).catch(() => setReminderCfg(null))
   }, [])
 
+  // El ancla #cobranza (p. ej. desde la página de pagos) abre la ficha
+  // directamente en la pestaña de Cobranza.
+  useEffect(() => {
+    if (window.location.hash === '#cobranza') {
+      setActiveTab('billing')
+    }
+  }, [])
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
-      const [custData, examsData, salesData] = await Promise.all([
+      const [custData, examsData, salesData, installmentsData] = await Promise.all([
         getCustomerById(customerId),
         getCustomerExams(customerId),
         getCustomerSales(customerId),
+        getCustomerInstallments(customerId),
       ])
 
       if (!custData) {
@@ -55,6 +165,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
         setCustomer(custData)
         setExams(examsData)
         setSales(salesData)
+        setInstallments(installmentsData)
       }
     } catch (err: any) {
       setError(`Error al cargar los datos: ${err.message || 'Error inesperado.'}`)
@@ -66,6 +177,20 @@ export default function CustomerDetailPage({ params }: PageProps) {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // Recarga solo datos de dinero tras registrar un abono.
+  const reloadBilling = useCallback(async () => {
+    try {
+      const [salesData, installmentsData] = await Promise.all([
+        getCustomerSales(customerId),
+        getCustomerInstallments(customerId),
+      ])
+      setSales(salesData)
+      setInstallments(installmentsData)
+    } catch {
+      // Si la recarga falla, la recarga completa sigue disponible.
+    }
+  }, [customerId])
 
   const getInitials = (name: string) =>
     name ? name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : 'P'
@@ -133,6 +258,8 @@ export default function CustomerDetailPage({ params }: PageProps) {
     return { sum, hasComponents }
   }
 
+
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 flex flex-col items-center justify-center space-y-4">
@@ -163,6 +290,31 @@ export default function CustomerDetailPage({ params }: PageProps) {
 
   // Calculations for total debt
   const totalPending = sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0)
+
+  // Resumen de cobranza: saldo pendiente según las cuotas (saldo por cuota =
+  // monto − abonado), cuántas ventas lo reparten y el próximo vencimiento.
+  // Si no hubiera cuotas pero la venta marcara saldo, manda el total de ventas.
+  const billing = (() => {
+    const pending = installments
+      .filter((i: any) => i.status === 'pending')
+      .sort((a: any, b: any) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+    const fromInstallments = pending.reduce(
+      (acc: number, i: any) => acc + Math.max(Number(i.amount || 0) - Number(i.amount_paid || 0), 0), 0)
+    const salesWithInstallments = sales.filter((s: any) => installments.some((i: any) => i.sale_id === s.id))
+    const salesWithPending = new Set(pending.map((i: any) => i.sale_id))
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const next = pending[0] || null
+    return {
+      pending,
+      pendingTotal: installments.length > 0 ? fromInstallments : totalPending,
+      pendingCount: pending.length,
+      pendingSalesCount: salesWithPending.size,
+      salesWithInstallments,
+      nextDue: next ? next.due_date : null,
+      nextOverdue: next ? new Date(next.due_date) < today : false,
+    }
+  })()
 
   // Comparativa de graduación: examen más reciente vs el anterior
   // (getCustomerExams devuelve la lista del más nuevo al más viejo).
@@ -228,10 +380,10 @@ export default function CustomerDetailPage({ params }: PageProps) {
       </div>
 
       {/* Tabs navigation */}
-      <div className="flex border-b border-[#cbd5e1] bg-white rounded-t-xl overflow-hidden shadow-sm">
+      <div className="flex border-b border-[#cbd5e1] bg-white rounded-t-xl overflow-x-auto shadow-sm">
         <button
           onClick={() => setActiveTab('profile')}
-          className={`flex-1 py-3.5 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 min-w-[92px] whitespace-nowrap py-3.5 px-1 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer ${
             activeTab === 'profile'
               ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
               : 'border-transparent text-[#737784] hover:text-[#111c2d]'
@@ -242,7 +394,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
         </button>
         <button
           onClick={() => setActiveTab('exams')}
-          className={`flex-1 py-3.5 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
+          className={`flex-1 min-w-[92px] whitespace-nowrap py-3.5 px-1 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
             activeTab === 'exams'
               ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
               : 'border-transparent text-[#737784] hover:text-[#111c2d]'
@@ -258,7 +410,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
         </button>
         <button
           onClick={() => setActiveTab('sales')}
-          className={`flex-1 py-3.5 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
+          className={`flex-1 min-w-[92px] whitespace-nowrap py-3.5 px-1 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
             activeTab === 'sales'
               ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
               : 'border-transparent text-[#737784] hover:text-[#111c2d]'
@@ -269,6 +421,22 @@ export default function CustomerDetailPage({ params }: PageProps) {
           {sales.length > 0 && (
             <span className="ml-1 bg-[#dee8ff] text-[#00357f] text-[9px] font-black px-1.5 py-0.5 rounded-full">
               {sales.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('billing')}
+          className={`flex-1 min-w-[92px] whitespace-nowrap py-3.5 px-1 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
+            activeTab === 'billing'
+              ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
+              : 'border-transparent text-[#737784] hover:text-[#111c2d]'
+          }`}
+        >
+          <Wallet className="w-4 h-4" />
+          Cobranza
+          {billing.pendingCount > 0 && (
+            <span className="ml-1 bg-[#ffdad6] text-[#ba1a1a] text-[9px] font-black px-1.5 py-0.5 rounded-full">
+              {billing.pendingCount}
             </span>
           )}
         </button>
@@ -673,6 +841,143 @@ export default function CustomerDetailPage({ params }: PageProps) {
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: BILLING (COBRANZA) */}
+        {activeTab === 'billing' && (
+          <div className="space-y-6" id="cobranza">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#737784]">Cobranza y Pagos a Plazos</h3>
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[#00357f]">
+                <CreditCard className="w-3.5 h-3.5" /> Estado de cuenta
+              </span>
+            </div>
+
+            {/* Resumen de cobranza */}
+            <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Pago pendiente total</span>
+                  <span className={`text-3xl font-black font-mono ${billing.pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-emerald-700'}`}>
+                    {formatPrice(billing.pendingTotal)}
+                  </span>
+                </div>
+                <div className="space-y-1 sm:border-x sm:border-[#cbd5e1]/40 sm:px-4">
+                  <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Se reparte en</span>
+                  {billing.pendingCount > 0 ? (
+                    <span className="text-sm font-bold text-[#111c2d] block">
+                      {billing.pendingCount} cuota{billing.pendingCount !== 1 ? 's' : ''} pendiente{billing.pendingCount !== 1 ? 's' : ''}
+                      {' '}de {billing.pendingSalesCount} venta{billing.pendingSalesCount !== 1 ? 's' : ''}
+                    </span>
+                  ) : (
+                    <span className="text-sm font-bold text-emerald-700 block">Sin cuotas pendientes</span>
+                  )}
+                </div>
+                <div className="space-y-1 sm:pl-4">
+                  <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Próximo vencimiento</span>
+                  {billing.nextDue ? (
+                    <span className={`text-sm font-bold block ${billing.nextOverdue ? 'text-[#ba1a1a]' : 'text-[#00357f]'}`}>
+                      {formatDate(billing.nextDue)}{billing.nextOverdue ? ' (vencido)' : ''}
+                    </span>
+                  ) : (
+                    <span className="text-sm font-bold text-emerald-700 block">Al corriente</span>
+                  )}
+                </div>
+              </div>
+              {billing.pendingTotal <= 0 && (
+                <p className="text-xs font-bold text-emerald-700 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0" /> El cliente no tiene adeudos pendientes en este momento.
+                </p>
+              )}
+            </div>
+
+            {/* Cuotas por venta: historial completo (pagadas y pendientes) */}
+            {installments.length === 0 ? (
+              <div className="bg-white border border-[#cbd5e1] rounded-2xl py-12 text-center space-y-3 shadow-sm p-6">
+                <p className="text-xs text-[#737784] font-semibold">Este cliente no tiene compras a plazos registradas.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {billing.salesWithInstallments.map((sale: any) => {
+                  const saleInsts = installments
+                    .filter((i: any) => i.sale_id === sale.id)
+                    .sort((a: any, b: any) => Number(a.installment_number || 0) - Number(b.installment_number || 0))
+                  const todayStart = new Date()
+                  todayStart.setHours(0, 0, 0, 0)
+                  return (
+                    <div key={sale.id} className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
+                      <div className="bg-[#f9f9ff] border-b border-[#cbd5e1]/40 px-5 py-3.5 flex flex-wrap justify-between items-center gap-2 text-xs font-medium">
+                        <span className="font-bold text-[#00357f]">Orden #{sale.id.slice(0, 6).toUpperCase()}</span>
+                        <span className="text-[#737784]">Total: <strong className="font-mono text-[#111c2d]">{formatPrice(sale.total)}</strong></span>
+                        <span className="text-[#737784]">Abonado: <strong className="font-mono text-[#111c2d]">{formatPrice(Number(sale.paid_amount || 0))}</strong></span>
+                        <span className={Number(sale.pending_balance || 0) > 0 ? 'text-[#ba1a1a] font-bold' : 'text-emerald-700 font-bold'}>
+                          Resta: {formatPrice(Number(sale.pending_balance || 0))}
+                        </span>
+                      </div>
+
+                      <div className="p-4 space-y-3">
+                        {saleInsts.map((inst: any) => {
+                          const isPending = inst.status === 'pending'
+                          const amountNum = Number(inst.amount || 0)
+                          const paidNum = Number(inst.amount_paid || 0)
+                          const saldo = Math.max(amountNum - paidNum, 0)
+                          const overdue = isPending && new Date(inst.due_date) < todayStart
+                          return (
+                            <div
+                              key={inst.id}
+                              className={`p-3.5 border rounded-xl ${
+                                isPending
+                                  ? 'border-[#cbd5e1] bg-white'
+                                  : 'border-emerald-200 bg-emerald-50/20 opacity-85'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="space-y-1 min-w-0">
+                                  <span className="block text-[10px] font-bold text-[#434653]">
+                                    Pago #{inst.installment_number}
+                                  </span>
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                                    <span className="font-extrabold text-[#111c2d] font-mono">{formatPrice(amountNum)}</span>
+                                    {isPending ? (
+                                      <span className={`font-bold ${overdue ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
+                                        Vence: {formatDate(inst.due_date)}{overdue ? ' (vencida)' : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="text-emerald-700 font-bold">
+                                        Pagado: {inst.payment_date ? formatDate(inst.payment_date) : '—'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {isPending && (
+                                    <span className="block text-[11px] font-bold text-[#00668a]">
+                                      Abonado: {formatPrice(paidNum)} de {formatPrice(amountNum)} · Saldo: {formatPrice(saldo)}
+                                    </span>
+                                  )}
+                                </div>
+                                {!isPending && (
+                                  <span className="shrink-0 text-[10px] font-black text-emerald-700 uppercase flex items-center gap-0.5">
+                                    <Check className="w-3.5 h-3.5" /> Pagado
+                                  </span>
+                                )}
+                              </div>
+
+                              {isPending && (
+                                <InstallmentPayForm
+                                  installment={inst}
+                                  formatPrice={formatPrice}
+                                  onDone={reloadBilling}
+                                />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

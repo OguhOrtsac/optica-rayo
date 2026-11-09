@@ -53,37 +53,45 @@ function withTimeout(promise: Promise<any> | any, ms = 2500): Promise<any> {
  * Service to fetch all products in the catalog.
  */
 export async function getProducts(): Promise<Product[]> {
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = createBrowserClient()
-      const { data, error } = await withTimeout(
-        supabase
-          .from('products')
-          .select('*')
-          .order('name', { ascending: true })
-      )
-      
-      if (!error && data) {
-        // Older rows (before the media migration) may not carry every new
-        // structured field yet; normalize them for the UI instead of leaking
-        // undefined values into forms and the catalog.
-        return data.map((product: Product) => ({
-          ...product,
-          brand: product.brand ?? null,
-          material: product.material ?? null,
-          sku: product.sku ?? null,
-          frame_shape: product.frame_shape ?? null,
-          color: product.color ?? null,
-          gallery_urls: Array.isArray(product.gallery_urls) ? product.gallery_urls : [],
-          image_alt: product.image_alt ?? null,
-        }))
-      }
-      console.error('Error fetching products from Supabase:', error?.message)
-    } catch (e) {
-      console.error('Supabase fetch failed, falling back to mocks:', e)
-    }
+  if (!isSupabaseConfigured()) {
+    // Demo mode (no database configured): the mock catalog is the dataset.
+    return mockDb.MOCK_PRODUCTS
   }
-  return mockDb.MOCK_PRODUCTS
+  try {
+    const supabase = createBrowserClient()
+    const { data, error } = await withTimeout(
+      supabase
+        .from('products')
+        .select('*')
+        .order('name', { ascending: true })
+    )
+
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      return []
+    }
+    // Older rows (before the media migration) may not carry every new
+    // structured field yet; normalize them for the UI instead of leaking
+    // undefined values into forms and the catalog.
+    return data.map((product: Product) => ({
+      ...product,
+      brand: product.brand ?? null,
+      material: product.material ?? null,
+      sku: product.sku ?? null,
+      frame_shape: product.frame_shape ?? null,
+      color: product.color ?? null,
+      gallery_urls: Array.isArray(product.gallery_urls) ? product.gallery_urls : [],
+      image_alt: product.image_alt ?? null,
+    }))
+  } catch (e) {
+    // Database configured but the read failed (or timed out): propagate
+    // the real error so screens show a connection problem instead of
+    // demo products presented as if they were the real catalog.
+    console.error('Error fetching products from Supabase:', e)
+    throw e instanceof Error ? e : new Error('No se pudo leer el catálogo de la base de datos.')
+  }
 }
 
 /**
@@ -234,34 +242,43 @@ export async function deleteProduct(id: string): Promise<boolean> {
  * Service to fetch all sales (Staff/Admin only).
  */
 export async function getSales(): Promise<(Sale & { customer_name?: string; seller_name?: string })[]> {
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = createBrowserClient()
-      // Joining profiles for customer and seller names
-      const { data, error } = await withTimeout(
-        supabase
-          .from('sales')
-          .select(`
-            *,
-            customer:profiles!sales_customer_id_fkey(full_name),
-            seller:profiles!sales_seller_id_fkey(full_name)
-          `)
-          .order('created_at', { ascending: false })
-      )
-      
-      if (!error && data) {
-        return data.map((sale: any) => ({
-          ...sale,
-          customer_name: sale.customer?.full_name || 'Desconocido',
-          seller_name: sale.seller?.full_name || 'Desconocido'
-        }))
-      }
-      console.error('Error fetching sales from Supabase:', error?.message)
-    } catch (e) {
-      console.error('Supabase sales fetch failed, falling back to mocks:', e)
-    }
+  if (!isSupabaseConfigured()) {
+    // Demo mode (no database configured): the mock sales are the dataset.
+    return mockDb.MOCK_SALES
   }
-  return mockDb.MOCK_SALES
+  try {
+    const supabase = createBrowserClient()
+    // Joining profiles for customer and seller names
+    const { data, error } = await withTimeout(
+      supabase
+        .from('sales')
+        .select(`
+          *,
+          customer:profiles!sales_customer_id_fkey(full_name),
+          seller:profiles!sales_seller_id_fkey(full_name)
+        `)
+        .order('created_at', { ascending: false })
+    )
+
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      return []
+    }
+    return data.map((sale: any) => ({
+      ...sale,
+      customer_id: sale.customer_id,
+      customer_name: sale.customer?.full_name || 'Desconocido',
+      seller_name: sale.seller?.full_name || 'Desconocido'
+    }))
+  } catch (e) {
+    // Database configured but the read failed (or timed out): propagate
+    // the real error. Showing demo sales as the day's real sales would
+    // put invented money in front of the owner.
+    console.error('Error fetching sales from Supabase:', e)
+    throw e instanceof Error ? e : new Error('No se pudieron leer las ventas de la base de datos.')
+  }
 }
 
 /**
@@ -370,7 +387,12 @@ export async function createSale(
           }
         })
 
-        await supabase.from('sale_items').insert(saleItemsToInsert)
+        const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsToInsert)
+        if (itemsError) {
+          // The sale row exists but its line items do not: surface it as
+          // an error instead of reporting a clean registration.
+          throw new Error(`La venta quedó registrada (id ${saleData.id}) pero no se pudieron guardar sus partidas: ${itemsError.message}`)
+        }
 
         // Decrement stock for what was actually sold (grouped per product).
         // A stock failure is logged loudly but does not erase a completed
@@ -411,11 +433,16 @@ export async function createSale(
 
         return { sale: saleData }
       }
-      console.error('Error registering sale in Supabase:', saleError?.message)
+      // Database configured and the insert failed: report the real error.
+      // Registering the sale only in the in-memory mock list would make
+      // the POS claim a sale that does not exist.
+      throw new Error(`Error al registrar venta: ${saleError?.message || 'la base de datos no devolvió la venta creada.'}`)
     } catch (e) {
-      console.error('Supabase sale registration failed, falling back to mocks:', e)
+      console.error('Supabase sale registration failed:', e)
+      throw e instanceof Error ? e : new Error('No se pudo registrar la venta en la base de datos.')
     }
   }
+  // Demo mode (no database configured): local mock registration.
   return mockDb.addMockSale(customerName, items, paidAmount, paymentMethod)
 }
 
@@ -423,31 +450,38 @@ export async function createSale(
  * Service to fetch reminders (Staff/Admin only).
  */
 export async function getReminders(): Promise<(Reminder & { customer_name?: string })[]> {
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = createBrowserClient()
-      const { data, error } = await withTimeout(
-        supabase
-          .from('reminders')
-          .select(`
-            *,
-            customer:profiles(full_name)
-          `)
-          .order('next_suggested_visit', { ascending: true })
-      )
-      
-      if (!error && data) {
-        return data.map((rem: any) => ({
-          ...rem,
-          customer_name: rem.customer?.full_name || 'Desconocido'
-        }))
-      }
-      console.error('Error fetching reminders from Supabase:', error?.message)
-    } catch (e) {
-      console.error('Supabase reminders fetch failed, falling back to mocks:', e)
-    }
+  if (!isSupabaseConfigured()) {
+    // Demo mode (no database configured): the mock reminders are the dataset.
+    return mockDb.MOCK_REMINDERS
   }
-  return mockDb.MOCK_REMINDERS
+  try {
+    const supabase = createBrowserClient()
+    const { data, error } = await withTimeout(
+      supabase
+        .from('reminders')
+        .select(`
+          *,
+          customer:profiles(full_name)
+        `)
+        .order('next_suggested_visit', { ascending: true })
+    )
+
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      return []
+    }
+    return data.map((rem: any) => ({
+      ...rem,
+      customer_name: rem.customer?.full_name || 'Desconocido'
+    }))
+  } catch (e) {
+    // Database configured but the read failed (or timed out): propagate
+    // the real error instead of listing invented customers.
+    console.error('Error fetching reminders from Supabase:', e)
+    throw e instanceof Error ? e : new Error('No se pudieron leer los recordatorios de la base de datos.')
+  }
 }
 
 /**
@@ -782,42 +816,50 @@ export async function getAllProfiles(): Promise<any[]> {
     return cachedProfiles
   }
 
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = createBrowserClient()
-      const { data, error } = await withTimeout(
-        supabase
-          .from('profiles')
-          .select('*')
-          .order('full_name', { ascending: true }),
-        1500 // Optimized timeout for faster fallback
-      )
+  if (!isSupabaseConfigured()) {
+    // Demo mode (no database configured): local mock staff list, with the
+    // localStorage persistence the demo has always used.
+    if (typeof window !== 'undefined') {
+      const localData = localStorage.getItem('optica_rayo_mock_profiles')
+      if (localData) {
+        try {
+          const parsed = JSON.parse(localData)
+          cachedProfiles = parsed
+          return parsed
+        } catch (err) {
+          // ignore parsing errors
+        }
+      }
+      // If not in localStorage, seed it
+      localStorage.setItem('optica_rayo_mock_profiles', JSON.stringify(mockDb.MOCK_PROFILES))
+    }
+    return mockDb.MOCK_PROFILES
+  }
 
-      if (!error && data) {
-        cachedProfiles = data
-        return data
-      }
-      console.error('Error fetching all profiles:', error?.message)
-    } catch (e) {
-      console.error('Supabase profiles fetch failed:', e)
+  try {
+    const supabase = createBrowserClient()
+    const { data, error } = await withTimeout(
+      supabase
+        .from('profiles')
+        .select('*')
+        .order('full_name', { ascending: true }),
+      1500 // Short timeout, but a timeout is an ERROR now, not a cue to invent staff
+    )
+
+    if (error) {
+      throw new Error(error.message)
     }
-  }
-  // Fallback with client-side localStorage persistence
-  if (typeof window !== 'undefined') {
-    const localData = localStorage.getItem('optica_rayo_mock_profiles')
-    if (localData) {
-      try {
-        const parsed = JSON.parse(localData)
-        cachedProfiles = parsed
-        return parsed
-      } catch (err) {
-        // ignore parsing errors
-      }
+    if (!data) {
+      return []
     }
-    // If not in localStorage, seed it
-    localStorage.setItem('optica_rayo_mock_profiles', JSON.stringify(mockDb.MOCK_PROFILES))
+    cachedProfiles = data
+    return data
+  } catch (e) {
+    // Database configured but the read failed (or timed out): propagate
+    // the real error. The staff panel must never list invented people.
+    console.error('Error fetching all profiles from Supabase:', e)
+    throw e instanceof Error ? e : new Error('No se pudieron leer los perfiles de la base de datos.')
   }
-  return mockDb.MOCK_PROFILES
 }
 
 /**
@@ -1215,22 +1257,26 @@ export async function getAppSetting(key: string): Promise<string | null> {
 }
 
 /**
- * Saves one app setting (Supabase upsert when configured; always mirrored
- * to localStorage so demo mode and fast reads keep working).
+ * Saves one app setting. When Supabase is configured the upsert is the
+ * source of truth: its error is THROWN so the caller cannot report a
+ * setting as saved when it is not in the database (previously the error
+ * was swallowed and the value was mirrored to localStorage first, so on
+ * the admin's own machine it looked saved while existing nowhere else).
+ * localStorage is mirrored only after a successful real save; in demo
+ * mode (no database configured) localStorage is the only store.
  */
 export async function setAppSetting(key: string, value: string): Promise<void> {
+  if (isSupabaseConfigured()) {
+    const supabase = createBrowserClient()
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+    if (error) {
+      throw new Error(`No se pudo guardar la configuración: ${error.message}`)
+    }
+  }
   if (typeof window !== 'undefined') {
     localStorage.setItem(settingStorageKey(key), value)
-  }
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = createBrowserClient()
-      await supabase
-        .from('app_settings')
-        .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
-    } catch (e) {
-      console.error('Error saving app setting:', e)
-    }
   }
 }
 
@@ -1276,59 +1322,72 @@ export interface DueReminder {
 export async function getDueReminders(): Promise<DueReminder[]> {
   const horizon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  if (isSupabaseConfigured()) {
-    try {
-      const supabase = createBrowserClient()
-      const { data, error } = await withTimeout(
-        supabase
-          .from('reminders')
-          .select('*, customer:profiles(full_name)')
-          .eq('status', 'pending')
-          .lte('next_suggested_visit', horizon)
-          .order('next_suggested_visit', { ascending: true })
-      )
-      if (!error && data) {
-        const ids = data.map((r: any) => r.customer_id)
-        const phoneById = new Map<string, string>()
-        if (ids.length > 0) {
-          const { data: cps } = await supabase
-            .from('customer_profiles')
-            .select('id, phone')
-            .in('id', ids)
-          cps?.forEach((cp: any) => phoneById.set(cp.id, cp.phone || ''))
-        }
-        return data.map((r: any) => ({
+  if (!isSupabaseConfigured()) {
+    // Demo mode (no database configured): the mock reminders are the dataset.
+    return mockDb.MOCK_REMINDERS
+      .filter(r => r.status === 'pending' && r.next_suggested_visit <= horizon)
+      .sort((a, b) => a.next_suggested_visit.localeCompare(b.next_suggested_visit))
+      .map(r => {
+        const profile = mockDb.MOCK_PROFILES.find(p => p.id === r.customer_id)
+        const cp = mockDb.MOCK_CUSTOMER_PROFILES.find(x => x.id === r.customer_id)
+        return {
           id: r.id,
           customer_id: r.customer_id,
-          customer_name: r.customer?.full_name || 'Cliente',
-          phone: phoneById.get(r.customer_id) || '',
+          customer_name: profile?.full_name || 'Cliente',
+          phone: cp?.phone || '',
           last_visit_date: r.last_visit_date,
           next_suggested_visit: r.next_suggested_visit,
-          last_reminded_at: r.last_reminded_at ?? null,
-        }))
-      }
-      console.error('Error fetching due reminders:', error?.message)
-    } catch (e) {
-      console.error('Due reminders fetch failed, falling back to mocks:', e)
-    }
+          last_reminded_at: (r as any).last_reminded_at ?? null,
+        }
+      })
   }
 
-  return mockDb.MOCK_REMINDERS
-    .filter(r => r.status === 'pending' && r.next_suggested_visit <= horizon)
-    .sort((a, b) => a.next_suggested_visit.localeCompare(b.next_suggested_visit))
-    .map(r => {
-      const profile = mockDb.MOCK_PROFILES.find(p => p.id === r.customer_id)
-      const cp = mockDb.MOCK_CUSTOMER_PROFILES.find(x => x.id === r.customer_id)
-      return {
-        id: r.id,
-        customer_id: r.customer_id,
-        customer_name: profile?.full_name || 'Cliente',
-        phone: cp?.phone || '',
-        last_visit_date: r.last_visit_date,
-        next_suggested_visit: r.next_suggested_visit,
-        last_reminded_at: (r as any).last_reminded_at ?? null,
+  try {
+    const supabase = createBrowserClient()
+    const { data, error } = await withTimeout(
+      supabase
+        .from('reminders')
+        .select('*, customer:profiles(full_name)')
+        .eq('status', 'pending')
+        .lte('next_suggested_visit', horizon)
+        .order('next_suggested_visit', { ascending: true })
+    )
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data) {
+      return []
+    }
+    const ids = data.map((r: any) => r.customer_id)
+    const phoneById = new Map<string, string>()
+    if (ids.length > 0) {
+      const { data: cps, error: cpError } = await supabase
+        .from('customer_profiles')
+        .select('id, phone')
+        .in('id', ids)
+      if (cpError) {
+        // Without the phones the tray would offer WhatsApp buttons that
+        // dial nobody: treat it as the read failure it is.
+        throw new Error(cpError.message)
       }
-    })
+      cps?.forEach((cp: any) => phoneById.set(cp.id, cp.phone || ''))
+    }
+    return data.map((r: any) => ({
+      id: r.id,
+      customer_id: r.customer_id,
+      customer_name: r.customer?.full_name || 'Cliente',
+      phone: phoneById.get(r.customer_id) || '',
+      last_visit_date: r.last_visit_date,
+      next_suggested_visit: r.next_suggested_visit,
+      last_reminded_at: r.last_reminded_at ?? null,
+    }))
+  } catch (e) {
+    // Database configured but the read failed (or timed out): propagate
+    // the real error. The tray must never offer to WhatsApp invented
+    // customers at invented phone numbers.
+    console.error('Error fetching due reminders from Supabase:', e)
+    throw e instanceof Error ? e : new Error('No se pudieron leer los recordatorios vencidos de la base de datos.')
+  }
 }
 
 /**
