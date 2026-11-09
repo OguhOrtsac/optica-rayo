@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogIn,
   Menu,
+  ShieldCheck,
   ShoppingBag,
   Sparkles,
   UserRound,
@@ -19,7 +20,7 @@ import {
 export interface MainMenuLink {
   label: string
   href: string
-  icon: 'catalog' | 'discounts' | 'patients' | 'payment' | 'pos' | 'admin'
+  icon: 'catalog' | 'discounts' | 'patients' | 'payment' | 'pos' | 'admin' | 'users'
 }
 
 const ICONS = {
@@ -29,6 +30,7 @@ const ICONS = {
   payment: CreditCard,
   pos: ShoppingBag,
   admin: LayoutDashboard,
+  users: ShieldCheck,
 }
 
 interface MainMenuProps {

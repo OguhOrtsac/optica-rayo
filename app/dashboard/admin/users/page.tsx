@@ -23,7 +23,8 @@ import {
   X,
   Clock,
   UserPlus,
-  AlertCircle
+  AlertCircle,
+  Lock
 } from 'lucide-react'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
@@ -347,10 +348,10 @@ export default function RegisterUsersPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* Left Side: Navigation Tabs (3 cols) */}
-        <div className="lg:col-span-3 flex lg:flex-col overflow-x-auto lg:overflow-x-visible gap-2 pb-2 lg:pb-0 scrollbar-none">
+        <div className="lg:col-span-3 grid grid-cols-2 lg:flex lg:flex-col gap-2 pb-2 lg:pb-0">
           <button 
             onClick={() => setActiveTab('staff')}
-            className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-xs transition-colors text-left cursor-pointer ${
+            className={`lg:w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 rounded-xl font-bold text-xs transition-colors text-left cursor-pointer ${
               activeTab === 'staff'
                 ? 'bg-[#dee8ff]/80 text-[#00357f]'
                 : 'bg-white border border-[#cbd5e1] text-[#434653] hover:bg-[#f0f3ff]'
@@ -361,7 +362,7 @@ export default function RegisterUsersPage() {
           </button>
           <button 
             onClick={() => setActiveTab('config')}
-            className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-xs transition-colors text-left cursor-pointer ${
+            className={`lg:w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 rounded-xl font-bold text-xs transition-colors text-left cursor-pointer ${
               activeTab === 'config'
                 ? 'bg-[#dee8ff]/80 text-[#00357f]'
                 : 'bg-white border border-[#cbd5e1] text-[#434653] hover:bg-[#f0f3ff]'
@@ -462,21 +463,29 @@ export default function RegisterUsersPage() {
                         </div>
                       </div>
 
-                      {/* Actions */}
-                      <div className="flex gap-2 border-t border-[#f0f3ff] pt-3">
-                        <button 
-                          onClick={() => handleStartEdit(u)}
-                          className="flex-1 bg-[#f0f3ff] hover:bg-[#dee8ff] text-[#111c2d] py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-                        >
-                          Editar
-                        </button>
-                        <button 
-                          onClick={() => setDeletingUser(u)}
-                          className="flex-1 border border-[#ba1a1a] hover:bg-[#ffdad6] text-[#ba1a1a] py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-                        >
-                          Borrar
-                        </button>
-                      </div>
+                      {/* Actions — the Super Admin account is protected: its
+                          role never changes and it cannot be deleted here. */}
+                      {u.role === 'super_admin' ? (
+                        <div className="flex items-center gap-2 border-t border-[#f0f3ff] pt-3 text-[11px] font-bold text-[#737784]">
+                          <Lock className="w-3.5 h-3.5 shrink-0" />
+                          Cuenta protegida: su rol no se cambia ni se elimina.
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 border-t border-[#f0f3ff] pt-3">
+                          <button 
+                            onClick={() => handleStartEdit(u)}
+                            className="flex-1 bg-[#f0f3ff] hover:bg-[#dee8ff] text-[#111c2d] py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                          >
+                            Editar
+                          </button>
+                          <button 
+                            onClick={() => setDeletingUser(u)}
+                            className="flex-1 border border-[#ba1a1a] hover:bg-[#ffdad6] text-[#ba1a1a] py-1.5 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                          >
+                            Borrar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
 
