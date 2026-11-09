@@ -44,21 +44,15 @@ export default async function RootLayout({
 }>) {
   const cookieStore = await cookies();
   const theme = cookieStore.get("bg_theme")?.value || "dark";
-  const superadminSession = cookieStore.get('optica_rayo_superadmin_session')?.value
-
   let isAuthenticated = false;
-  if (superadminSession === 'true') {
-    isAuthenticated = true;
-  } else {
-    try {
-      const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        isAuthenticated = true;
-      }
-    } catch (_) {
-      // ignore
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      isAuthenticated = true;
     }
+  } catch (_) {
+    // ignore
   }
 
   return (

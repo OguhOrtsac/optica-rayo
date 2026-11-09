@@ -39,29 +39,5 @@ export async function createClient() {
     },
   })
 
-  // Override auth if mock session is active to bypass database connection timeout
-  const mockEmail = cookieStore.get('optica_rayo_mock_email')?.value
-  const mockRole = cookieStore.get('optica_rayo_mock_role')?.value
-  const mockName = cookieStore.get('optica_rayo_mock_name')?.value
-
-  if (mockEmail) {
-    const mockUser = {
-      id: mockEmail === 'superadmin@opticarayo.com' 
-        ? 'opt-1' 
-        : (mockEmail === 'vendedora@opticarayo.com' ? 'sell-1' : 'cust-1'),
-      email: mockEmail,
-      user_metadata: {
-        role: mockRole,
-        full_name: mockName
-      }
-    }
-    client.auth.getUser = async () => {
-      return { data: { user: mockUser as any }, error: null }
-    }
-    client.auth.getSession = async () => {
-      return { data: { session: { user: mockUser } as any }, error: null }
-    }
-  }
-
   return client
 }

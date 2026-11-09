@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
-import { cookies } from 'next/headers'
 import MobileBottomNav from './mobile-bottom-nav'
 import MainMenu, { type MainMenuLink } from './main-menu'
 import { dashboardHrefForRole, normalizeRole, roleLabel } from '@/lib/roles'
@@ -11,28 +10,15 @@ import { dashboardHrefForRole, normalizeRole, roleLabel } from '@/lib/roles'
  * Optimized touch targets (minimum 44px) and visual hierarchy.
  */
 export default async function Navbar() {
-  const cookieStore = await cookies()
-  const superadminSession = cookieStore.get('optica_rayo_superadmin_session')?.value
-
   let isAuthenticated = false
   let role: string | null = null
   let displayName = ''
   let initials = ''
 
-  if (superadminSession === 'true') {
-    isAuthenticated = true
-    role = normalizeRole(cookieStore.get('optica_rayo_mock_role')?.value || 'super_admin')
-    displayName = cookieStore.get('optica_rayo_mock_name')?.value || 'Super Admin'
-    initials = displayName
-      .split(' ')
-      .map((word: string) => word[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2)
-  } else {
+  {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (user) {
       isAuthenticated = true
       role = normalizeRole(user.user_metadata?.role || null)

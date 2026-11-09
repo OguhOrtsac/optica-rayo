@@ -63,7 +63,6 @@ export async function registerPatient(currentState: RegisterState, formData: For
   }
 
   const formattedEmail = formatToEmail(email)
-  const cookieStore = await cookies()
 
   // Try standard Supabase Sign up flow first
   try {
@@ -96,61 +95,10 @@ export async function registerPatient(currentState: RegisterState, formData: For
     console.warn('Supabase sign up failed, falling back to local mock bypass:', err)
   }
 
-  // Fallback Offline-First: Create local mock patient profile
-  const mockId = 'usr_' + Math.random().toString(36).substr(2, 9)
-  const mockProfile = {
-    id: mockId,
-    email: formattedEmail,
-    full_name: fullName,
-    role: 'customer',
-    created_at: new Date().toISOString()
-  }
-
-  const mockCustomerProfile = {
-    id: mockId,
-    phone: '',
-    date_of_birth: '',
-    address: '',
-    occupation: '',
-    blood_type: '',
-    medical_notes: 'Autoregistrado desde la web.',
-    emergency_contact_name: '',
-    emergency_contact_phone: '',
-    created_at: new Date().toISOString()
-  }
-
-  // Import mockDb dynamically to avoid circular dependencies
-  const mockDb = require('@/lib/mocks')
-  mockDb.addMockCustomer(mockProfile, mockCustomerProfile)
-
-  // Auto-login locally using bypass cookies
-  cookieStore.set('optica_rayo_superadmin_session', 'true', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 60,
-    path: '/',
-  })
-  cookieStore.set('optica_rayo_mock_role', 'customer', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 60,
-    path: '/',
-  })
-  cookieStore.set('optica_rayo_mock_email', formattedEmail, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 60,
-    path: '/',
-  })
-  cookieStore.set('optica_rayo_mock_name', fullName, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 60,
-    path: '/',
-  })
-
-  revalidatePath('/', 'layout')
-  return { success: true, userId: mockId, error: null }
+  // No fake local session is issued when the real sign-up cannot be
+  // completed: an account either exists in Supabase Auth or it does
+  // not exist at all.
+  return { error: 'No se pudo crear la cuenta en este momento. Verifique sus datos o intente de nuevo.', success: false }
 }
 
 /**
@@ -171,54 +119,11 @@ export async function login(currentState: LoginState, formData: FormData): Promi
 
   const cookieStore = await cookies()
 
-  // 1. One-Time Mock local bypass check
-  const mockDb = require('@/lib/mocks')
-  const mockUser = mockDb.MOCK_PROFILES.find((p: any) => p.email === formattedEmail)
-  if (
-    (formattedEmail === 'superadmin@opticarayo.com' && password === 'Rayo_SuperAdmin2026') ||
-    (formattedEmail === 'vendedora@opticarayo.com' && password === 'Rayo_Vendedora2026') ||
-    (formattedEmail === 'optometrista@opticarayo.com' && password === 'Rayo_Optometrista2026') ||
-    (mockUser && mockUser.role === 'customer')
-  ) {
-    let roleVal = normalizeRole(mockUser?.role || 'super_admin')
-    let nameVal = mockUser?.full_name || 'Dr. Hugo Optometrista'
-    if (formattedEmail === 'superadmin@opticarayo.com') {
-      roleVal = 'super_admin'
-      nameVal = 'Super Administrador'
-    } else if (formattedEmail === 'vendedora@opticarayo.com') {
-      roleVal = 'seller'
-      nameVal = 'Patricia Vendedora'
-    }
-
-    // Set a secure session cookie locally to grant temporary admin rights
-    cookieStore.set('optica_rayo_superadmin_session', 'true', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60, // 1 hour session
-      path: '/',
-    })
-    cookieStore.set('optica_rayo_mock_role', roleVal, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60,
-      path: '/',
-    })
-    cookieStore.set('optica_rayo_mock_email', formattedEmail, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60,
-      path: '/',
-    })
-    cookieStore.set('optica_rayo_mock_name', nameVal, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60,
-      path: '/',
-    })
-
-    revalidatePath('/', 'layout')
-    redirect('/dashboard')
-  }
+  // Every login is a REAL Supabase Auth sign-in. There is no local
+  // bypass and no hardcoded password: the Super Admin is a normal
+  // Supabase Auth account whose profile carries the super_admin role
+  // (the previous bypass and its burned passwords were removed on
+  // 2026-11-09 by the owner's order).
 
   // 2. Regular Auth Flow using Supabase Client
   const supabase = await createClient()
@@ -394,22 +299,10 @@ export async function createUserAction(currentState: any, formData: FormData) {
     revalidatePath('/dashboard/admin', 'layout')
     return { success: `Usuario "${username}" (${role}) creado con éxito. Credenciales iniciales listas.`, error: null }
   } catch (err: any) {
-    console.warn('Supabase create user failed. Falling back to local mock storage:', err.message)
-    
-    // Simulate creation in mockDb
-    const newMockId = 'usr-' + Math.random().toString(36).substr(2, 9)
-    mockDb.addMockStaffProfile({
-      id: newMockId,
-      email: formattedEmail,
-      full_name: fullName,
-      role: role,
-      temporal_password_changed: false,
-      created_at: new Date().toISOString()
-    })
-    
-    invalidateProfilesCache()
-    revalidatePath('/dashboard/admin', 'layout')
-    return { success: `Usuario "${username}" (${role}) creado con éxito (Modo Simulado/Mock).`, error: null }
+    // No simulated success: if the real account was not created in
+    // Supabase Auth, the panel must say so plainly.
+    console.error('Supabase create user failed:', err.message)
+    return { success: null, error: `No se pudo crear el usuario en la base real: ${err.message}` }
   }
 }
 
@@ -418,28 +311,8 @@ export async function createUserAction(currentState: any, formData: FormData) {
  * Supports both Supabase auth users and the Super Admin bypass session.
  */
 export async function getProfileData() {
-  const cookieStore = await cookies()
-
-  // Check for Mock bypass session first
-  const superadminSession = cookieStore.get('optica_rayo_superadmin_session')?.value
-  const mockRole = cookieStore.get('optica_rayo_mock_role')?.value
-  if (superadminSession === 'true' && mockRole) {
-    const mockEmail = cookieStore.get('optica_rayo_mock_email')?.value || ''
-    const mockName = cookieStore.get('optica_rayo_mock_name')?.value || ''
-    const mockDb = require('@/lib/mocks')
-    const mockProfile = mockDb.MOCK_PROFILES.find((p: any) => p.email === mockEmail)
-    return {
-      id: mockProfile?.id || mockEmail,
-      username: mockEmail.split('@')[0],
-      fullName: mockName,
-      role: mockRole,
-      email: mockEmail,
-      isSuperAdmin: mockRole === 'owner',
-      bg_theme: 'dark' as 'dark' | 'light',
-    }
-  }
-
-  // Standard Supabase auth flow
+  // The session comes ONLY from Supabase Auth. Unsigned local cookies
+  // are never trusted as a session (removed 2026-11-09).
   const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
 
@@ -450,20 +323,23 @@ export async function getProfileData() {
   const email = user.email || ''
   const username = extractUsername(email)
 
-  // Fetch theme preference
+  // The profile row is the source of truth for name and role; auth
+  // metadata is only a fallback for rows that predate the trigger.
   const { data: profile } = await supabase
     .from('profiles')
-    .select('bg_theme')
+    .select('full_name, role, bg_theme')
     .eq('id', user.id)
     .single()
+
+  const role = normalizeRole(profile?.role || user.user_metadata?.role || 'customer')
 
   return {
     id: user.id,
     username,
-    fullName: user.user_metadata?.full_name || '',
-    role: user.user_metadata?.role || 'customer',
+    fullName: profile?.full_name || user.user_metadata?.full_name || '',
+    role,
     email,
-    isSuperAdmin: false,
+    isSuperAdmin: role === 'super_admin',
     bg_theme: (profile?.bg_theme || 'dark') as 'dark' | 'light',
   }
 }
@@ -657,17 +533,8 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
     revalidatePath('/dashboard/admin', 'layout')
     return { success: 'Usuario actualizado exitosamente.' }
   } catch (err: any) {
-    console.warn('Supabase update user failed. Falling back to local mock storage:', err.message)
-    
-    mockDb.updateMockStaffProfile(userId, {
-      fullName: data.fullName,
-      username: data.username,
-      role: data.role
-    })
-    
-    invalidateProfilesCache()
-    revalidatePath('/dashboard/admin', 'layout')
-    return { success: 'Usuario actualizado exitosamente (Modo Simulado/Mock).' }
+    console.error('Supabase update user failed:', err.message)
+    return { error: `No se pudo actualizar el usuario en la base real: ${err.message}` }
   }
 }
 
@@ -709,12 +576,7 @@ export async function adminDeleteUserAction(userId: string) {
     revalidatePath('/dashboard/admin', 'layout')
     return { success: 'Usuario eliminado exitosamente.' }
   } catch (err: any) {
-    console.warn('Supabase delete user failed. Falling back to local mock storage:', err.message)
-    
-    mockDb.deleteMockStaffProfile(userId)
-    
-    invalidateProfilesCache()
-    revalidatePath('/dashboard/admin', 'layout')
-    return { success: 'Usuario eliminado exitosamente (Modo Simulado/Mock).' }
+    console.error('Supabase delete user failed:', err.message)
+    return { error: `No se pudo eliminar el usuario en la base real: ${err.message}` }
   }
 }
