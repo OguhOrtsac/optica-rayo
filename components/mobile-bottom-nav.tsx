@@ -113,7 +113,7 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
           <Link
             key={link.label}
             href={link.href}
-            className={`flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 transition-all duration-300 ${
+            className={`flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 transition-all duration-300 active:scale-90 ${
               active 
                 ? 'text-[#00357f] dark:text-cyan-400 scale-105 font-black' 
                 : 'text-[#5d606f] dark:text-slate-400 hover:text-[#00357f] font-semibold'

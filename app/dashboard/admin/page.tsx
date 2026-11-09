@@ -164,14 +164,14 @@ export default function AdminDashboard() {
         <div className="flex gap-3 w-full md:w-auto">
           <Link 
             href="/dashboard/seller"
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl font-bold text-xs shadow-sm transition-colors cursor-pointer"
+            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Nueva Venta
           </Link>
           <Link 
             href="/customers/new"
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 border border-[#cbd5e1] bg-white hover:bg-[#dee8ff]/30 text-[#00357f] rounded-xl font-bold text-xs shadow-sm transition-colors cursor-pointer"
+            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 border border-[#cbd5e1] bg-white hover:bg-[#dee8ff]/30 text-[#00357f] rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
             Nuevo Cliente
@@ -201,13 +201,13 @@ export default function AdminDashboard() {
           <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
             
             {/* Sales of the Day */}
-            <div className="bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div className="anim-stagger-item bg-gradient-to-br from-white via-white to-[#eef4ff] p-6 rounded-2xl border border-[#cbd5e1] shadow-sm flex flex-col justify-between hover:shadow-lg hover:shadow-[#00357f]/10 hover:-translate-y-0.5 transition-all duration-300">
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ventas del Día</p>
-                  <h2 className="text-3xl font-black text-[#111c2d] mt-2 font-mono">{formatPrice(todayStats.total)}</h2>
+                  <h2 className="text-3xl font-black text-[#00357f] mt-2 font-mono">{formatPrice(todayStats.total)}</h2>
                 </div>
-                <div className="w-10 h-10 rounded-full bg-[#49da9f]/10 flex items-center justify-center text-[#00422b]">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#00357f] to-[#00668a] flex items-center justify-center text-white shadow-md shadow-[#00357f]/30">
                   <TrendingUp className="w-5 h-5" />
                 </div>
               </div>
@@ -225,13 +225,13 @@ export default function AdminDashboard() {
             </div>
 
             {/* Sales of the Month */}
-            <div className="bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+            <div className="anim-stagger-item bg-gradient-to-br from-white via-white to-[#e9faf1] p-6 rounded-2xl border border-[#cbd5e1] shadow-sm flex flex-col justify-between hover:shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-0.5 transition-all duration-300" style={{ '--enter-delay': '70ms' } as React.CSSProperties}>
               <div className="flex justify-between items-start">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ventas del Mes</p>
                   <h2 className="text-3xl font-black text-[#111c2d] mt-2 font-mono">{formatPrice(monthlyStats.total)}</h2>
                 </div>
-                <div className="w-10 h-10 rounded-full bg-[#dee8ff] flex items-center justify-center text-[#00357f]">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-[#2fbf71] flex items-center justify-center text-white shadow-md shadow-emerald-500/30">
                   <Wallet className="w-5 h-5" />
                 </div>
               </div>
@@ -251,7 +251,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Alerts / Cobranza Column (4 cols) */}
-          <div className="md:col-span-4 bg-[#ffdad6] p-6 rounded-2xl border border-[#ffdad6]/40 shadow-sm flex flex-col justify-between gap-4">
+          <div className="anim-stagger-item md:col-span-4 bg-gradient-to-b from-[#ffdad6] to-[#fff1ef] p-6 rounded-2xl border border-[#ffdad6]/40 shadow-sm flex flex-col justify-between gap-4" style={{ '--enter-delay': '140ms' } as React.CSSProperties}>
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <AlertTriangle className="w-5 h-5 text-[#ba1a1a]" />
@@ -282,14 +282,14 @@ export default function AdminDashboard() {
 
             <Link 
               href="/dashboard/admin/customers"
-              className="w-full py-2.5 bg-[#ba1a1a] hover:bg-[#93000a] text-white text-center rounded-xl font-bold text-xs transition-colors shadow-sm block uppercase"
+              className="w-full py-2.5 bg-[#ba1a1a] hover:bg-[#93000a] text-white text-center rounded-xl font-bold text-xs transition-all active:scale-[0.98] shadow-sm block uppercase"
             >
               Ver todos los adeudos
             </Link>
           </div>
 
           {/* Notifications Panel (6 cols) */}
-          <div className="md:col-span-6 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4">
+          <div className="anim-stagger-item md:col-span-6 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
             <div className="flex items-center justify-between border-b border-[#cbd5e1]/40 pb-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] flex items-center gap-1.5">
                 <Bell className="w-4 h-4" /> Alertas del Sistema
@@ -330,7 +330,7 @@ export default function AdminDashboard() {
                     {!n.is_read && (
                       <button 
                         onClick={() => handleMarkNotificationRead(n.id)}
-                        className="p-1 rounded bg-white hover:bg-[#dee8ff] border border-[#cbd5e1] text-[#00357f] hover:text-[#004aad] transition-colors cursor-pointer"
+                        className="p-1 rounded bg-white hover:bg-[#dee8ff] border border-[#cbd5e1] text-[#00357f] hover:text-[#004aad] transition-all active:scale-90 cursor-pointer"
                         title="Marcar como leído"
                       >
                         <Check className="w-3.5 h-3.5 font-bold" />
@@ -343,7 +343,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Lens Builder Requests Panel (6 cols) */}
-          <div className="md:col-span-6 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4">
+          <div className="anim-stagger-item md:col-span-6 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4" style={{ '--enter-delay': '220ms' } as React.CSSProperties}>
             <div className="flex items-center justify-between border-b border-[#cbd5e1]/40 pb-3">
               <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] flex items-center gap-1.5">
                 <MessageSquare className="w-4 h-4" /> Solicitudes de Lentes Armados
@@ -411,7 +411,7 @@ export default function AdminDashboard() {
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={() => handleUpdateStatus(req.id, 'contacted')}
-                            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[10px] font-bold text-white transition-colors cursor-pointer ${
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-[10px] font-bold text-white transition-all active:scale-95 cursor-pointer ${
                               customerPhone ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-emerald-600/50 cursor-not-allowed'
                             }`}
                           >
@@ -420,7 +420,7 @@ export default function AdminDashboard() {
                           </a>
                           <button
                             onClick={() => handleUpdateStatus(req.id, 'completed')}
-                            className="px-3 py-1.5 rounded-lg border border-[#cbd5e1] hover:bg-[#dee8ff]/30 text-[#00357f] text-[10px] font-bold transition-colors cursor-pointer"
+                            className="px-3 py-1.5 rounded-lg border border-[#cbd5e1] hover:bg-[#dee8ff]/30 text-[#00357f] text-[10px] font-bold transition-all active:scale-95 cursor-pointer"
                           >
                             Cerrar Orden
                           </button>
@@ -434,22 +434,27 @@ export default function AdminDashboard() {
           </div>
 
           {/* Exam Review Reminders (12 cols) */}
-          <div className="md:col-span-12">
+          <div className="anim-stagger-item md:col-span-12" style={{ '--enter-delay': '260ms' } as React.CSSProperties}>
             <ReminderTray />
           </div>
 
           {/* Recent Activity Section (12 cols) */}
-          <div className="md:col-span-12 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left">
-            <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] mb-4">Actividad Reciente</h3>
+          <div className="anim-stagger-item md:col-span-12 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#00357f] to-[#00668a] flex items-center justify-center text-white shadow-sm shadow-[#00357f]/25">
+                <Activity className="w-4 h-4" />
+              </span>
+              <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f]">Actividad Reciente</h3>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-[#cbd5e1]/65 text-[#737784] font-black uppercase tracking-wider text-[10px]">
-                    <th className="py-3 px-4">Tipo</th>
+                  <tr className="bg-[#f0f3ff]/70 border-b border-[#cbd5e1]/65 text-[#737784] font-black uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-4 rounded-tl-xl">Tipo</th>
                     <th className="py-3 px-4">Cliente</th>
                     <th className="py-3 px-4">Detalle</th>
                     <th className="py-3 px-4">Fecha/Hora</th>
-                    <th className="py-3 px-4 text-right">Monto</th>
+                    <th className="py-3 px-4 text-right rounded-tr-xl">Monto</th>
                   </tr>
                 </thead>
                 <tbody className="text-xs font-medium">
@@ -459,18 +464,20 @@ export default function AdminDashboard() {
                     </tr>
                   ) : (
                     sales.slice(0, 5).map(s => (
-                      <tr key={s.id} className="border-b border-[#cbd5e1]/30 hover:bg-[#f9f9ff] transition-colors">
-                        <td className="py-3.5 px-4">
+                      <tr key={s.id} className="border-b border-[#cbd5e1]/30 hover:bg-[#f0f3ff]/60 transition-colors">
+                        <td className="py-4 px-4">
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#dee8ff] text-[#00357f] font-bold text-[10px]">
                             <Activity className="w-3 h-3" /> Venta
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-[#111c2d] font-bold">{s.customer_name || 'Cliente'}</td>
-                        <td className="py-3.5 px-4 text-[#434653]">Venta registrada por {s.seller_name || 'Personal'}</td>
-                        <td className="py-3.5 px-4 text-[#737784] text-xs font-mono">
+                        <td className="py-4 px-4 text-[#111c2d] font-bold text-[13px]">{s.customer_name || 'Cliente'}</td>
+                        <td className="py-4 px-4 text-[#434653]">Venta registrada por {s.seller_name || 'Personal'}</td>
+                        <td className="py-4 px-4 text-[#737784] text-xs font-mono whitespace-nowrap">
                           {new Date(s.created_at).toLocaleDateString('es-MX')} {new Date(s.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
                         </td>
-                        <td className="py-3.5 px-4 text-right text-[#00357f] font-black font-mono">{formatPrice(s.total)}</td>
+                        <td className="py-4 px-4 text-right">
+                          <span className="inline-block bg-[#dee8ff]/70 text-[#00357f] font-black font-mono text-[13px] px-2.5 py-1 rounded-lg">{formatPrice(s.total)}</span>
+                        </td>
                       </tr>
                     ))
                   )}

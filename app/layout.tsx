@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 // Viewport setup for responsive scaling and theme color formatting
 export const viewport: Viewport = {
-  themeColor: '#020617', // slate-950 background matches theme
+  themeColor: '#00357f', // Óptica Rayo brand blue
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
