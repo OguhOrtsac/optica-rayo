@@ -2,28 +2,24 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { 
-  searchCustomers, 
-  getCustomerSales, 
-  getCustomerInstallments 
+import {
+  searchCustomers,
+  getSales,
+  getCustomerSales,
+  getCustomerInstallments
 } from '@/lib/services'
-import { registerInstallmentPaymentAction } from '@/app/customers/actions'
-import { 
-  Search, 
-  User, 
-  CreditCard, 
-  Calendar, 
-  Check, 
-  AlertTriangle, 
-  ArrowLeft, 
-  RefreshCw, 
-  Coins, 
-  DollarSign, 
+import {
+  Search,
+  User,
   Wallet,
   Clock,
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   CheckCircle2,
-  Users
+  Check,
+  Users,
+  ChevronRight
 } from 'lucide-react'
 
 type Customer = {
@@ -37,26 +33,44 @@ type Customer = {
   } | null
 }
 
+type Debtor = {
+  id: string
+  full_name: string
+  email: string
+  totalDebt: number
+  pendingCount: number
+  nextDue: string | null
+  isOverdue: boolean
+}
+
+type SelectedSummary = {
+  totalDebt: number
+  pendingCount: number
+  nextDue: string | null
+  isOverdue: boolean
+}
+
+const isOverdueDate = (dueDate: string) => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return new Date(dueDate) < today
+}
+
 export default function PaymentsPage() {
-  const router = useRouter()
   const [query, setQuery] = useState('')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loadingCustomers, setLoadingCustomers] = useState(false)
+
+  const [debtors, setDebtors] = useState<Debtor[]>([])
+  const [loadingDebtors, setLoadingDebtors] = useState(false)
+
+  // Cliente seleccionado: solo se muestra su tarjeta breve con el botón
+  // a su ficha; el registro de abonos ya no vive en esta página.
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  
-  // Details for selected customer
-  const [sales, setSales] = useState<any[]>([])
-  const [installments, setInstallments] = useState<any[]>([])
-  const [loadingDetails, setLoadingDetails] = useState(false)
+  const [selectedSummary, setSelectedSummary] = useState<SelectedSummary | null>(null)
+  const [loadingSummary, setLoadingSummary] = useState(false)
 
-  // Payment Form State
-  const [selectedInstallment, setSelectedInstallment] = useState<any | null>(null)
-  const [amountToPay, setAmountToPay] = useState<string>('')
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer'>('cash')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-
-  // Load directory list
+  // Directorio (búsqueda)
   const loadCustomers = useCallback(async (q: string) => {
     setLoadingCustomers(true)
     try {
@@ -73,7 +87,6 @@ export default function PaymentsPage() {
     loadCustomers('')
   }, [loadCustomers])
 
-  // Debounced query search
   useEffect(() => {
     const timer = setTimeout(() => {
       loadCustomers(query)
@@ -81,98 +94,110 @@ export default function PaymentsPage() {
     return () => clearTimeout(timer)
   }, [query, loadCustomers])
 
-  // Fetch billing details
-  const fetchBillingDetails = async (customerId: string) => {
-    setLoadingDetails(true)
-    setFeedback(null)
-    setSelectedInstallment(null)
+  // Deudores: ventas con saldo pendiente, agrupadas por cliente, con el
+  // próximo vencimiento tomado de sus cuotas pendientes.
+  const loadDebtors = useCallback(async () => {
+    setLoadingDebtors(true)
     try {
-      const [salesData, installmentsData] = await Promise.all([
-        getCustomerSales(customerId),
-        getCustomerInstallments(customerId)
-      ])
-      // Filter sales with active pending balance
-      setSales(salesData.filter((s: any) => (s.pending_balance ?? 0) > 0))
-      setInstallments(installmentsData)
-    } catch (err) {
-      console.error('Error loading billing details:', err)
-    } finally {
-      setLoadingDetails(false)
-    }
-  }
-
-  const handleSelectCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer)
-    fetchBillingDetails(customer.id)
-  }
-
-  // Next installment calculation
-  const billingSummary = useMemo(() => {
-    if (sales.length === 0) return null
-
-    const pendingInstallments = installments
-      .filter((i: any) => i.status === 'pending')
-      .sort((a: any, b: any) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
-
-    const nextInst = pendingInstallments[0] || null
-    const totalDebt = sales.reduce((sum, s) => sum + Number(s.pending_balance || 0), 0)
-
-    let isOverdue = false
-    if (nextInst) {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const dueDate = new Date(nextInst.due_date)
-      isOverdue = dueDate < today
-    }
-
-    return {
-      nextInstallment: nextInst,
-      totalDebt,
-      isOverdue,
-      pendingCount: pendingInstallments.length
-    }
-  }, [sales, installments])
-
-  const handleSelectInstallment = (inst: any) => {
-    setSelectedInstallment(inst)
-    setAmountToPay(inst.amount.toString())
-    setFeedback(null)
-  }
-
-  const handleRegisterPayment = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selectedInstallment || !amountToPay || isSubmitting) return
-
-    const paymentVal = parseFloat(amountToPay)
-    if (isNaN(paymentVal) || paymentVal <= 0) {
-      setFeedback({ type: 'error', text: 'Por favor introduce un monto de abono válido.' })
-      return
-    }
-
-    try {
-      setIsSubmitting(true)
-      setFeedback(null)
-
-      const result = await registerInstallmentPaymentAction(
-        selectedInstallment.id,
-        paymentVal,
-        paymentMethod
-      )
-
-      if (result.error) {
-        setFeedback({ type: 'error', text: result.error })
-      } else {
-        setFeedback({ type: 'success', text: result.success || '¡Abono registrado correctamente!' })
-        setSelectedInstallment(null)
-        // Refresh customer billing data
-        if (selectedCustomer) {
-          await fetchBillingDetails(selectedCustomer.id)
+      const allSales = await getSales()
+      const byCustomer = new Map<string, { name: string; email: string; totalDebt: number; saleIds: string[] }>()
+      for (const s of allSales as any[]) {
+        const pending = Number(s.pending_balance || 0)
+        if (pending <= 0) continue
+        const key = (s as any).customer_id || s.customer_name || ''
+        const prev = byCustomer.get(key)
+        if (prev) {
+          prev.totalDebt += pending
+          prev.saleIds.push(s.id)
+        } else {
+          byCustomer.set(key, {
+            name: s.customer_name || 'Cliente',
+            email: '',
+            totalDebt: pending,
+            saleIds: [s.id]
+          })
         }
       }
-    } catch (err: any) {
-      setFeedback({ type: 'error', text: err.message || 'Error al procesar el abono.' })
+      const entries = Array.from(byCustomer.entries())
+      const withDue = await Promise.all(entries.map(async ([id, d]) => {
+        let nextDue: string | null = null
+        try {
+          const insts = await getCustomerInstallments(id)
+          const pending = insts
+            .filter((i: any) => i.status === 'pending')
+            .sort((a: any, b: any) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+          if (pending.length > 0) {
+            nextDue = pending[0].due_date
+          }
+          const pendingCount = pending.length
+          return {
+            id,
+            full_name: d.name,
+            email: d.email,
+            totalDebt: d.totalDebt,
+            pendingCount,
+            nextDue,
+            isOverdue: nextDue ? isOverdueDate(nextDue) : false
+          } satisfies Debtor
+        } catch {
+          return {
+            id,
+            full_name: d.name,
+            email: d.email,
+            totalDebt: d.totalDebt,
+            pendingCount: 0,
+            nextDue,
+            isOverdue: false
+          } satisfies Debtor
+        }
+      }))
+      withDue.sort((a, b) => b.totalDebt - a.totalDebt)
+      setDebtors(withDue)
+    } catch (err) {
+      console.error('Error loading debtors:', err)
     } finally {
-      setIsSubmitting(false)
+      setLoadingDebtors(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadDebtors()
+  }, [loadDebtors])
+
+  // Resumen breve del cliente seleccionado (saldo + próximo vencimiento).
+  const handleSelectCustomer = async (customer: Customer) => {
+    setSelectedCustomer(customer)
+    setSelectedSummary(null)
+    setLoadingSummary(true)
+    try {
+      const known = debtors.find(d => d.id === customer.id)
+      if (known) {
+        setSelectedSummary({
+          totalDebt: known.totalDebt,
+          pendingCount: known.pendingCount,
+          nextDue: known.nextDue,
+          isOverdue: known.isOverdue
+        })
+      } else {
+        const [salesData, instsData] = await Promise.all([
+          getCustomerSales(customer.id),
+          getCustomerInstallments(customer.id)
+        ])
+        const totalDebt = salesData.reduce((sum: number, s: any) => sum + Number(s.pending_balance || 0), 0)
+        const pending = instsData
+          .filter((i: any) => i.status === 'pending')
+          .sort((a: any, b: any) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+        setSelectedSummary({
+          totalDebt,
+          pendingCount: pending.length,
+          nextDue: pending.length > 0 ? pending[0].due_date : null,
+          isOverdue: pending.length > 0 ? isOverdueDate(pending[0].due_date) : false
+        })
+      }
+    } catch (err) {
+      console.error('Error loading customer summary:', err)
+    } finally {
+      setLoadingSummary(false)
     }
   }
 
@@ -182,10 +207,50 @@ export default function PaymentsPage() {
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
 
+  // Con búsqueda: resultados del directorio. Sin búsqueda: deudores primero.
+  const directoryResults = useMemo(() => {
+    if (!query.trim()) return []
+    return customers
+  }, [query, customers])
+
+  const renderCustomerRow = (c: Customer, extra?: { totalDebt?: number; nextDue?: string | null; isOverdue?: boolean }) => {
+    const isSelected = selectedCustomer?.id === c.id
+    return (
+      <button
+        key={c.id}
+        onClick={() => handleSelectCustomer(c)}
+        className={`w-full flex items-center justify-between p-3 text-left transition-colors cursor-pointer ${
+          isSelected
+            ? 'bg-[#dee8ff]/60 border-l-4 border-l-[#00357f]'
+            : 'bg-white hover:bg-[#f0f3ff] border-l-4 border-l-transparent'
+        }`}
+      >
+        <div className="min-w-0">
+          <p className="font-bold text-xs text-[#111c2d] truncate">{c.full_name}</p>
+          {extra?.nextDue ? (
+            <p className={`text-[10px] font-bold truncate ${extra.isOverdue ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
+              Próximo vencimiento: {formatDate(extra.nextDue)}{extra.isOverdue ? ' (vencido)' : ''}
+            </p>
+          ) : (
+            <p className="text-[10px] text-[#737784] truncate">
+              @{c.email?.replace('@opticarayo.com', '')}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {extra?.totalDebt !== undefined && (
+            <span className="text-xs font-black text-[#ba1a1a] font-mono">{formatPrice(extra.totalDebt)}</span>
+          )}
+          <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-[#00357f]' : 'text-[#cbd5e1]'}`} />
+        </div>
+      </button>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] pt-4 pb-24 md:pb-8 text-left">
       <div className="max-w-[1440px] mx-auto px-4 md:px-8">
-        
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 pb-4 border-b border-[#e7eeff] gap-3">
           <div>
@@ -199,11 +264,10 @@ export default function PaymentsPage() {
           </div>
         </div>
 
-        {/* Layout Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-          {/* LEFT: Customer Search & List (4 Cols) */}
-          <div className="lg:col-span-4 bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4 flex flex-col gap-4 h-[calc(100vh-12rem)] min-h-[400px] lg:max-h-[650px]">
+          {/* LEFT: buscador + deudores / resultados */}
+          <div className="lg:col-span-4 bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4 flex flex-col gap-4 lg:max-h-[650px]">
             <span className="text-[10px] font-black uppercase text-[#00357f] tracking-wider">Buscar Cliente</span>
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#737784]" />
@@ -221,248 +285,130 @@ export default function PaymentsPage() {
               )}
             </div>
 
-            {/* Customers list scroll */}
-            <div className="flex-1 overflow-y-auto rounded-lg border border-[#cbd5e1]/40 divide-y divide-[#cbd5e1]/30">
-              {customers.length === 0 && !loadingCustomers ? (
-                <div className="py-12 text-center text-xs text-[#737784] font-semibold space-y-2">
-                  <Users className="w-8 h-8 text-[#cbd5e1] mx-auto" />
-                  <p>Sin resultados en el directorio.</p>
+            {query.trim() ? (
+              <>
+                <span className="text-[10px] font-black uppercase text-[#737784] tracking-wider">Resultados</span>
+                <div className="flex-1 overflow-y-auto rounded-lg border border-[#cbd5e1]/40 divide-y divide-[#cbd5e1]/30 min-h-[200px]">
+                  {directoryResults.length === 0 && !loadingCustomers ? (
+                    <div className="py-12 text-center text-xs text-[#737784] font-semibold space-y-2">
+                      <Users className="w-8 h-8 text-[#cbd5e1] mx-auto" />
+                      <p>Sin resultados en el directorio.</p>
+                    </div>
+                  ) : (
+                    directoryResults.map(c => renderCustomerRow(c))
+                  )}
                 </div>
-              ) : (
-                customers.map(c => {
-                  const isSelected = selectedCustomer?.id === c.id
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => handleSelectCustomer(c)}
-                      className={`w-full flex items-center justify-between p-3 text-left transition-colors ${
-                        isSelected 
-                          ? 'bg-[#dee8ff]/60 border-l-4 border-l-[#00357f]' 
-                          : 'bg-white hover:bg-[#f0f3ff] border-l-4 border-l-transparent'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <p className="font-bold text-xs text-[#111c2d] truncate">{c.full_name}</p>
-                        <p className="text-[10px] text-[#737784] truncate">
-                          @{c.email?.replace('@opticarayo.com', '')}
-                        </p>
-                      </div>
-                      <User className={`w-4 h-4 ${isSelected ? 'text-[#00357f]' : 'text-[#cbd5e1]'}`} />
-                    </button>
-                  )
-                })
-              )}
-            </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-[#ba1a1a] tracking-wider">
+                    Deudores{debtors.length > 0 ? ` (${debtors.length})` : ''}
+                  </span>
+                  {loadingDebtors && (
+                    <span className="w-3.5 h-3.5 border-2 border-[#ba1a1a] border-t-transparent rounded-full animate-spin" />
+                  )}
+                </div>
+                <div className="flex-1 overflow-y-auto rounded-lg border border-[#cbd5e1]/40 divide-y divide-[#cbd5e1]/30 min-h-[200px]">
+                  {debtors.length === 0 && !loadingDebtors ? (
+                    <div className="py-12 text-center text-xs text-[#737784] font-semibold space-y-2">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                      <p>Sin adeudos pendientes hoy.</p>
+                    </div>
+                  ) : (
+                    debtors.map(d => renderCustomerRow(
+                      { id: d.id, full_name: d.full_name, email: d.email, created_at: '', customer_profiles: null },
+                      { totalDebt: d.totalDebt, nextDue: d.nextDue, isOverdue: d.isOverdue }
+                    ))
+                  )}
+                </div>
+                <p className="text-[10px] text-[#737784] font-medium">
+                  Toca un deudor para ver su saldo y abrir su ficha de cobranza.
+                </p>
+              </>
+            )}
           </div>
 
-          {/* RIGHT: Billing Details and Register (8 Cols) */}
+          {/* RIGHT: tarjeta breve del cliente seleccionado */}
           <div className="lg:col-span-8 space-y-6">
             {!selectedCustomer ? (
               <div className="bg-white border border-[#cbd5e1] rounded-2xl p-10 flex flex-col items-center justify-center text-center space-y-3 h-[250px] shadow-sm">
                 <div className="w-12 h-12 bg-[#f0f3ff] rounded-full flex items-center justify-center text-[#00357f]/40">
                   <Wallet className="w-6 h-6" />
                 </div>
-                <p className="text-xs text-[#737784] font-bold">Selecciona un cliente del directorio para visualizar su adeudo.</p>
+                <p className="text-xs text-[#737784] font-bold">Selecciona un cliente para ver su saldo y abrir su ficha.</p>
               </div>
-            ) : loadingDetails ? (
+            ) : loadingSummary || !selectedSummary ? (
               <div className="bg-white border border-[#cbd5e1] rounded-2xl p-10 flex flex-col items-center justify-center h-[250px] shadow-sm">
                 <div className="w-8 h-8 border-4 border-[#00357f] border-t-transparent rounded-full animate-spin" />
                 <p className="text-xs text-[#737784] font-medium mt-2">Cargando estado de cuenta...</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                
-                {/* Billing Summary Box */}
-                {billingSummary ? (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm">
-                    <div className="space-y-1">
-                      <span className="text-[8px] font-black uppercase text-[#737784] tracking-wider block">Deuda Total Pendiente</span>
-                      <span className="text-2xl font-black text-[#ba1a1a]">{formatPrice(billingSummary.totalDebt)}</span>
-                    </div>
-
-                    <div className="space-y-1 border-t md:border-t-0 md:border-x border-[#cbd5e1]/40 pt-3 md:pt-0 md:px-4">
-                      <span className="text-[8px] font-black uppercase text-[#737784] tracking-wider block">Próxima Cuota</span>
-                      {billingSummary.nextInstallment ? (
-                        <div className="space-y-0.5">
-                          <span className="text-sm font-bold text-[#00357f]">
-                            {formatPrice(billingSummary.nextInstallment.amount)}
-                          </span>
-                          <span className={`block text-[10px] font-bold ${billingSummary.isOverdue ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
-                            Vence: {formatDate(billingSummary.nextInstallment.due_date)}
-                            {billingSummary.isOverdue && ' (Vencida)'}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs font-bold text-emerald-600">Al corriente</span>
-                      )}
-                    </div>
-
-                    <div className="space-y-1 pt-3 md:pt-0 md:pl-4">
-                      <span className="text-[8px] font-black uppercase text-[#737784] tracking-wider block">Estado de Cuenta</span>
-                      <div className="flex items-center gap-1">
-                        {billingSummary.isOverdue ? (
-                          <span className="inline-flex items-center gap-1 bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full">
-                            <AlertTriangle className="w-3.5 h-3.5" /> Pago Retrasado
-                          </span>
-                        ) : billingSummary.nextInstallment ? (
-                          <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full">
-                            <Clock className="w-3.5 h-3.5" /> Pago Pendiente
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full">
-                            <Check className="w-3.5 h-3.5" /> Liquidado
-                          </span>
-                        )}
-                      </div>
-                    </div>
+              <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-5 sm:p-6 space-y-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-black uppercase text-[#737784] tracking-wider block">Cliente seleccionado</span>
+                    <h2 className="text-lg font-black text-[#111c2d] truncate mt-1">{selectedCustomer.full_name}</h2>
+                    <p className="text-[11px] text-[#737784] font-medium truncate">
+                      @{selectedCustomer.email?.replace('@opticarayo.com', '')}
+                    </p>
                   </div>
-                ) : (
-                  <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 text-center text-xs font-bold text-emerald-600 flex items-center justify-center gap-2 shadow-sm">
-                    <CheckCircle2 className="w-5 h-5" /> El cliente no tiene adeudos pendientes en este momento.
+                  {selectedSummary.totalDebt > 0 ? (
+                    <span className="shrink-0 inline-flex items-center gap-1 bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full">
+                      <AlertTriangle className="w-3.5 h-3.5" /> Con adeudo
+                    </span>
+                  ) : (
+                    <span className="shrink-0 inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full">
+                      <Check className="w-3.5 h-3.5" /> Al corriente
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-4">
+                    <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Saldo pendiente total</span>
+                    <span className={`text-xl font-black font-mono block mt-1 ${selectedSummary.totalDebt > 0 ? 'text-[#ba1a1a]' : 'text-emerald-700'}`}>
+                      {formatPrice(selectedSummary.totalDebt)}
+                    </span>
                   </div>
-                )}
-
-                {/* Sales with active debt & Installments table */}
-                {sales.length > 0 && (
-                  <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
-                    <div className="bg-[#f9f9ff] border-b border-[#cbd5e1]/40 p-4">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Plan de Pagos y Abonos</h3>
-                    </div>
-
-                    <div className="p-4 space-y-6">
-                      {sales.map((sale: any) => {
-                        const saleInsts = installments.filter((inst: any) => inst.sale_id === sale.id)
-                        return (
-                          <div key={sale.id} className="space-y-3 border-b border-[#cbd5e1]/30 pb-4 last:border-0 last:pb-0">
-                            <div className="flex flex-wrap justify-between items-center gap-2 bg-[#f0f3ff] p-3 rounded-xl text-xs font-medium">
-                              <span className="font-bold text-[#00357f]">Orden #{sale.id.slice(0, 6).toUpperCase()}</span>
-                              <span className="text-[#737784]">Total: {formatPrice(sale.total)}</span>
-                              <span className="text-[#737784]">Abonado: {formatPrice(sale.paid_amount)}</span>
-                              <span className="text-[#ba1a1a] font-bold">Resta: {formatPrice(sale.pending_balance)}</span>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {saleInsts.map((inst: any) => {
-                                const isPending = inst.status === 'pending'
-                                const isSelectable = isPending && (!selectedInstallment || selectedInstallment.id === inst.id)
-                                return (
-                                  <div 
-                                    key={inst.id} 
-                                    className={`p-3 border rounded-xl flex items-center justify-between transition-all ${
-                                      inst.status === 'paid' 
-                                        ? 'border-emerald-200 bg-emerald-50/20 opacity-80' 
-                                        : 'border-[#cbd5e1] bg-white hover:border-[#00357f]/60'
-                                    }`}
-                                  >
-                                    <div className="space-y-1">
-                                      <span className="block text-[10px] font-bold text-[#434653]">
-                                        Pago #{inst.installment_number}
-                                      </span>
-                                      <div className="flex items-center gap-2 text-xs">
-                                        <span className="font-extrabold text-[#111c2d]">{formatPrice(inst.amount)}</span>
-                                        <span className={`text-[10px] ${isPending ? 'text-[#737784]' : 'text-emerald-700'}`}>
-                                          {isPending ? `Vence: ${formatDate(inst.due_date)}` : `Pagado: ${formatDate(inst.payment_date)}`}
-                                        </span>
-                                      </div>
-                                      {isPending && Number(inst.amount_paid) > 0 && (
-                                        <span className="block text-[10px] font-bold text-[#00668a]">
-                                          Abonado: {formatPrice(Number(inst.amount_paid))} de {formatPrice(inst.amount)}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {isPending ? (
-                                      <button
-                                        onClick={() => handleSelectInstallment(inst)}
-                                        className="text-[10px] font-black uppercase tracking-wider text-[#00357f] hover:underline cursor-pointer"
-                                      >
-                                        Abonar
-                                      </button>
-                                    ) : (
-                                      <span className="text-[10px] font-black text-emerald-700 uppercase flex items-center gap-0.5">
-                                        <Check className="w-3.5 h-3.5" /> Pagado
-                                      </span>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
+                  <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-4">
+                    <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Cuotas pendientes</span>
+                    <span className="text-xl font-black text-[#111c2d] block mt-1">
+                      {selectedSummary.pendingCount}
+                    </span>
                   </div>
-                )}
-
-                {/* Form Modal to Register payment */}
-                {selectedInstallment && (
-                  <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-5 space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-200">
-                    <div className="flex justify-between items-center border-b border-[#cbd5e1]/40 pb-2">
-                      <h4 className="font-extrabold text-xs text-[#00357f] uppercase tracking-wider flex items-center gap-1.5">
-                        <CreditCard className="w-4 h-4" /> Registrar Abono de Cuota #{selectedInstallment.installment_number}
-                      </h4>
-                      <button 
-                        onClick={() => setSelectedInstallment(null)}
-                        className="text-[10px] text-[#737784] font-bold hover:underline"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-
-                    {feedback && (
-                      <div className={`p-3 rounded-lg text-xs font-bold border ${
-                        feedback.type === 'success' 
-                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' 
-                          : 'bg-rose-500/10 border-rose-500/30 text-rose-600'
-                      }`}>
-                        {feedback.text}
-                      </div>
+                  <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-4">
+                    <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Próximo vencimiento</span>
+                    {selectedSummary.nextDue ? (
+                      <span className={`text-sm font-bold block mt-1 ${selectedSummary.isOverdue ? 'text-[#ba1a1a]' : 'text-[#00357f]'}`}>
+                        {formatDate(selectedSummary.nextDue)}
+                        {selectedSummary.isOverdue && ' (vencido)'}
+                      </span>
+                    ) : (
+                      <span className="text-sm font-bold text-emerald-700 block mt-1">Sin vencimientos</span>
                     )}
-
-                    <form onSubmit={handleRegisterPayment} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-                      <div>
-                        <label className="block text-[10px] font-bold text-[#434653] uppercase mb-1">Monto a Pagar</label>
-                        <div className="relative">
-                          <DollarSign className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#737784]" />
-                          <input
-                            type="number"
-                            step="0.01"
-                            required
-                            value={amountToPay}
-                            onChange={e => setAmountToPay(e.target.value)}
-                            className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg pl-8 pr-3 py-2 text-xs font-bold text-[#111c2d] outline-none focus:border-[#00357f]"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-[#434653] uppercase mb-1">Método de Pago</label>
-                        <select
-                          value={paymentMethod}
-                          onChange={e => setPaymentMethod(e.target.value as any)}
-                          className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#00357f]"
-                        >
-                          <option value="cash">Efectivo</option>
-                          <option value="card">Tarjeta Débito/Crédito</option>
-                          <option value="transfer">Transferencia Bancaria</option>
-                        </select>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="w-full py-2 bg-[#00357f] hover:bg-[#004aad] text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 shadow-sm transition-colors cursor-pointer"
-                      >
-                        {isSubmitting ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5" />
-                        )}
-                        Confirmar Pago
-                      </button>
-                    </form>
                   </div>
+                </div>
+
+                {selectedSummary.totalDebt > 0 ? (
+                  <p className="text-[11px] text-[#737784] font-medium flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    En su ficha verás el detalle por venta y cuota, y podrás registrar el abono ahí mismo.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    Este cliente no tiene adeudos pendientes en este momento.
+                  </p>
                 )}
+
+                <Link
+                  href={`/customers/${selectedCustomer.id}#cobranza`}
+                  className="w-full py-3 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
+                >
+                  Abrir ficha y registrar pago
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
               </div>
             )}
           </div>

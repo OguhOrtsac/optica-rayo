@@ -9,6 +9,18 @@ import { addMonthsISO, DEFAULT_REMINDER_MONTHS, REMINDER_MONTHS_KEY } from '@/li
 import { effectiveClientPrice, MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT } from '@/lib/pricing'
 
 /**
+ * True when a real Supabase project is configured (same env check the
+ * client services use). The mock fallbacks in this file may only run in
+ * demo mode — when a database IS configured, a failure is a real error
+ * and must be reported as one, never dressed up as a successful write.
+ */
+function isSupabaseConfigured(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  return !!url && !!key && !url.includes('placeholder') && !key.includes('placeholder')
+}
+
+/**
  * Reads the configured review-reminder period (months) from app_settings.
  * Falls back to the default (6 months) when unset or unreadable.
  */
@@ -225,7 +237,19 @@ export async function registerCustomerAction(currentState: RegisterCustomerState
       customerId: user.id,
     }
   } catch (err: any) {
-    console.warn('Database/Auth registry connection failed, running fallback mock:', err.message)
+    if (isSupabaseConfigured()) {
+      // A database IS configured and the registration failed: the customer
+      // was NOT created. Report the real error — creating an in-memory
+      // "customer" with a temporal password here would hand staff a login
+      // for an account that does not exist.
+      console.error('Customer registration failed:', err)
+      return {
+        error: `No se pudo registrar el cliente: ${err.message || 'error de conexión con la base de datos.'}`,
+        success: null,
+        customerId: null,
+      }
+    }
+    console.warn('Supabase not configured; registering customer in local demo mode:', err.message)
     isMock = true
   }
 
@@ -409,7 +433,18 @@ export async function createClinicalExamAction(currentState: CreateExamState, fo
     revalidatePath(`/customers/${customerId}`, 'layout')
     return { success: '¡Examen clínico guardado exitosamente!', error: null, examId: data.id }
   } catch (err: any) {
-    console.warn('clinical exam connection failed, running fallback mock:', err.message)
+    if (isSupabaseConfigured()) {
+      // A database IS configured and the exam was NOT saved: report the
+      // real error. A prescription that only exists in memory would let
+      // staff work from a graduation the record does not contain.
+      console.error('Clinical exam save failed:', err)
+      return {
+        error: `No se pudo guardar el examen clínico: ${err.message || 'error de conexión con la base de datos.'}`,
+        success: null,
+        examId: null,
+      }
+    }
+    console.warn('Supabase not configured; saving clinical exam in local demo mode:', err.message)
     const mockExamId = 'mock_exam_' + Math.random().toString(36).substr(2, 9)
     const mockExam = {
       id: mockExamId,
@@ -660,7 +695,17 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
         .select()
         .single()
 
-      if (!itemError && itemData && item.treatmentIds && item.treatmentIds.length > 0) {
+      if (itemError || !itemData) {
+        // The sale row already exists without this line item: surface a
+        // partial-failure error instead of letting the sale pass as
+        // complete (previously the item error was silently ignored).
+        return {
+          error: `La venta quedó registrada (id ${saleData.id}) pero una partida no se pudo guardar: ${itemError?.message || 'sin respuesta de la base de datos.'} Revisa la venta antes de entregar o cobrar de nuevo.`,
+          success: null,
+        }
+      }
+
+      if (itemData && item.treatmentIds && item.treatmentIds.length > 0) {
         // Retrieve treatment details to get prices at time of sale
         const { data: treatmentsData } = await supabase
           .from('lens_treatments')
@@ -673,29 +718,44 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
             treatment_id: t.id,
             price: t.price
           }))
-          await supabase.from('sale_item_treatments').insert(treatmentsToInsert)
+          const { error: treatmentsError } = await supabase.from('sale_item_treatments').insert(treatmentsToInsert)
+          if (treatmentsError) {
+            return {
+              error: `La venta quedó registrada (id ${saleData.id}) pero los tratamientos de una partida no se pudieron guardar: ${treatmentsError.message}`,
+              success: null,
+            }
+          }
         }
       }
 
-      // Decrement stock
-      try {
-        const { error: rpcError } = await supabase.rpc('decrement_stock', {
-          product_id: item.productId,
-          qty: item.quantity,
-        })
-        if (rpcError) throw rpcError
-      } catch {
-        // RPC may not exist yet; fallback inline update
-        const { data } = await supabase
+      // Decrement stock through the decrement_stock RPC (atomic UPDATE,
+      // clamped at 0 — products.stock has a CHECK (stock >= 0)). If the
+      // RPC is unavailable (migration not applied yet), fall back to a
+      // manual read-modify-write whose errors are CHECKED and clamped the
+      // same way; the previous fallback ignored the update error and
+      // could drive stock negative. A stock failure stays non-fatal to
+      // the completed sale (same policy as the POS) but is always logged.
+      const { error: rpcError } = await supabase.rpc('decrement_stock', {
+        product_id: item.productId,
+        qty: item.quantity,
+      })
+      if (rpcError) {
+        console.error('decrement_stock RPC failed, using manual decrement:', rpcError.message)
+        const { data: prodRow, error: prodReadError } = await supabase
           .from('products')
           .select('stock')
           .eq('id', item.productId)
           .single()
-        if (data) {
-          await supabase
+        if (prodReadError || !prodRow) {
+          console.error('Manual stock decrement: product read failed:', prodReadError?.message)
+        } else {
+          const { error: prodUpdateError } = await supabase
             .from('products')
-            .update({ stock: data.stock - item.quantity })
+            .update({ stock: Math.max(0, prodRow.stock - item.quantity) })
             .eq('id', item.productId)
+          if (prodUpdateError) {
+            console.error('Manual stock decrement failed:', prodUpdateError.message)
+          }
         }
       }
     }
@@ -725,9 +785,21 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
           })
         }
         
-        await supabase.from('payment_installments').insert(installmentsToInsert)
+        const { error: installmentsError } = await supabase.from('payment_installments').insert(installmentsToInsert)
+        if (installmentsError) {
+          // The sale exists but its payment plan does not: the balance
+          // would never be collected. Surface it instead of logging only.
+          return {
+            error: `La venta quedó registrada (id ${saleData.id}) pero no se pudieron generar las cuotas: ${installmentsError.message}`,
+            success: null,
+          }
+        }
       } catch (e) {
         console.error('Failed to create payment installments in Supabase:', e)
+        return {
+          error: `La venta quedó registrada (id ${saleData.id}) pero no se pudieron generar las cuotas: ${e instanceof Error ? e.message : 'error inesperado.'}`,
+          success: null,
+        }
       }
     }
 
@@ -750,9 +822,20 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
       : ' • Pago completo recibido'
     return { success: `¡Venta registrada! Total: $${total.toFixed(2)} MXN${balanceMsg}`, error: null }
   } catch (err: any) {
-    console.warn('Supabase DB connection failed in createLinkedSaleAction, running fallback mock:', err.message)
-    
-    // FALLBACK MOCK WRITE
+    if (isSupabaseConfigured()) {
+      // A database IS configured and the sale failed before completing:
+      // report the real error. Building the sale in the in-memory mock
+      // list here would show the owner a «registered» sale (with totals
+      // and balances) that the business never recorded.
+      console.error('createLinkedSaleAction failed:', err)
+      return {
+        error: `No se pudo registrar la venta: ${err.message || 'error de conexión con la base de datos.'}`,
+        success: null,
+      }
+    }
+    console.warn('Supabase not configured; registering linked sale in local demo mode:', err.message)
+
+    // FALLBACK MOCK WRITE (demo mode only — no database configured)
     const saleId = 's_' + Math.random().toString(36).substr(2, 9)
     let subtotal = 0
 
@@ -1033,7 +1116,14 @@ export async function getMySalesAction(): Promise<any[]> {
       })
     }
   } catch (err: any) {
-    console.warn('Supabase fetch failed on getMySalesAction, running fallback mock:', err.message)
+    if (isSupabaseConfigured()) {
+      // A database IS configured and the read failed: return an empty
+      // history (and log the real error) instead of showing the customer
+      // every demo sale in the system as if they were their purchases.
+      console.error('getMySalesAction failed:', err)
+      return []
+    }
+    console.warn('Supabase not configured; getMySalesAction running in local demo mode:', err.message)
     isMock = true
   }
 
@@ -1184,9 +1274,17 @@ export async function registerInstallmentPaymentAction(
       error: null
     }
   } catch (err: any) {
-    console.warn('registerInstallmentPaymentAction Supabase failed, falling back to mockDb:', err.message)
-    
-    // Fallback Mock
+    if (isSupabaseConfigured()) {
+      // A database IS configured and the payment was NOT recorded: report
+      // the real error. The mock fallback previously answered «¡Pago
+      // registrado exitosamente (Offline fallback)!» for money the
+      // business never received in its records.
+      console.error('registerInstallmentPaymentAction failed:', err)
+      return { error: 'Fallo al registrar el pago: ' + (err.message || 'error de conexión con la base de datos.'), success: null }
+    }
+    console.warn('Supabase not configured; registerInstallmentPaymentAction running in local demo mode:', err.message)
+
+    // Fallback Mock (demo mode only — no database configured)
     const inst = mockDb.MOCK_PAYMENT_INSTALLMENTS.find(i => i.id === installmentId)
     if (inst) {
       const newInstPaid = (Number((inst as any).amount_paid) || 0) + amountPaid

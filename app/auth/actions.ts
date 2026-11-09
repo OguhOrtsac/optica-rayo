@@ -6,7 +6,6 @@ import { cookies } from 'next/headers'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { invalidateProfilesCache } from '@/lib/services'
-import * as mockDb from '@/lib/mocks'
 import { normalizeRole, type UserRole } from '@/lib/roles'
 
 /**
@@ -41,8 +40,11 @@ export interface RegisterState {
 }
 
 /**
- * Handles patient self-registration (Sign up)
- * Supports offline-first bypass, creating a mock customer profile if database fails.
+ * Handles patient self-registration (Sign up).
+ * The account is created in Supabase Auth or not at all: if the real
+ * sign-up cannot be completed, the real failure is reported and NO
+ * local/mock session or profile is issued (fake-session bypass removed
+ * on 2026-11-09).
  */
 export async function registerPatient(currentState: RegisterState, formData: FormData): Promise<RegisterState> {
   const email = formData.get('email') as string
@@ -92,7 +94,7 @@ export async function registerPatient(currentState: RegisterState, formData: For
       }
     }
   } catch (err) {
-    console.warn('Supabase sign up failed, falling back to local mock bypass:', err)
+    console.warn('Supabase sign up failed:', err)
   }
 
   // No fake local session is issued when the real sign-up cannot be

@@ -54,6 +54,8 @@ export default function ReminderTray() {
     try {
       await saveReminderConfig(months, template)
       flash('Configuración de recordatorios guardada.')
+    } catch (err: any) {
+      flash(`No se pudo guardar la configuración: ${err?.message || 'error desconocido'}`)
     } finally {
       setSaving(false)
     }

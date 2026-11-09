@@ -13,6 +13,19 @@ import {
   saveMemberDiscountPercent
 } from '@/lib/services'
 import { Database } from '@/types/database.types'
+import LensOptionsEditor from './lens-options-editor'
+import {
+  getLensOptionTemplates,
+  getActiveLensOptionTemplates,
+  templatesToDrafts,
+  syncLensOptionTemplates,
+  getProductLensOptionRows,
+  productOptionsToDrafts,
+  syncProductLensOptions,
+  seedProductOptionsFromTemplates,
+  type LensOptionDraft,
+  type LensOptionTemplate
+} from '@/lib/product-lens-options'
 import { FRAME_SHAPE_OPTIONS, getProductDetails, type FrameShape } from '@/lib/product-data'
 import {
   PRODUCT_IMAGE_ACCEPT,
@@ -41,6 +54,20 @@ type Product = Database['public']['Tables']['products']['Row']
 // carry the legacy JSON description, which getProductDetails can read.
 function parseProductDescription(product: Product) {
   return getProductDetails(product)
+}
+
+// Template rows keep their id in the editor (they are real DB rows);
+// product prefills use templatesToDrafts() instead, which drops the id
+// because the copy lives in a different table.
+function templatesToEditorDrafts(rows: LensOptionTemplate[]): LensOptionDraft[] {
+  return rows.map(t => ({
+    id: t.id,
+    grp: t.grp,
+    name: t.name,
+    price_delta: t.price_delta,
+    sort_order: t.sort_order,
+    is_active: t.is_active
+  }))
 }
 
 export default function AdminProductsPage() {
@@ -81,6 +108,13 @@ export default function AdminProductsPage() {
   const [memberPct, setMemberPct] = useState(20)
   const [submittingProduct, setSubmittingProduct] = useState(false)
 
+  // Lens option templates (editable defaults) + per-product option drafts.
+  const [templateDrafts, setTemplateDrafts] = useState<LensOptionDraft[]>([])
+  const [savingTemplates, setSavingTemplates] = useState(false)
+  const [createOptionDrafts, setCreateOptionDrafts] = useState<LensOptionDraft[]>([])
+  const [editOptionDrafts, setEditOptionDrafts] = useState<LensOptionDraft[]>([])
+  const [editOptionsLoadedFor, setEditOptionsLoadedFor] = useState<string | null>(null)
+
   // Edit / Delete states
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
@@ -107,12 +141,71 @@ export default function AdminProductsPage() {
       setProducts(data)
       const pct = await getMemberDiscountPercent()
       setMemberPct(pct)
+      try {
+        const templates = await getLensOptionTemplates()
+        setTemplateDrafts(templatesToEditorDrafts(templates))
+      } catch {
+        // Templates are an auxiliary editor: if that read fails the
+        // inventory still loads; saving templates will surface the error.
+        setTemplateDrafts([])
+      }
     } catch (e) {
       showFeedback('error', 'Error al cargar los productos del inventario.')
     } finally {
       setLoading(false)
     }
   }
+
+  const handleSaveTemplates = async () => {
+    setSavingTemplates(true)
+    try {
+      const fresh = await syncLensOptionTemplates(templateDrafts)
+      setTemplateDrafts(templatesToEditorDrafts(fresh))
+      showFeedback('success', 'Plantillas de opciones guardadas. Los productos ya creados NO cambiaron: cada uno guarda sus propias opciones.')
+    } catch (e) {
+      showFeedback('error', e instanceof Error ? e.message : 'Error al guardar las plantillas de opciones.')
+    } finally {
+      setSavingTemplates(false)
+    }
+  }
+
+  // Every time the create modal opens, the product's lens options start
+  // as a fresh copy of the active template (the owner can edit them
+  // before saving; they are stored per product, never linked back).
+  useEffect(() => {
+    if (!isCreateModalOpen) return
+    let cancelled = false
+    getActiveLensOptionTemplates()
+      .then(t => { if (!cancelled) setCreateOptionDrafts(templatesToDrafts(t)) })
+      .catch(() => { if (!cancelled) setCreateOptionDrafts([]) })
+    return () => { cancelled = true }
+  }, [isCreateModalOpen])
+
+  // Load the edited product's OWN lens options (including inactive).
+  const editingProductId = editingProduct?.id ?? null
+  useEffect(() => {
+    if (!editingProductId) {
+      setEditOptionDrafts([])
+      setEditOptionsLoadedFor(null)
+      return
+    }
+    let cancelled = false
+    getProductLensOptionRows(editingProductId, { includeInactive: true })
+      .then(rows => {
+        if (!cancelled) {
+          setEditOptionDrafts(productOptionsToDrafts(rows))
+          setEditOptionsLoadedFor(editingProductId)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEditOptionDrafts([])
+          setEditOptionsLoadedFor(editingProductId)
+        }
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingProductId])
 
   const handleSaveMemberPct = async () => {
     await saveMemberDiscountPercent(memberPct)
@@ -227,7 +320,7 @@ export default function AdminProductsPage() {
 
       // Structured product data: attributes live in their own columns and
       // description remains the public, human-readable note only.
-      await createProduct({
+      const created = await createProduct({
         name: pName.trim(),
         description: pDescription.trim() || null,
         price: parseFloat(pPrice),
@@ -245,6 +338,16 @@ export default function AdminProductsPage() {
         is_promo: pIsPromo,
         is_featured: pIsFeatured
       })
+
+      // Lens options are stored PER PRODUCT: they start from the
+      // template copy edited in this form and evolve independently.
+      if (pCategory === 'frames' || pCategory === 'lenses') {
+        if (createOptionDrafts.length > 0) {
+          await syncProductLensOptions(created.id, createOptionDrafts)
+        } else {
+          await seedProductOptionsFromTemplates(created.id)
+        }
+      }
 
       showFeedback('success', '¡Producto añadido exitosamente al catálogo!')
       setPName('')
@@ -267,6 +370,7 @@ export default function AdminProductsPage() {
       setPIsPromo(false)
       setPIsFeatured(false)
       setPClientPrice('')
+      setCreateOptionDrafts([])
       setIsCreateModalOpen(false)
       await loadProductsData()
     } catch (e) {
@@ -340,6 +444,16 @@ export default function AdminProductsPage() {
         is_promo: editingProduct.is_promo,
         is_featured: editingProduct.is_featured
       })
+
+      // Save this product's OWN lens options (never the template's and
+      // never another product's). Skipped when the options never loaded
+      // or when the category does not use the quote wizard.
+      if (
+        (editingProduct.category === 'frames' || editingProduct.category === 'lenses') &&
+        editOptionsLoadedFor === editingProduct.id
+      ) {
+        await syncProductLensOptions(editingProduct.id, editOptionDrafts)
+      }
 
       showFeedback('success', 'Producto actualizado correctamente.')
       setEditingProduct(null)
@@ -471,6 +585,35 @@ export default function AdminProductsPage() {
           Guardar
         </button>
       </div>
+
+      {/* Lens option templates: the editable defaults for the quote assistant */}
+      <section className="bg-white p-4 md:p-5 rounded-2xl border border-[#cbd5e1] shadow-sm space-y-4" aria-label="Plantillas de opciones de lente">
+        <div>
+          <h2 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Plantillas de opciones de lente</h2>
+          <p className="mt-1 text-[11px] leading-relaxed text-[#737784] font-medium">
+            Estos son los recargos que el asistente de cotización ofrece al armar unos lentes
+            (tipo de visión y extras). Puede renombrarlos, cambiar su precio, agregar nuevos,
+            desactivarlos o quitarlos.
+          </p>
+          <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] font-bold text-amber-700">
+            Importante: la plantilla solo es el punto de partida de los productos NUEVOS.
+            Editarla NO cambia las opciones de los productos que ya existen — cada producto
+            guarda las suyas y se editan desde su propio formulario de edición.
+          </p>
+        </div>
+
+        <LensOptionsEditor value={templateDrafts} onChange={setTemplateDrafts} />
+
+        <div className="flex justify-end">
+          <button
+            onClick={handleSaveTemplates}
+            disabled={savingTemplates}
+            className="bg-[#00357f] hover:bg-[#004aad] text-white text-[11px] font-bold px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer min-h-[40px]"
+          >
+            {savingTemplates ? 'Guardando...' : 'Guardar plantillas'}
+          </button>
+        </div>
+      </section>
 
       {/* Filters Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl border border-[#cbd5e1] shadow-sm">
@@ -822,6 +965,21 @@ export default function AdminProductsPage() {
                 </div>
               </div>
 
+              {/* Lens options for THIS product: born as a template copy,
+                  stored per product (frames/lenses only). */}
+              {(pCategory === 'frames' || pCategory === 'lenses') && (
+                <section className="space-y-3 rounded-2xl border border-[#cbd5e1] bg-[#f9f9ff] p-4" aria-label="Opciones de este lente">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Opciones de este lente</h3>
+                    <p className="mt-1 text-[11px] leading-relaxed text-[#737784]">
+                      Se precargaron desde la plantilla. Ajústelas a este producto si lo necesita:
+                      quedan guardadas SOLO para este lente, sin tocar la plantilla ni otros productos.
+                    </p>
+                  </div>
+                  <LensOptionsEditor value={createOptionDrafts} onChange={setCreateOptionDrafts} />
+                </section>
+              )}
+
               {/* Promo Section */}
               <div className="border-t border-[#cbd5e1] pt-4 mt-2 text-xs">
                 <div className="flex items-center gap-2 mb-3">
@@ -1033,8 +1191,41 @@ export default function AdminProductsPage() {
                 </div>
               </div>
 
+              {/* Lens options of THIS product only (frames/lenses). */}
+              {(editingProduct.category === 'frames' || editingProduct.category === 'lenses') && (
+                <section className="space-y-3 rounded-2xl border border-[#cbd5e1] bg-[#f9f9ff] p-4" aria-label="Opciones de este lente">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Opciones de este lente</h3>
+                    <p className="mt-1 text-[11px] leading-relaxed text-[#737784]">
+                      Estas opciones son SOLO de este producto: cambiarlas no modifica la plantilla
+                      ni los demás lentes. Son las que el asistente de cotización ofrece al venderlo.
+                    </p>
+                  </div>
+                  {editOptionsLoadedFor !== editingProduct.id ? (
+                    <p className="text-[11px] font-medium text-[#737784]">Cargando opciones del producto...</p>
+                  ) : (
+                    <>
+                      {editOptionDrafts.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setEditOptionDrafts(
+                            templateDrafts
+                              .filter(t => t.is_active)
+                              .map(t => ({ grp: t.grp, name: t.name, price_delta: t.price_delta, sort_order: t.sort_order, is_active: true }))
+                          )}
+                          className="text-[11px] font-bold text-[#00357f] bg-[#dee8ff] hover:bg-[#c9d8ff] px-3 py-2 rounded-lg transition-colors cursor-pointer min-h-[36px]"
+                        >
+                          Cargar opciones desde la plantilla
+                        </button>
+                      )}
+                      <LensOptionsEditor value={editOptionDrafts} onChange={setEditOptionDrafts} />
+                    </>
+                  )}
+                </section>
+              )}
+
               <div className="flex items-center gap-2 pt-4 border-t border-[#cbd5e1] mt-4 text-xs">
-                <input 
+                <input
                   type="checkbox"
                   id="editHasPromo"
                   checked={editingProduct.is_promo}

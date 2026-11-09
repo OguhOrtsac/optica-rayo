@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getProducts, getWishlist, toggleWishlistItem, getMemberDiscountPercent } from '@/lib/services'
+import { getProducts, getWishlist, toggleWishlistItem, getMemberDiscountPercent, createLensRequest, getAppSetting } from '@/lib/services'
+import { getProductLensOptions } from '@/lib/product-lens-options'
+import { uploadPrescriptionFile, attachPrescriptionToRequest, validatePrescriptionFile } from '@/lib/catalog-data'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDescription, getProductDetails, getProductImageAlt, getProductImages } from '@/lib/product-data'
 import { getProfileData } from '@/app/auth/actions'
@@ -69,7 +71,7 @@ function CatalogContent() {
   const faceShapeFilter = searchParams.get('faceShape') || 'all'
 
   // Embla Carousel Hook for Promo banner
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, align: 'center', duration: 30 })
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, align: 'start', duration: 30 })
   const [prevBtnEnabled, setPrevBtnEnabled] = useState(false)
   const [nextBtnEnabled, setNextBtnEnabled] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -89,10 +91,27 @@ function CatalogContent() {
 
   // Lens Wizard Stepper state
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
-  const [selectedGraduation, setSelectedGraduation] = useState<'none' | 'monofocal' | 'bifocal' | 'progresivo'>('none')
-  const [selectedTreatments, setSelectedTreatments] = useState<string[]>([])
   const [prescriptionMode, setPrescriptionMode] = useState<'upload' | 'manual'>('upload')
-  const [uploadedFileName, setUploadedFileName] = useState<string>('')
+
+  // Per-product lens options (the owner's model): each frame carries its
+  // OWN vision options (single choice) and extras (multiple), seeded from
+  // the admin-editable template but independent per product.
+  const [productOptions, setProductOptions] = useState<{ vision: any[]; extra: any[] }>({ vision: [], extra: [] })
+  const [selectedVisionId, setSelectedVisionId] = useState<string>('')
+  const [selectedExtraIds, setSelectedExtraIds] = useState<string[]>([])
+
+  // Real prescription file, held until the request is sent (uploaded to
+  // the private 'prescriptions' bucket at submit time).
+  const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null)
+  const [uploadError, setUploadError] = useState<string>('')
+
+  // Real request submission status (no fake success anywhere).
+  const [requestStatus, setRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [requestNote, setRequestNote] = useState<string>('')
+
+  // Business WhatsApp number from app_settings ('business_whatsapp').
+  // Empty string = not configured = every WhatsApp button stays hidden.
+  const [businessWhatsapp, setBusinessWhatsapp] = useState<string>('')
 
   // Manual prescription values
   const [odSphere, setOdSphere] = useState('0.00')
@@ -111,6 +130,10 @@ function CatalogContent() {
         setProducts(productsData)
         const pct = await getMemberDiscountPercent()
         setMemberPct(pct)
+
+        // Business WhatsApp from editable settings; keep digits only.
+        const wa = await getAppSetting('business_whatsapp')
+        setBusinessWhatsapp((wa || '').replace(/\D/g, ''))
 
         // Try to fetch profile
         try {
@@ -302,23 +325,43 @@ function CatalogContent() {
     return result
   }, [products, selectedCategories, maxPriceFilter, searchTerm, onlyPromoFilter, faceShapeFilter, sortBy])
 
-  // Lens Wizard Price calculator helper
-  const totalConfiguredPrice = useMemo(() => {
-    if (!selectedProduct) return 0
-    let base = priceOf(selectedProduct)
+  // Lens Wizard pricing: frame (with member pricing) + THIS PRODUCT's
+  // vision option + the sum of its chosen extras. The options live on the
+  // product (product_lens_options); no global list and no constants.
+  const selectedVision = productOptions.vision.find(v => v.id === selectedVisionId) || null
+  const visionPrice = selectedVision ? Number(selectedVision.price_delta) || 0 : 0
+  const selectedExtras = productOptions.extra.filter(x => selectedExtraIds.includes(x.id))
+  const extrasPrice = selectedExtras.reduce((sum, x) => sum + (Number(x.price_delta) || 0), 0)
 
-    if (selectedGraduation === 'monofocal') base += 800
-    else if (selectedGraduation === 'bifocal') base += 1200
-    else if (selectedGraduation === 'progresivo') base += 2200
+  const totalConfiguredPrice = selectedProduct
+    ? priceOf(selectedProduct) + visionPrice + extrasPrice
+    : 0
 
-    selectedTreatments.forEach(t => {
-      if (t === 'antireflective') base += 300
-      else if (t === 'blueblock') base += 500
-      else if (t === 'transitions') base += 1200
-    })
+  // "Has graduation" = a vision option beyond the base (first) one is
+  // chosen — it gates the prescription step's wording and notes.
+  const hasGraduation = selectedVision
+    ? productOptions.vision.indexOf(selectedVision) > 0
+    : false
 
-    return base
-  }, [selectedProduct, selectedGraduation, selectedTreatments])
+  // Load the opened frame's own lens options; preselect its base vision
+  // option and clear extras. A read failure leaves both groups empty and
+  // the wizard says so — nothing is invented.
+  useEffect(() => {
+    if (!selectedProduct || selectedProduct.category !== 'frames') return
+    let cancelled = false
+    getProductLensOptions(selectedProduct.id)
+      .then(opts => {
+        if (cancelled) return
+        setProductOptions(opts)
+        setSelectedVisionId(opts.vision.length > 0 ? opts.vision[0].id : '')
+        setSelectedExtraIds([])
+      })
+      .catch(err => {
+        console.error('Error loading lens options:', err)
+        if (!cancelled) setProductOptions({ vision: [], extra: [] })
+      })
+    return () => { cancelled = true }
+  }, [selectedProduct])
 
   // Wishlist handler
   const handleToggleWishlist = async (productId: string, e: React.MouseEvent) => {
@@ -348,40 +391,123 @@ function CatalogContent() {
     }
   }
 
-  // Generate WhatsApp Message query
-  const getWhatsAppLink = (product: Product) => {
+  // WhatsApp deep link: built ONLY when the business number is configured
+  // in app_settings ('business_whatsapp'). Returns null when it is not, and
+  // every WhatsApp button then stays hidden — no placeholder number exists
+  // anywhere in the catalog anymore.
+  const getWhatsAppLink = (product: Product): string | null => {
+    if (!businessWhatsapp) return null
+
     const textBase = `Hola Óptica Rayo, estoy interesado en el producto: ${product.name} (Ref: #${product.id.slice(0, 5).toUpperCase()}). `
     let textGraduation = ''
 
-    if (product.category === 'frames' && selectedGraduation !== 'none') {
-      textGraduation = `Deseo cotizarlo con micas graduadas tipo: ${selectedGraduation.toUpperCase()}. `
-      if (selectedTreatments.length > 0) {
-        textGraduation += `Tratamientos solicitados: ${selectedTreatments.join(', ').toUpperCase()}. `
+    if (product.category === 'frames' && hasGraduation && selectedVision) {
+      textGraduation = `Deseo cotizarlo con la opción: ${selectedVision.name}. `
+      if (selectedExtras.length > 0) {
+        textGraduation += `Extras solicitados: ${selectedExtras.map(x => x.name).join(', ')}. `
       }
       if (prescriptionMode === 'manual') {
         textGraduation += `Graduación Manual: [OD: Esf ${odSphere}, Cil ${odCylinder}, Eje ${odAxis}] [OI: Esf ${oiSphere}, Cil ${oiCylinder}, Eje ${oiAxis}]. `
-      } else if (uploadedFileName) {
-        textGraduation += 'Subí mi archivo de receta. '
+      } else if (prescriptionFile) {
+        // Truthful wording: the file exists on the customer's phone and can
+        // be shared inside the chat — it was NOT uploaded anywhere yet.
+        textGraduation += 'Tengo mi receta en archivo (foto/PDF) lista para compartirla por aquí. '
       }
     }
 
     const fullMsg = textBase + textGraduation + '¿Tienen disponibilidad en sucursal?'
-    return `https://wa.me/521234567890?text=${encodeURIComponent(fullMsg)}`
+    return `https://wa.me/${businessWhatsapp}?text=${encodeURIComponent(fullMsg)}`
   }
 
-  const handleFakeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setUploadedFileName(e.target.files[0].name)
+  // Real prescription picker: validates type/size up front and keeps the
+  // File so it can be uploaded to the private bucket when sending.
+  const handlePrescriptionFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files && e.target.files.length > 0 ? e.target.files[0] : null
+    if (!file) return
+    const error = validatePrescriptionFile(file)
+    if (error) {
+      setPrescriptionFile(null)
+      setUploadError(error)
+      e.target.value = ''
+      return
     }
+    setUploadError('')
+    setPrescriptionFile(file)
   }
 
   const handleOpenDetailModal = (product: Product) => {
     setSelectedProduct(product)
     setSelectedImageIndex(0)
     setWizardStep(1)
-    setSelectedGraduation('none')
-    setSelectedTreatments([])
-    setUploadedFileName('')
+    setSelectedVisionId('')
+    setSelectedExtraIds([])
+    setPrescriptionFile(null)
+    setPrescriptionMode('upload')
+    setUploadError('')
+    setRequestStatus('idle')
+    setRequestNote('')
+  }
+
+  const handleCloseModal = () => {
+    setSelectedProduct(null)
+    setRequestStatus('idle')
+    setRequestNote('')
+  }
+
+  // REAL submit: creates the lens request in the DB via createLensRequest
+  // (frame + material + treatments + notes with graduation, manual Rx and
+  // configured total) and, when the customer attached a prescription file,
+  // uploads it to the private 'prescriptions' bucket and links its path
+  // onto the request row. Any failure is reported as a failure.
+  const handleSendRequest = async () => {
+    if (!selectedProduct || !userProfile || requestStatus === 'sending') return
+    setRequestStatus('sending')
+    setRequestNote('')
+    try {
+      const notesParts: string[] = []
+      // Snapshot of the chosen per-product options (names + prices as
+      // chosen): options are editable later, the quote must not change.
+      if (selectedVision) {
+        notesParts.push(`Opción de lente: ${selectedVision.name} (+${formatPrice(visionPrice)})`)
+        if (hasGraduation && prescriptionMode === 'manual') {
+          notesParts.push(`Receta manual — OD: Esf ${odSphere}, Cil ${odCylinder}, Eje ${odAxis} · OI: Esf ${oiSphere}, Cil ${oiCylinder}, Eje ${oiAxis}`)
+        }
+      }
+      if (selectedExtras.length > 0) {
+        notesParts.push(`Extras: ${selectedExtras.map(x => `${x.name} (+${formatPrice(Number(x.price_delta) || 0)})`).join(', ')}`)
+      }
+      notesParts.push(`Total configurado: ${formatPrice(totalConfiguredPrice)} MXN`)
+
+      const created = await createLensRequest({
+        frameId: selectedProduct.id,
+        lensMaterialId: undefined,
+        treatmentIds: [],
+        notes: notesParts.join(' · ')
+      })
+
+      // createLensRequest falls back to an in-memory mock (id "req_...") when
+      // the DB write cannot be completed — never show that as a sent request.
+      if (!created || !created.id || String(created.id).startsWith('req_')) {
+        throw new Error('La solicitud no se pudo guardar en el sistema. Inténtalo de nuevo.')
+      }
+
+      if (prescriptionMode === 'upload' && prescriptionFile) {
+        try {
+          const path = await uploadPrescriptionFile(userProfile.id, prescriptionFile)
+          await attachPrescriptionToRequest(created.id, path)
+        } catch (fileErr) {
+          // Honest partial success: the request IS saved; only the file failed.
+          setRequestStatus('sent')
+          setRequestNote('Tu solicitud quedó registrada, pero tu receta no se pudo subir. Compártela por WhatsApp o llévala a sucursal.')
+          return
+        }
+      }
+
+      setRequestStatus('sent')
+    } catch (err: any) {
+      setRequestStatus('error')
+      setRequestNote(err?.message || 'No se pudo enviar la solicitud. Inténtalo de nuevo.')
+    }
   }
 
   const formatPrice = (price: number) => {
@@ -425,43 +551,156 @@ function CatalogContent() {
         }
       `}</style>
 
-      {/* HERO: brand band with headline and protagonist search */}
-      <section className="anim-fade-up relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] text-white px-5 py-7 sm:px-8 sm:py-9 shadow-lg shadow-[#00357f]/20">
-        {/* Decorative light glows */}
-        <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 blur-2xl" />
-        <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
+      {/* TOP: compact featured/promo carousel — mobile-first pattern:
+          peek the next card so the swipe is obvious, user-controlled
+          (no auto-rotation), low horizontal cards: photo, name, price. */}
+      {promoProducts.length > 0 && (
+        <section className="anim-fade-up space-y-3" aria-label="Destacados y promociones">
+          <div className="flex items-center justify-between gap-3 px-0.5">
+            <h2 className="text-xs font-black uppercase tracking-wider text-[#737784] flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-[#00357f]" /> Destacados y promociones
+            </h2>
+            <div className="hidden md:flex gap-2">
+              <button
+                onClick={scrollPrev}
+                disabled={!prevBtnEnabled}
+                aria-label="Destacado anterior"
+                className="w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={scrollNext}
+                disabled={!nextBtnEnabled}
+                aria-label="Destacado siguiente"
+                className="w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
-        <div className="relative space-y-4 max-w-2xl">
-          <p className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] bg-white/15 border border-white/20 rounded-full px-3 py-1">
+          <div className="overflow-hidden" ref={emblaRef}>
+            <div className="flex">
+              {promoProducts.map((p) => (
+                <div key={p.id} className="flex-[0_0_86%] min-[420px]:flex-[0_0_64%] sm:flex-[0_0_47%] lg:flex-[0_0_32%] min-w-0 pr-3">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenDetailModal(p)}
+                    aria-label={`Ver ${p.name}`}
+                    className="group flex w-full items-center gap-3 rounded-2xl border border-[#cbd5e1] bg-white p-3 text-left shadow-sm transition duration-300 hover:border-[#00357f]/35 hover:shadow-[0_16px_35px_-18px_rgba(0,53,127,0.45)] active:scale-[0.99] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                  >
+                    <span className="relative block h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-[#cbd5e1]/40 bg-gradient-to-br from-white to-[#eef4ff]">
+                      {getProductImages(p).length > 0 ? (
+                        <img
+                          src={getProductImages(p)[0]}
+                          alt={getProductImageAlt(p)}
+                          className="h-full w-full object-contain p-1.5 transition duration-500 group-hover:scale-[1.06]"
+                        />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center text-[#00357f]/30">
+                          <Eye className="w-8 h-8 stroke-[1.5]" />
+                        </span>
+                      )}
+                      {p.is_promo && (
+                        <span className="anim-pulse-soft absolute left-1 top-1 rounded bg-gradient-to-r from-emerald-500 to-[#2fbf71] px-1.5 py-px text-[8px] font-black uppercase tracking-wider text-white shadow">
+                          Promo
+                        </span>
+                      )}
+                    </span>
+
+                    <span className="min-w-0 flex-1 space-y-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="rounded bg-[#dee8ff] px-1.5 py-px text-[8px] font-black uppercase tracking-wider text-[#00357f]">
+                          {p.category === 'frames' ? 'Armazón' : 'Solar'}
+                        </span>
+                        {p.is_featured && (
+                          <span className="flex items-center gap-0.5 rounded bg-[#ffdad6] px-1.5 py-px text-[8px] font-black uppercase tracking-wider text-[#ba1a1a]">
+                            <Percent className="w-2.5 h-2.5" /> Especial
+                          </span>
+                        )}
+                      </span>
+                      <span className="block truncate text-[13px] font-bold leading-tight text-[#111c2d]">
+                        {p.name}
+                      </span>
+                      <span className="block">
+                        <span className="block text-[8px] font-bold uppercase tracking-widest text-[#737784]">
+                          {isClient && priceOf(p) < p.price ? 'Precio cliente' : 'Precio'}
+                        </span>
+                        <span className="font-mono text-base font-black text-[#00357f]">{formatPrice(priceOf(p))}</span>
+                        {isClient && priceOf(p) < p.price && (
+                          <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-[#737784]">
+                            <span className="line-through">{formatPrice(p.price)}</span>
+                            <span className="rounded-full bg-[#49da9f]/20 px-1.5 py-px font-sans font-black text-[#00422b]">
+                              -{Math.round((1 - priceOf(p) / p.price) * 100)}%
+                            </span>
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {scrollSnaps.length > 1 && (
+            <div className="flex justify-center gap-1.5">
+              {scrollSnaps.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => scrollTo(i)}
+                  aria-label={`Ir al destacado ${i + 1}`}
+                  className={`h-1.5 rounded-full transition-all cursor-pointer ${i === selectedIndex ? 'w-5 bg-[#00357f]' : 'w-1.5 bg-[#cbd5e1]'}`}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Floating search: white card overlapping the carousel's bottom edge;
+          drives the same `search` filter as the results bar. */}
+      <div className={`relative z-10 px-1 ${promoProducts.length > 0 ? '-mt-6' : ''}`}>
+        <div className="relative max-w-xl">
+          <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#00357f]/50 pointer-events-none" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => updateFilter('search', e.target.value)}
+            placeholder="Busca tu próximo armazón: modelo, marca, color…"
+            aria-label="Buscar en el catálogo"
+            className="w-full rounded-2xl border border-[#cbd5e1]/70 bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-xl shadow-[#00357f]/10 outline-none focus:border-[#00357f]/40 focus:ring-4 focus:ring-[#00357f]/15 transition min-h-[52px]"
+          />
+        </div>
+      </div>
+
+      {/* Slim brand line: light one-liner on mobile (no giant blue box);
+          the full gradient band only appears on desktop sizes. */}
+      <section className="anim-fade-up relative overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white px-4 py-4 shadow-sm sm:px-6 md:rounded-3xl md:border-0 md:bg-gradient-to-br md:from-[#00357f] md:via-[#00509e] md:to-[#00668a] md:px-8 md:py-9 md:shadow-lg md:shadow-[#00357f]/20">
+        {/* Decorative light glows (desktop band only) */}
+        <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 hidden md:block w-56 h-56 rounded-full bg-white/10 blur-2xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 hidden md:block w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
+
+        <div className="relative space-y-2 md:space-y-4 max-w-2xl">
+          <p className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] bg-[#dee8ff] text-[#00357f] border border-[#00357f]/15 md:bg-white/15 md:text-white md:border-white/20 rounded-full px-3 py-1">
             <Sparkles className="w-3.5 h-3.5" /> Óptica Rayo · Catálogo en línea
           </p>
-          <h1 className="text-3xl sm:text-4xl md:text-[2.75rem] font-black tracking-tight leading-[1.05]">
+          <h1 className="text-2xl sm:text-3xl md:text-[2.75rem] font-black tracking-tight leading-[1.05] text-[#111c2d] md:text-white">
             Ve el mundo con claridad
           </h1>
-          <p className="text-sm sm:text-base text-white/85 font-medium leading-relaxed max-w-xl">
+          <p className="text-xs sm:text-sm md:text-base text-[#434653] md:text-white/85 font-medium leading-relaxed max-w-xl">
             Encuentra tus armazones favoritos y cotiza tus micas con nuestro asistente digital: precios claros y modelos para cada rostro.
           </p>
 
-          {/* Protagonist search: drives the same `search` filter as the results bar */}
-          <div className="relative max-w-xl pt-1">
-            <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#00357f]/50 pointer-events-none" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={e => updateFilter('search', e.target.value)}
-              placeholder="Busca tu próximo armazón: modelo, marca, color…"
-              aria-label="Buscar en el catálogo"
-              className="w-full rounded-2xl bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-lg shadow-black/10 outline-none focus:ring-4 focus:ring-white/40 transition min-h-[52px]"
-            />
-          </div>
-
           {!loading && products.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-1 text-[10px] font-black uppercase tracking-wider">
-              <span className="bg-white/15 border border-white/15 rounded-full px-3 py-1.5">{products.length} modelos</span>
+              <span className="bg-[#f0f3ff] border border-[#cbd5e1] text-[#434653] md:bg-white/15 md:border-white/15 md:text-white rounded-full px-3 py-1.5">{products.length} modelos</span>
               {promoProducts.length > 0 && (
-                <span className="bg-[#49da9f]/25 border border-[#49da9f]/40 rounded-full px-3 py-1.5">{promoProducts.length} destacados y promos</span>
+                <span className="bg-[#e2f9ee] border border-[#49da9f]/40 text-[#00422b] md:bg-[#49da9f]/25 md:border-[#49da9f]/40 md:text-white rounded-full px-3 py-1.5">{promoProducts.length} destacados y promos</span>
               )}
-              <span className="bg-white/15 border border-white/15 rounded-full px-3 py-1.5">Examen de la vista gratis</span>
+              <a href="/agendar" className="bg-[#f0f3ff] border border-[#cbd5e1] text-[#00357f] md:bg-white/15 md:border-white/15 md:text-white rounded-full px-3 py-1.5 transition-all active:scale-95 hover:underline">Examen de la vista gratis · Agenda tu cita</a>
             </div>
           )}
         </div>
@@ -517,97 +756,6 @@ function CatalogContent() {
         </div>
       )}
 
-      {/* HERO SECTION: EMBREE PROMO CAROUSEL */}
-      {promoProducts.length > 0 && (
-        <div className="relative w-full overflow-visible">
-          <h2 className="text-xs font-black uppercase tracking-wider text-[#737784] mb-3 flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-[#00357f]" /> Modelos Destacados y Promociones
-          </h2>
-
-          <div className="overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white shadow-sm" ref={emblaRef}>
-            <div className="flex">
-              {promoProducts.map((p) => (
-                <div key={p.id} className="flex-[0_0_100%] min-w-0 relative h-[340px] md:h-[380px] flex items-center">
-                  <div className="grid grid-cols-1 md:grid-cols-2 w-full h-full items-center p-6 md:p-10 gap-6">
-
-                    <div className="space-y-4 text-left order-2 md:order-1 flex flex-col justify-center">
-                      <div className="flex gap-2 items-center flex-wrap">
-                        <span className="bg-[#dee8ff] text-[#00357f] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded">
-                          {p.category === 'frames' ? 'Armazón' : 'Solar'}
-                        </span>
-                        <span className="anim-pulse-soft bg-[#ffdad6] text-[#ba1a1a] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded flex items-center gap-1">
-                          <Percent className="w-3 h-3" /> Especial
-                        </span>
-                      </div>
-
-                      <h3 className="text-xl md:text-2xl font-extrabold text-[#111c2d] tracking-tight leading-tight">
-                        {p.name}
-                      </h3>
-
-                      <p className="text-xs text-[#737784] line-clamp-3 leading-relaxed max-w-md font-medium">
-                        {getProductDescription(p) || 'Armazón oftálmico de alta resistencia y diseño moderno, compatible con todo tipo de micas graduadas.'}
-                      </p>
-
-                      <div className="flex items-center gap-5 pt-2">
-                        <div>
-                          <span className="text-[9px] text-[#737784] uppercase block font-bold">
-                            {isClient && priceOf(p) < p.price ? 'Tu precio de cliente' : 'Precio especial'}
-                          </span>
-                          <span className="text-2xl font-black text-[#00357f] font-mono">{formatPrice(priceOf(p))}</span>
-                          {isClient && priceOf(p) < p.price && (
-                            <span className="block text-[10px] text-[#737784] line-through font-mono">{formatPrice(p.price)}</span>
-                          )}
-                        </div>
-
-                        <a
-                          href={getWhatsAppLink(p)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs px-5 py-3 rounded-lg transition-all active:scale-95 shadow-sm flex items-center gap-2 cursor-pointer"
-                        >
-                          <Phone className="w-4 h-4" />
-                          Pedir por WhatsApp
-                        </a>
-                      </div>
-                    </div>
-
-                    <button type="button" onClick={() => handleOpenDetailModal(p)} aria-label={`Ver ${p.name}`} className="group w-full h-44 sm:h-52 md:h-64 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-[#eef4ff] border border-[#cbd5e1]/50 shadow-sm order-1 md:order-2 relative cursor-pointer transition duration-300 hover:shadow-[0_18px_45px_-18px_rgba(0,53,127,0.45)] hover:ring-2 hover:ring-[#00357f]/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
-                      {getProductImages(p).length > 0 ? (
-                        <img
-                          src={getProductImages(p)[0]}
-                          alt={getProductImageAlt(p)}
-                          className="w-full h-full object-contain p-3 transition duration-700 group-hover:scale-[1.06] group-hover:brightness-105"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-[#f0f3ff] text-[#00357f]/30">
-                          <Eye className="w-12 h-12 stroke-[1.5]" />
-                          <span className="text-[10px] font-bold mt-2 uppercase tracking-wider">Sin Imagen</span>
-                        </div>
-                      )}
-                    </button>
-
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <button
-            onClick={scrollPrev}
-            disabled={!prevBtnEnabled}
-            className="absolute left-[-15px] top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm z-20 cursor-pointer"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={scrollNext}
-            disabled={!nextBtnEnabled}
-            className="absolute right-[-15px] top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm z-20 cursor-pointer"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       {/* LAYOUT: FILTERS & PRODUCT GRID */}
       <div className="flex flex-col gap-5 items-start w-full">
@@ -1008,7 +1156,7 @@ function CatalogContent() {
             >
               {/* Close trigger */}
               <button
-                onClick={() => setSelectedProduct(null)}
+                onClick={handleCloseModal}
                 className="absolute right-4 top-4 text-[#737784] hover:text-[#111c2d] p-1.5 rounded-lg transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1073,84 +1221,98 @@ function CatalogContent() {
 
                   {/* STEPPER PROGRESS INDICATOR */}
                   <div className="flex justify-between items-center px-4 bg-[#f0f3ff] py-2 border border-[#cbd5e1]/30 rounded-xl text-[9px] font-black uppercase tracking-wider text-[#737784]">
-                    <span className={wizardStep === 1 ? 'text-[#00357f]' : 'text-emerald-600'}>1. Graduación</span>
+                    <span className={wizardStep === 1 ? 'text-[#00357f]' : 'text-emerald-600'}>1. Lente</span>
                     <span className="opacity-40 font-normal">→</span>
-                    <span className={wizardStep === 2 ? 'text-[#00357f]' : wizardStep > 2 ? 'text-emerald-600' : ''}>2. Filtros</span>
+                    <span className={wizardStep === 2 ? 'text-[#00357f]' : wizardStep > 2 ? 'text-emerald-600' : ''}>2. Extras</span>
                     <span className="opacity-40 font-normal">→</span>
                     <span className={wizardStep === 3 ? 'text-[#00357f]' : ''}>3. Receta</span>
                   </div>
 
-                  {/* STEP 1: GRADUATION SELECTION */}
+                  {/* STEP 1: VISION OPTION — the options OF THIS PRODUCT
+                      (seeded from the admin template, owned by the product) */}
                   {wizardStep === 1 && (
-                    <div className="space-y-3">
-                      <p className="text-xs font-bold text-[#434653] flex items-center gap-1.5">
-                        <Activity className="w-4 h-4 text-[#00357f]" />
-                        Paso 1: Selecciona el tipo de mica graduada
-                      </p>
+                    <div className="space-y-4">
+                      <div className="space-y-3">
+                        <p className="text-xs font-bold text-[#434653] flex items-center gap-1.5">
+                          <Activity className="w-4 h-4 text-[#00357f]" />
+                          Paso 1: Elige el tipo de lente
+                        </p>
 
-                      <div className="grid grid-cols-1 gap-2">
-                        {[
-                          { value: 'none', label: 'Sin graduación (Protección básica)', cost: '+$0 MXN' },
-                          { value: 'monofocal', label: 'Monofocal (Visión de Lejos o Cerca)', cost: '+$800 MXN' },
-                          { value: 'bifocal', label: 'Bifocal (Visión Doble con luneta)', cost: '+$1,200 MXN' },
-                          { value: 'progresivo', label: 'Progresivo Premium (Multi-distancia fluida)', cost: '+$2,200 MXN' }
-                        ].map(opt => (
-                          <button
-                            key={opt.value}
-                            onClick={() => setSelectedGraduation(opt.value as any)}
-                            className={`flex justify-between items-center px-4 py-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-left min-h-[44px] ${
-                              selectedGraduation === opt.value
-                                ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f]'
-                                : 'bg-white border-[#cbd5e1] text-[#737784] hover:bg-[#f0f3ff]'
-                            }`}
-                          >
-                            <span>{opt.label}</span>
-                            <span className="text-[10px] text-[#00357f] shrink-0 font-mono">{opt.cost}</span>
-                          </button>
-                        ))}
+                        {productOptions.vision.length === 0 ? (
+                          <p className="text-xs text-[#737784] font-medium bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl px-4 py-3">
+                            Este armazón aún no tiene opciones de lente configuradas; la óptica te cotiza en sucursal.
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-2">
+                            {productOptions.vision.map(opt => (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => setSelectedVisionId(opt.id)}
+                                className={`flex justify-between items-center px-4 py-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-left min-h-[44px] ${
+                                  selectedVisionId === opt.id
+                                    ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f]'
+                                    : 'bg-white border-[#cbd5e1] text-[#737784] hover:bg-[#f0f3ff]'
+                                }`}
+                              >
+                                <span>{opt.name}</span>
+                                <span className="text-[10px] text-[#00357f] shrink-0 font-mono">
+                                  {Number(opt.price_delta) > 0 ? `+${formatPrice(Number(opt.price_delta))}` : 'Incluido'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  {/* STEP 2: TREATMENT FILTERS */}
+
+
+                  {/* STEP 2: EXTRA OPTIONS — also this product's own options */}
                   {wizardStep === 2 && (
                     <div className="space-y-3">
                       <p className="text-xs font-bold text-[#434653] flex items-center gap-1.5">
                         <Layers className="w-4 h-4 text-[#00357f]" />
-                        Paso 2: Tratamientos y Filtros Adicionales
+                        Paso 2: Extras para tu lente (puedes elegir varios)
                       </p>
 
-                      <div className="grid grid-cols-1 gap-2">
-                        {[
-                          { value: 'antireflective', label: 'Antirreflejante Crizal (Elimina destellos)', cost: '+$300 MXN' },
-                          { value: 'blueblock', label: 'Blue Shield (Filtro para celular/pantalla)', cost: '+$500 MXN' },
-                          { value: 'transitions', label: 'Transitions (Micas fotocromáticas)', cost: '+$1,200 MXN' }
-                        ].map(opt => {
-                          const isSelected = selectedTreatments.includes(opt.value)
-                          return (
-                            <button
-                              key={opt.value}
-                              onClick={() => {
-                                if (isSelected) {
-                                  setSelectedTreatments(selectedTreatments.filter(t => t !== opt.value))
-                                } else {
-                                  setSelectedTreatments([...selectedTreatments, opt.value])
-                                }
-                              }}
-                              className={`flex justify-between items-center px-4 py-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-left min-h-[44px] ${
-                                isSelected
-                                  ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f]'
-                                  : 'bg-white border-[#cbd5e1] text-[#737784] hover:bg-[#f0f3ff]'
-                              }`}
-                            >
-                              <span>{opt.label}</span>
-                              <span className="text-[10px] text-[#00357f] shrink-0 font-mono">{opt.cost}</span>
-                            </button>
-                          )
-                        })}
-                      </div>
+                      {productOptions.extra.length === 0 ? (
+                        <p className="text-xs text-[#737784] font-medium bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl px-4 py-3">
+                          Este armazón no tiene extras configurados.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2">
+                          {productOptions.extra.map(opt => {
+                            const isSelected = selectedExtraIds.includes(opt.id)
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setSelectedExtraIds(selectedExtraIds.filter(x => x !== opt.id))
+                                  } else {
+                                    setSelectedExtraIds([...selectedExtraIds, opt.id])
+                                  }
+                                }}
+                                className={`flex justify-between items-center px-4 py-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-left min-h-[44px] ${
+                                  isSelected
+                                    ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f]'
+                                    : 'bg-white border-[#cbd5e1] text-[#737784] hover:bg-[#f0f3ff]'
+                                }`}
+                              >
+                                <span>{opt.name}</span>
+                                <span className="text-[10px] text-[#00357f] shrink-0 font-mono">+{formatPrice(Number(opt.price_delta) || 0)}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
+
+
 
                   {/* STEP 3: PRESCRIPTION METHOD */}
                   {wizardStep === 3 && (
@@ -1182,27 +1344,44 @@ function CatalogContent() {
                       </div>
 
                       {prescriptionMode === 'upload' ? (
-                        <div className="border-2 border-dashed border-[#cbd5e1] hover:border-[#00357f] p-6 rounded-xl bg-[#f9f9ff] text-center transition-all relative">
-                          <input
-                            type="file"
-                            accept="image/*,.pdf"
-                            onChange={handleFakeUpload}
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                          />
-                          <div className="space-y-2 flex flex-col items-center">
-                            <Upload className="w-8 h-8 text-[#00357f]" />
-                            {uploadedFileName ? (
-                              <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-bold">
-                                <CheckCircle className="w-4 h-4" />
-                                <span>{uploadedFileName} cargada!</span>
-                              </div>
-                            ) : (
-                              <>
-                                <p className="text-xs font-bold text-[#111c2d]">Arrastra tu receta o haz clic aquí</p>
-                                <p className="text-[10px] text-[#737784]">Formatos PDF, JPG, PNG admitidos</p>
-                              </>
-                            )}
+                        <div className="space-y-2">
+                          <div className="border-2 border-dashed border-[#cbd5e1] hover:border-[#00357f] p-6 rounded-xl bg-[#f9f9ff] text-center transition-all relative">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,.pdf"
+                              onChange={handlePrescriptionFile}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            <div className="space-y-2 flex flex-col items-center">
+                              <Upload className="w-8 h-8 text-[#00357f]" />
+                              {prescriptionFile ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-bold">
+                                    <CheckCircle className="w-4 h-4" />
+                                    <span>{prescriptionFile.name}</span>
+                                  </div>
+                                  <p className="text-[10px] text-[#737784] font-medium">
+                                    Se subirá de forma segura al enviar tu solicitud.
+                                  </p>
+                                </div>
+                              ) : (
+                                <>
+                                  <p className="text-xs font-bold text-[#111c2d]">Arrastra tu receta o haz clic aquí</p>
+                                  <p className="text-[10px] text-[#737784]">Formatos JPG, PNG, WebP o PDF · Máx. 5 MB</p>
+                                </>
+                              )}
+                            </div>
                           </div>
+                          {uploadError && (
+                            <p className="text-[11px] font-bold text-[#ba1a1a] bg-[#ffdad6]/60 border border-[#ba1a1a]/25 rounded-lg px-3 py-2">
+                              {uploadError}
+                            </p>
+                          )}
+                          {!userProfile && (
+                            <p className="text-[11px] text-[#737784] font-medium">
+                              Para enviar tu solicitud con la receta necesitas <a href="/login" className="text-[#00357f] font-bold underline">iniciar sesión</a>: así la óptica la recibe ligada a tu cuenta.
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-3 bg-[#f9f9ff] p-4 border border-[#cbd5e1]/40 rounded-xl text-xs">
@@ -1287,11 +1466,16 @@ function CatalogContent() {
               <div className="flex justify-between items-center bg-[#f9f9ff] border border-[#cbd5e1]/45 p-4 rounded-xl text-left">
                 <div>
                   <p className="text-[9px] text-[#737784] font-bold uppercase tracking-wider">
-                    {selectedGraduation !== 'none' ? 'Total Configurado' : 'Precio Sugerido'}
+                    {hasGraduation || selectedExtraIds.length > 0 ? 'Total Configurado' : 'Precio Sugerido'}
                   </p>
                   <p className="text-xl font-black text-[#00357f] font-mono">
                     {formatPrice(selectedProduct.category === 'frames' ? totalConfiguredPrice : priceOf(selectedProduct))}
                   </p>
+                  {selectedProduct.category === 'frames' && (visionPrice > 0 || extrasPrice > 0) && (
+                    <p className="text-[10px] text-[#737784] font-medium mt-0.5">
+                      Armazón {formatPrice(priceOf(selectedProduct))} · Lente {formatPrice(visionPrice)} · Extras {formatPrice(extrasPrice)}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right">
                   <p className="text-[9px] text-[#737784] font-bold uppercase tracking-wider">Garantía Óptica</p>
@@ -1300,23 +1484,72 @@ function CatalogContent() {
               </div>
 
               {/* Final Actions */}
-              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedProduct(null)}
-                  className="min-h-12 flex-1 text-xs font-bold text-[#737784] hover:bg-[#dee8ff] py-3 rounded-xl border border-[#cbd5e1] cursor-pointer transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
-                >
-                  Cerrar
-                </button>
-                <a
-                  href={getWhatsAppLink(selectedProduct)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="min-h-12 flex-1 flex items-center justify-center gap-2 bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs py-3 rounded-xl shadow-sm cursor-pointer transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
-                >
-                  <Phone className="w-4 h-4 text-[#002113] shrink-0" />
-                  {selectedProduct.category === 'frames' && selectedGraduation !== 'none' ? 'Comprar Lentes' : 'Consultar Disponibilidad'}
-                </a>
+              <div className="space-y-3 pt-2">
+                {requestStatus === 'sent' && (
+                  <div className="flex items-start gap-2 bg-[#e2f9ee] border border-[#49da9f]/50 rounded-xl px-4 py-3 text-left">
+                    <CheckCircle className="w-4 h-4 text-[#00422b] shrink-0 mt-px" />
+                    <div>
+                      <p className="text-xs font-bold text-[#00422b]">
+                        ¡Solicitud enviada! La óptica ya la recibió y te contactará para confirmar tu cotización.
+                      </p>
+                      {requestNote && (
+                        <p className="text-[11px] text-[#00422b]/80 font-medium mt-0.5">{requestNote}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {requestStatus === 'error' && (
+                  <div className="bg-[#ffdad6]/60 border border-[#ba1a1a]/30 rounded-xl px-4 py-3 text-left">
+                    <p className="text-xs font-bold text-[#ba1a1a]">
+                      {requestNote || 'No se pudo enviar la solicitud. Inténtalo de nuevo.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Guests cannot create a real request (lens_requests needs an
+                    account): invite them to log in instead of faking a send. */}
+                {!userProfile && requestStatus !== 'sent' && selectedProduct.category === 'frames' && (
+                  <p className="text-[11px] text-[#737784] font-medium text-left bg-[#f0f3ff] border border-[#cbd5e1]/50 rounded-xl px-4 py-3">
+                    ¿Quieres enviar esta cotización con tu receta?{' '}
+                    <a href="/login" className="text-[#00357f] font-bold underline">Inicia sesión</a>{' '}
+                    o crea tu cuenta: tu solicitud llega directo a la óptica.
+                  </p>
+                )}
+
+                <div className="flex flex-col-reverse sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="min-h-12 flex-1 text-xs font-bold text-[#737784] hover:bg-[#dee8ff] py-3 rounded-xl border border-[#cbd5e1] cursor-pointer transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                  >
+                    Cerrar
+                  </button>
+
+                  {userProfile && selectedProduct.category === 'frames' && requestStatus !== 'sent' && (
+                    <button
+                      type="button"
+                      onClick={handleSendRequest}
+                      disabled={requestStatus === 'sending'}
+                      className="min-h-12 flex-1 flex items-center justify-center gap-2 bg-[#00357f] hover:bg-[#004aad] disabled:opacity-60 disabled:cursor-wait text-white font-bold text-xs py-3 rounded-xl shadow-sm cursor-pointer transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                    >
+                      <FileText className="w-4 h-4 shrink-0" />
+                      {requestStatus === 'sending' ? 'Enviando…' : 'Enviar solicitud'}
+                    </button>
+                  )}
+
+                  {getWhatsAppLink(selectedProduct) && (
+                    <a
+                      href={getWhatsAppLink(selectedProduct) as string}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-12 flex-1 flex items-center justify-center gap-2 bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs py-3 rounded-xl shadow-sm cursor-pointer transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                    >
+                      <Phone className="w-4 h-4 text-[#002113] shrink-0" />
+                      {selectedProduct.category === 'frames' && hasGraduation ? 'Comprar Lentes' : 'Consultar Disponibilidad'}
+                    </a>
+                  )}
+                </div>
               </div>
 
             </motion.div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  CalendarDays,
   CreditCard,
   Glasses,
   LayoutDashboard,
@@ -20,7 +21,7 @@ import {
 export interface MainMenuLink {
   label: string
   href: string
-  icon: 'catalog' | 'discounts' | 'patients' | 'payment' | 'pos' | 'admin' | 'users'
+  icon: 'catalog' | 'discounts' | 'patients' | 'payment' | 'pos' | 'admin' | 'users' | 'agenda'
 }
 
 const ICONS = {
@@ -31,6 +32,7 @@ const ICONS = {
   pos: ShoppingBag,
   admin: LayoutDashboard,
   users: ShieldCheck,
+  agenda: CalendarDays,
 }
 
 interface MainMenuProps {

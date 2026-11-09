@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import * as mockDb from '@/lib/mocks'
 
 function isSupabaseConfigured(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -9,66 +8,46 @@ function isSupabaseConfigured(): boolean {
 }
 
 export async function GET(request: Request) {
-  try {
-    if (isSupabaseConfigured()) {
-      const supabase = await createClient()
-      
-      // Call Supabase database function
-      const { error } = await supabase.rpc('check_upcoming_installments')
-      if (error) {
-        throw error
-      }
-      
-      return NextResponse.json({ success: true, message: 'Supabase cron check completed.' })
-    } else {
-      // Fallback: Mocks Simulation
-      const threeDaysFromNow = new Date()
-      threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3)
-      const targetDateStr = threeDaysFromNow.toISOString().split('T')[0]
-
-      const upcomingInstallments = mockDb.MOCK_PAYMENT_INSTALLMENTS.filter(
-        inst => inst.status === 'pending' && inst.due_date === targetDateStr
-      )
-
-      upcomingInstallments.forEach(inst => {
-        const sale = mockDb.MOCK_SALES.find(s => s.id === inst.sale_id)
-        if (!sale) return
-
-        const customerId = sale.customer_id
-        if (!customerId) return
-
-        const customerName = sale.customer_name || 'Cliente'
-
-        // Alert to customer
-        mockDb.MOCK_NOTIFICATIONS.push({
-          id: 'n_' + Math.random().toString(36).substr(2, 9),
-          user_id: customerId,
-          title: 'Recordatorio de Pago',
-          message: `Hola ${customerName}, te recordamos que tu cuota #${inst.installment_number} de $${inst.amount} vence en 3 días (el ${inst.due_date}).`,
-          type: 'payment_reminder',
-          is_read: false,
-          created_at: new Date().toISOString()
-        })
-
-        // Alert to staff members
-        mockDb.MOCK_PROFILES.filter(p => p.role !== 'customer').forEach(staff => {
-          mockDb.MOCK_NOTIFICATIONS.push({
-            id: 'n_' + Math.random().toString(36).substr(2, 9),
-            user_id: staff.id,
-            title: 'Vencimiento de Cuota de Cliente',
-            message: `El cliente ${customerName} tiene la cuota #${inst.installment_number} de $${inst.amount} por vencer en 3 días (el ${inst.due_date}).`,
-            type: 'payment_reminder',
-            is_read: false,
-            created_at: new Date().toISOString()
-          })
-        })
-      })
-
-      return NextResponse.json({ 
-        success: true, 
-        message: `Mocks cron check completed. Processed ${upcomingInstallments.length} installments.` 
-      })
+  // Cron authentication: when CRON_SECRET is defined in the environment
+  // (the standard Vercel Cron mechanism, which sends it as a Bearer
+  // token), the header is REQUIRED. When it is not defined the route
+  // cannot verify the caller — that residual risk is logged on every
+  // invocation instead of being silently accepted.
+  const cronSecret = process.env.CRON_SECRET
+  if (cronSecret) {
+    const authHeader = request.headers.get('authorization')
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ success: false, error: 'No autorizado.' }, { status: 401 })
     }
+  } else {
+    console.warn('check-payments: CRON_SECRET is not defined; this route is unauthenticated.')
+  }
+
+  try {
+    if (!isSupabaseConfigured()) {
+      // No real database: the cron MUST NOT report success for work it
+      // did not do. Previously this branch simulated the run against
+      // in-memory mocks and answered success:true with an invented
+      // count, so an external monitor would see a healthy cron while
+      // zero real payment reminders were generated.
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Supabase no está configurado: el cron no procesó ningún vencimiento real.',
+        },
+        { status: 503 }
+      )
+    }
+
+    const supabase = await createClient()
+
+    // Call Supabase database function
+    const { error } = await supabase.rpc('check_upcoming_installments')
+    if (error) {
+      throw error
+    }
+
+    return NextResponse.json({ success: true, message: 'Supabase cron check completed.' })
   } catch (e: any) {
     console.error('Cron job check-payments failed:', e)
     return NextResponse.json({ success: false, error: e.message || 'Internal error' }, { status: 500 })
