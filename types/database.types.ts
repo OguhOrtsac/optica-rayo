@@ -162,6 +162,7 @@ export interface Database {
           name: string
           description: string | null
           price: number
+          client_price: number | null
           stock: number
           category: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url: string | null
@@ -174,6 +175,7 @@ export interface Database {
           name: string
           description?: string | null
           price: number
+          client_price?: number | null
           stock?: number
           category: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url?: string | null
@@ -186,6 +188,7 @@ export interface Database {
           name?: string
           description?: string | null
           price?: number
+          client_price?: number | null
           stock?: number
           category?: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url?: string | null

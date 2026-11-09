@@ -1,6 +1,14 @@
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import * as mockDb from './mocks'
 import { Database } from '@/types/database.types'
+import {
+  REMINDER_MONTHS_KEY,
+  REMINDER_TEMPLATE_KEY,
+  DEFAULT_REMINDER_MONTHS,
+  DEFAULT_REMINDER_TEMPLATE,
+  addMonthsISO,
+} from './reminder-config'
+import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT } from './pricing'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Coupon = Database['public']['Tables']['coupons']['Row']
@@ -14,6 +22,16 @@ function isSupabaseConfigured(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   return !!url && !!key && !url.includes('placeholder') && !key.includes('placeholder')
+}
+
+/**
+ * wishlists.user_id is a UUID column. Only real Supabase users have UUID ids;
+ * demo/mock identities (emails, 'guest_user', short mock ids) must use the
+ * local mock store — sending them to Postgres throws a UUID cast error and
+ * the wishlist silently breaks.
+ */
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
 /**
@@ -215,10 +233,15 @@ export async function createSale(
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      
+
+      // Prices must come from the real catalog (Supabase), never from the
+      // demo/mock list: a POS sale priced from mocks corrupts real totals.
+      const catalog = await getProducts()
+      const priceOf = (productId: string) =>
+        catalog.find(p => p.id === productId)?.price ?? 0
+
       const total = items.reduce((acc, item) => {
-        const prod = mockDb.MOCK_PRODUCTS.find(p => p.id === item.productId)
-        return acc + (prod ? prod.price * item.quantity : 0)
+        return acc + priceOf(item.productId) * item.quantity
       }, 0)
 
       const finalPaidAmount = paidAmount !== undefined ? paidAmount : total
@@ -246,23 +269,31 @@ export async function createSale(
       
       if (!saleError && saleData) {
         const saleItemsToInsert = items.map(item => {
-          const prod = mockDb.MOCK_PRODUCTS.find(p => p.id === item.productId)
           return {
             sale_id: saleData.id,
             product_id: item.productId,
             quantity: item.quantity,
-            price: prod ? prod.price : 0
+            price: priceOf(item.productId)
           }
         })
 
         await supabase.from('sale_items').insert(saleItemsToInsert)
-        
-        // Auto-create a reminder for 12 months
-        await supabase.from('reminders').insert([{
-          customer_id: saleData.customer_id || 'some-id',
-          next_suggested_visit: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'pending'
-        }])
+
+        // Auto-create a review reminder for the configured period — only
+        // for a sale linked to a real customer, and isolated so a reminder
+        // failure can never drag a completed sale down with it.
+        if (saleData.customer_id) {
+          try {
+            const cfg = await getReminderConfig()
+            await supabase.from('reminders').insert([{
+              customer_id: saleData.customer_id,
+              next_suggested_visit: addMonthsISO(new Date(), cfg.months),
+              status: 'pending'
+            }])
+          } catch (reminderError) {
+            console.error('Reminder creation failed (sale kept):', reminderError)
+          }
+        }
 
         return { sale: saleData }
       }
@@ -699,7 +730,7 @@ export async function updateSaleStatus(
  * Retrieves the user's wishlist from Supabase or mock database.
  */
 export async function getWishlist(userId: string): Promise<string[]> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && isUuid(userId)) {
     try {
       const supabase = createBrowserClient()
       const { data, error } = await withTimeout(
@@ -722,7 +753,7 @@ export async function getWishlist(userId: string): Promise<string[]> {
  * Toggles a product in the user's wishlist.
  */
 export async function toggleWishlistItem(userId: string, productId: string, active: boolean): Promise<void> {
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && isUuid(userId)) {
     try {
       const supabase = createBrowserClient()
       if (active) {
@@ -758,8 +789,8 @@ export async function toggleWishlistItem(userId: string, productId: string, acti
  */
 export async function syncWishlist(userId: string, productIds: string[]): Promise<void> {
   if (!userId || productIds.length === 0) return
-  
-  if (isSupabaseConfigured()) {
+
+  if (isSupabaseConfigured() && isUuid(userId)) {
     try {
       const supabase = createBrowserClient()
       const records = productIds.map(pid => ({ user_id: userId, product_id: pid }))
@@ -998,3 +1029,205 @@ export async function markNotificationRead(id: string): Promise<boolean> {
 }
 
 
+
+
+// ----------------------------------------------------
+// App settings (editable business configuration)
+// ----------------------------------------------------
+
+const settingStorageKey = (key: string) => `optica_rayo_setting_${key}`
+
+/**
+ * Reads one app setting from Supabase (app_settings) with a localStorage
+ * fallback used in demo mode.
+ */
+export async function getAppSetting(key: string): Promise<string | null> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await withTimeout(
+        supabase.from('app_settings').select('value').eq('key', key).single()
+      )
+      if (!error && data) return data.value as string
+    } catch (e) {
+      // fall through to local fallback
+    }
+  }
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem(settingStorageKey(key))
+  }
+  return null
+}
+
+/**
+ * Saves one app setting (Supabase upsert when configured; always mirrored
+ * to localStorage so demo mode and fast reads keep working).
+ */
+export async function setAppSetting(key: string, value: string): Promise<void> {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(settingStorageKey(key), value)
+  }
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      await supabase
+        .from('app_settings')
+        .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+    } catch (e) {
+      console.error('Error saving app setting:', e)
+    }
+  }
+}
+
+// ----------------------------------------------------
+// Exam Review Reminders module
+// ----------------------------------------------------
+
+export interface ReminderConfig {
+  months: number
+  template: string
+}
+
+/** Reminder period (configurable, 6 months by default) + editable template. */
+export async function getReminderConfig(): Promise<ReminderConfig> {
+  const monthsRaw = await getAppSetting(REMINDER_MONTHS_KEY)
+  const template = await getAppSetting(REMINDER_TEMPLATE_KEY)
+  const months = parseInt(monthsRaw || '', 10)
+  return {
+    months: Number.isFinite(months) && months > 0 ? months : DEFAULT_REMINDER_MONTHS,
+    template: template || DEFAULT_REMINDER_TEMPLATE,
+  }
+}
+
+export async function saveReminderConfig(months: number, template: string): Promise<void> {
+  await setAppSetting(REMINDER_MONTHS_KEY, String(months))
+  await setAppSetting(REMINDER_TEMPLATE_KEY, template)
+}
+
+export interface DueReminder {
+  id: string
+  customer_id: string
+  customer_name: string
+  phone: string
+  last_visit_date: string | null
+  next_suggested_visit: string
+  last_reminded_at: string | null
+}
+
+/**
+ * Reminders that are due now or within the next 7 days, with the customer's
+ * name and phone ready for the administrator's tray.
+ */
+export async function getDueReminders(): Promise<DueReminder[]> {
+  const horizon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await withTimeout(
+        supabase
+          .from('reminders')
+          .select('*, customer:profiles(full_name)')
+          .eq('status', 'pending')
+          .lte('next_suggested_visit', horizon)
+          .order('next_suggested_visit', { ascending: true })
+      )
+      if (!error && data) {
+        const ids = data.map((r: any) => r.customer_id)
+        const phoneById = new Map<string, string>()
+        if (ids.length > 0) {
+          const { data: cps } = await supabase
+            .from('customer_profiles')
+            .select('id, phone')
+            .in('id', ids)
+          cps?.forEach((cp: any) => phoneById.set(cp.id, cp.phone || ''))
+        }
+        return data.map((r: any) => ({
+          id: r.id,
+          customer_id: r.customer_id,
+          customer_name: r.customer?.full_name || 'Cliente',
+          phone: phoneById.get(r.customer_id) || '',
+          last_visit_date: r.last_visit_date,
+          next_suggested_visit: r.next_suggested_visit,
+          last_reminded_at: r.last_reminded_at ?? null,
+        }))
+      }
+      console.error('Error fetching due reminders:', error?.message)
+    } catch (e) {
+      console.error('Due reminders fetch failed, falling back to mocks:', e)
+    }
+  }
+
+  return mockDb.MOCK_REMINDERS
+    .filter(r => r.status === 'pending' && r.next_suggested_visit <= horizon)
+    .sort((a, b) => a.next_suggested_visit.localeCompare(b.next_suggested_visit))
+    .map(r => {
+      const profile = mockDb.MOCK_PROFILES.find(p => p.id === r.customer_id)
+      const cp = mockDb.MOCK_CUSTOMER_PROFILES.find(x => x.id === r.customer_id)
+      return {
+        id: r.id,
+        customer_id: r.customer_id,
+        customer_name: profile?.full_name || 'Cliente',
+        phone: cp?.phone || '',
+        last_visit_date: r.last_visit_date,
+        next_suggested_visit: r.next_suggested_visit,
+        last_reminded_at: (r as any).last_reminded_at ?? null,
+      }
+    })
+}
+
+/**
+ * Marks a reminder as contacted: stamps last_reminded_at and rolls the
+ * next suggested visit one full period forward, so the customer is not
+ * reminded twice in the same cycle and never falls off the list.
+ */
+export async function markReminderContacted(reminderId: string, months: number): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data: current } = await supabase
+        .from('reminders')
+        .select('next_suggested_visit')
+        .eq('id', reminderId)
+        .single()
+      const base = current?.next_suggested_visit ? new Date(current.next_suggested_visit) : new Date()
+      const { error } = await supabase
+        .from('reminders')
+        .update({
+          last_reminded_at: new Date().toISOString(),
+          next_suggested_visit: addMonthsISO(base, months),
+        })
+        .eq('id', reminderId)
+      if (!error) return true
+      console.error('Error marking reminder contacted:', error.message)
+    } catch (e) {
+      console.error('Mark reminder contacted failed:', e)
+    }
+  }
+
+  const reminder = mockDb.MOCK_REMINDERS.find(r => r.id === reminderId)
+  if (reminder) {
+    ;(reminder as any).last_reminded_at = new Date().toISOString()
+    reminder.next_suggested_visit = addMonthsISO(new Date(reminder.next_suggested_visit), months)
+    return true
+  }
+  return false
+}
+
+
+// ----------------------------------------------------
+// Member pricing (general discount percent for logged-in customers)
+// ----------------------------------------------------
+
+/** General member discount percent (default: the owner's 20% example). */
+export async function getMemberDiscountPercent(): Promise<number> {
+  const raw = await getAppSetting(MEMBER_DISCOUNT_KEY)
+  const pct = parseFloat(raw || '')
+  return Number.isFinite(pct) && pct >= 0 && pct <= 100
+    ? pct
+    : DEFAULT_MEMBER_DISCOUNT_PERCENT
+}
+
+export async function saveMemberDiscountPercent(percent: number): Promise<void> {
+  await setAppSetting(MEMBER_DISCOUNT_KEY, String(percent))
+}

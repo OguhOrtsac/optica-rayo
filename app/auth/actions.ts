@@ -425,7 +425,10 @@ export async function getProfileData() {
   if (superadminSession === 'true' && mockRole) {
     const mockEmail = cookieStore.get('optica_rayo_mock_email')?.value || ''
     const mockName = cookieStore.get('optica_rayo_mock_name')?.value || ''
+    const mockDb = require('@/lib/mocks')
+    const mockProfile = mockDb.MOCK_PROFILES.find((p: any) => p.email === mockEmail)
     return {
+      id: mockProfile?.id || mockEmail,
       username: mockEmail.split('@')[0],
       fullName: mockName,
       role: mockRole,
@@ -454,6 +457,7 @@ export async function getProfileData() {
     .single()
 
   return {
+    id: user.id,
     username,
     fullName: user.user_metadata?.full_name || '',
     role: user.user_metadata?.role || 'customer',

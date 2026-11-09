@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getProducts, getWishlist, toggleWishlistItem } from '@/lib/services'
+import { getProducts, getWishlist, toggleWishlistItem, getMemberDiscountPercent } from '@/lib/services'
+import { effectiveClientPrice } from '@/lib/pricing'
 import { getProfileData } from '@/app/auth/actions'
 import { Database } from '@/types/database.types'
 import useEmblaCarousel from 'embla-carousel-react'
@@ -34,6 +35,7 @@ import {
 type Product = Database['public']['Tables']['products']['Row']
 
 interface ProfileData {
+  id: string
   username: string
   fullName: string
   role: string
@@ -51,6 +53,13 @@ function CatalogContent() {
   // Authenticated user state (for Wishlist sync)
   const [userProfile, setUserProfile] = useState<ProfileData | null>(null)
   const [wishlist, setWishlist] = useState<string[]>([])
+
+  // Member pricing: logged-in customers get the general discount percent
+  // or the product's special client price; visitors never see either.
+  const [memberPct, setMemberPct] = useState(0)
+  const isClient = !!userProfile && userProfile.role === 'customer'
+  const priceOf = (p: Product) =>
+    isClient ? effectiveClientPrice(p.price, p.client_price, memberPct) : p.price
 
   // Face Shape Filter state (Shallow Routed)
   const faceShapeFilter = searchParams.get('faceShape') || 'all'
@@ -96,6 +105,8 @@ function CatalogContent() {
         setLoading(true)
         const productsData = await getProducts()
         setProducts(productsData)
+        const pct = await getMemberDiscountPercent()
+        setMemberPct(pct)
 
         // Try to fetch profile
         try {
@@ -103,7 +114,7 @@ function CatalogContent() {
           if (profile) {
             setUserProfile(profile)
             // Fetch wishlist from server
-            const serverWishlist = await getWishlist(profile.email)
+            const serverWishlist = await getWishlist(profile.id)
             setWishlist(serverWishlist)
           }
         } catch (_) {
@@ -280,7 +291,7 @@ function CatalogContent() {
   // Lens Wizard Price calculator helper
   const totalConfiguredPrice = useMemo(() => {
     if (!selectedProduct) return 0
-    let base = selectedProduct.price
+    let base = priceOf(selectedProduct)
     
     if (selectedGraduation === 'monofocal') base += 800
     else if (selectedGraduation === 'bifocal') base += 1200
@@ -313,7 +324,7 @@ function CatalogContent() {
     if (userProfile) {
       // Sync on server
       try {
-        await toggleWishlistItem(userProfile.email, productId, !isCurrentlyFaved)
+        await toggleWishlistItem(userProfile.id, productId, !isCurrentlyFaved)
       } catch (err) {
         console.error('Error updating server wishlist:', err)
       }
@@ -411,6 +422,24 @@ function CatalogContent() {
         </div>
       </div>
 
+      {/* Member pricing banner */}
+      {!loading && memberPct > 0 && !isClient && (
+        <div className="flex flex-wrap items-center gap-2 bg-[#dee8ff] border border-[#00357f]/20 rounded-xl px-4 py-3">
+          <Tag className="w-4 h-4 text-[#00357f]" />
+          <p className="text-xs font-bold text-[#00357f]">
+            ¿Ya eres cliente de Óptica Rayo? Inicia sesión y obtén {memberPct}% de descuento en el catálogo, además de precios especiales por producto.
+          </p>
+        </div>
+      )}
+      {!loading && isClient && (
+        <div className="flex flex-wrap items-center gap-2 bg-[#e2f9ee] border border-[#49da9f]/40 rounded-xl px-4 py-3">
+          <Tag className="w-4 h-4 text-[#00422b]" />
+          <p className="text-xs font-bold text-[#00422b]">
+            Estás viendo tus precios de cliente: {memberPct}% de descuento general aplicado, y precio especial en los productos marcados.
+          </p>
+        </div>
+      )}
+
       {/* HERO SECTION: EMBREE PROMO CAROUSEL */}
       {promoProducts.length > 0 && (
         <div className="relative w-full overflow-visible">
@@ -444,8 +473,13 @@ function CatalogContent() {
 
                       <div className="flex items-center gap-5 pt-2">
                         <div>
-                          <span className="text-[9px] text-[#737784] uppercase block font-bold">Precio especial</span>
-                          <span className="text-2xl font-black text-[#00357f] font-mono">{formatPrice(p.price)}</span>
+                          <span className="text-[9px] text-[#737784] uppercase block font-bold">
+                            {isClient && priceOf(p) < p.price ? 'Tu precio de cliente' : 'Precio especial'}
+                          </span>
+                          <span className="text-2xl font-black text-[#00357f] font-mono">{formatPrice(priceOf(p))}</span>
+                          {isClient && priceOf(p) < p.price && (
+                            <span className="block text-[10px] text-[#737784] line-through font-mono">{formatPrice(p.price)}</span>
+                          )}
                         </div>
                         
                         <a
@@ -830,8 +864,13 @@ function CatalogContent() {
                         layoutMode === 'list' ? 'sm:border-t-0 sm:pt-0 sm:w-auto' : ''
                       }`}>
                         <div className={`min-w-0 ${layoutMode === 'list' ? 'sm:text-right' : ''}`}>
-                          <p className="text-[8px] text-[#737784] uppercase tracking-widest font-bold">Precio sugerido</p>
-                          <p className="font-black text-[#00357f] text-sm font-mono">{formatPrice(p.price)}</p>
+                          <p className="text-[8px] text-[#737784] uppercase tracking-widest font-bold">
+                            {isClient && priceOf(p) < p.price ? 'Precio cliente' : 'Precio sugerido'}
+                          </p>
+                          <p className="font-black text-[#00357f] text-sm font-mono">{formatPrice(priceOf(p))}</p>
+                          {isClient && priceOf(p) < p.price && (
+                            <p className="text-[9px] text-[#737784] line-through font-mono">{formatPrice(p.price)}</p>
+                          )}
                         </div>
                         
                         <button
@@ -1118,7 +1157,7 @@ function CatalogContent() {
                     {selectedGraduation !== 'none' ? 'Total Configurado' : 'Precio Sugerido'}
                   </p>
                   <p className="text-xl font-black text-[#00357f] font-mono">
-                    {formatPrice(selectedProduct.category === 'frames' ? totalConfiguredPrice : selectedProduct.price)}
+                    {formatPrice(selectedProduct.category === 'frames' ? totalConfiguredPrice : priceOf(selectedProduct))}
                   </p>
                 </div>
                 <div className="text-right">

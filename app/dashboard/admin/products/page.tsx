@@ -7,7 +7,9 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
-  uploadProductImage
+  uploadProductImage,
+  getMemberDiscountPercent,
+  saveMemberDiscountPercent
 } from '@/lib/services'
 import { Database } from '@/types/database.types'
 import { 
@@ -79,6 +81,10 @@ export default function AdminProductsPage() {
   const [pImagePreview, setPImagePreview] = useState<string>('')
   const [pIsPromo, setPIsPromo] = useState(false)
   const [pIsFeatured, setPIsFeatured] = useState(false)
+  const [pClientPrice, setPClientPrice] = useState('')
+
+  // General member discount percent (logged-in customers)
+  const [memberPct, setMemberPct] = useState(20)
   const [submittingProduct, setSubmittingProduct] = useState(false)
 
   // Edit / Delete states
@@ -96,11 +102,18 @@ export default function AdminProductsPage() {
       setLoading(true)
       const data = await getProducts()
       setProducts(data)
+      const pct = await getMemberDiscountPercent()
+      setMemberPct(pct)
     } catch (e) {
       showFeedback('error', 'Error al cargar los productos del inventario.')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSaveMemberPct = async () => {
+    await saveMemberDiscountPercent(memberPct)
+    showFeedback('success', `Descuento general a clientes guardado: ${memberPct}% sobre el precio de vitrina.`)
   }
 
   useEffect(() => {
@@ -153,6 +166,7 @@ export default function AdminProductsPage() {
         name: pName,
         description: serializedDescription,
         price: parseFloat(pPrice),
+        client_price: pClientPrice ? parseFloat(pClientPrice) : null,
         stock: parseInt(pStock),
         category: pCategory,
         image_url: imageUrl,
@@ -173,6 +187,7 @@ export default function AdminProductsPage() {
       setPImagePreview('')
       setPIsPromo(false)
       setPIsFeatured(false)
+      setPClientPrice('')
       setIsCreateModalOpen(false)
       await loadProductsData()
     } catch (e) {
@@ -221,6 +236,7 @@ export default function AdminProductsPage() {
         name: editingProduct.name,
         description: serializedDescription,
         price: editingProduct.price,
+        client_price: editingProduct.client_price ?? null,
         stock: editingProduct.stock,
         category: editingProduct.category,
         image_url: finalImageUrl,
@@ -331,6 +347,33 @@ export default function AdminProductsPage() {
           {feedbackMsg.text}
         </div>
       )}
+
+      {/* Member pricing configuration */}
+      <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-2xl border border-[#cbd5e1] shadow-sm">
+        <span className="text-[10px] font-black uppercase tracking-wider text-[#00357f]">
+          Descuento general a clientes logueados
+        </span>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={memberPct}
+            onChange={(e) => setMemberPct(Math.min(100, Math.max(0, parseInt(e.target.value || '0', 10) || 0)))}
+            className="w-20 bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2 text-xs font-bold text-[#111c2d] focus:border-[#00357f] outline-none"
+          />
+          <span className="text-xs font-bold text-[#434653]">% sobre el precio de vitrina</span>
+        </div>
+        <span className="text-[10px] text-[#737784] font-medium">
+          Aplica cuando el producto no tiene precio especial propio. El visitante nunca ve este descuento.
+        </span>
+        <button
+          onClick={handleSaveMemberPct}
+          className="ml-auto bg-[#00357f] hover:bg-[#004aad] text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition-colors cursor-pointer"
+        >
+          Guardar
+        </button>
+      </div>
 
       {/* Filters Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl border border-[#cbd5e1] shadow-sm">
@@ -595,6 +638,17 @@ export default function AdminProductsPage() {
                   />
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Precio especial a clientes ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={pClientPrice}
+                    onChange={(e) => setPClientPrice(e.target.value)}
+                    className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
+                    placeholder="Opcional — solo logueados"
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Stock Inicial *</label>
                   <input 
                     required
@@ -731,6 +785,17 @@ export default function AdminProductsPage() {
                     value={editingProduct.price}
                     onChange={(e) => setEditingProduct({ ...editingProduct, price: parseFloat(e.target.value) || 0 })}
                     className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Precio especial a clientes ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editingProduct.client_price ?? ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, client_price: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
+                    placeholder="Opcional — solo logueados"
                   />
                 </div>
                 <div>

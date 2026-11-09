@@ -5,6 +5,28 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
 import * as mockDb from '@/lib/mocks'
+import { addMonthsISO, DEFAULT_REMINDER_MONTHS, REMINDER_MONTHS_KEY } from '@/lib/reminder-config'
+
+/**
+ * Reads the configured review-reminder period (months) from app_settings.
+ * Falls back to the default (6 months) when unset or unreadable.
+ */
+async function reminderMonthsServer(client?: any): Promise<number> {
+  if (client) {
+    try {
+      const { data } = await client
+        .from('app_settings')
+        .select('value')
+        .eq('key', REMINDER_MONTHS_KEY)
+        .single()
+      const n = parseInt(data?.value ?? '', 10)
+      if (Number.isFinite(n) && n > 0) return n
+    } catch {
+      // use default below
+    }
+  }
+  return DEFAULT_REMINDER_MONTHS
+}
 
 export interface RegisterCustomerState {
   error: string | null
@@ -123,8 +145,8 @@ export async function registerCustomerAction(currentState: RegisterCustomerState
       const serverClient = await createClient()
       const { data: { user: currentUser } } = await serverClient.auth.getUser()
 
-      const nextSuggestedDate = new Date()
-      nextSuggestedDate.setDate(nextSuggestedDate.getDate() + 365)
+      const reminderMonths = await reminderMonthsServer(adminClient)
+      const nextSuggestedDate = new Date(addMonthsISO(new Date(), reminderMonths))
 
       const examPayload: any = {
         customer_id: user.id,
@@ -217,8 +239,7 @@ export async function registerCustomerAction(currentState: RegisterCustomerState
     let mockExam: any = null
 
     if (hasPrescription) {
-      const nextSuggestedDate = new Date()
-      nextSuggestedDate.setDate(nextSuggestedDate.getDate() + 365)
+      const nextSuggestedDate = new Date(addMonthsISO(new Date(), DEFAULT_REMINDER_MONTHS))
 
       mockExam = {
         id: 'mock_exam_' + Math.random().toString(36).substr(2, 9),
@@ -603,12 +624,13 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
       }
     }
 
-    // 3. Create a reminder for the next visit (12 months from now)
+    // 3. Create a reminder for the next visit (configured period, 6 months by default)
     try {
+      const reminderMonths = await reminderMonthsServer(supabase)
       await supabase.from('reminders').insert([{
         customer_id: customerId,
         last_visit_date: new Date().toISOString(),
-        next_suggested_visit: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+        next_suggested_visit: addMonthsISO(new Date(), reminderMonths),
         status: 'pending',
       }])
     } catch { /* ignore reminder errors if table schema differs */ }
@@ -743,7 +765,7 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
       id: 'rem_' + Math.random().toString(36).substr(2, 9),
       customer_id: customerId,
       last_visit_date: new Date().toISOString(),
-      next_suggested_visit: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      next_suggested_visit: addMonthsISO(new Date(), DEFAULT_REMINDER_MONTHS),
       status: 'pending',
       created_at: new Date().toISOString()
     } as any)

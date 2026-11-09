@@ -18,6 +18,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1591076482161-42ce6da69f67?auto=format&fit=crop&w=600&q=80',
     is_promo: true,
     is_featured: true,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -30,6 +31,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -42,6 +44,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -54,6 +57,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?auto=format&fit=crop&w=600&q=80',
     is_promo: false,
     is_featured: true,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -66,6 +70,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -78,6 +83,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1577803645773-f96470509666?auto=format&fit=crop&w=600&q=80',
     is_promo: true,
     is_featured: true,
+    client_price: 2999.00,
     created_at: new Date().toISOString()
   },
   {
@@ -90,6 +96,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=600&q=80',
     is_promo: false,
     is_featured: true,
+    client_price: 3499.00,
     created_at: new Date().toISOString()
   },
   {
@@ -102,6 +109,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1591076482161-42ce6da69f67?auto=format&fit=crop&w=600&q=80',
     is_promo: false,
     is_featured: false,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -114,6 +122,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?auto=format&fit=crop&w=600&q=80',
     is_promo: true,
     is_featured: true,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -126,6 +135,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -138,6 +148,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: true,
     is_featured: false,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -150,6 +161,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
     created_at: new Date().toISOString()
   },
   {
@@ -162,6 +174,7 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
     created_at: new Date().toISOString()
   }
 ]
