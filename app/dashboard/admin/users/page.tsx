@@ -9,6 +9,7 @@ import {
   adminDeleteUserAction
 } from '@/app/auth/actions'
 import { Database } from '@/types/database.types'
+import { GUEST_ROLE_DEFINITION, ROLE_DEFINITIONS, roleLabel, type UserRole } from '@/lib/roles'
 import { 
   User, 
   Settings, 
@@ -82,36 +83,30 @@ export default function RegisterUsersPage() {
   const [uIsAdmin, setUIsAdmin] = useState(false)
   const [uIsSeller, setUIsSeller] = useState(true)
   const [uIsCustomer, setUIsCustomer] = useState(false)
+  const [uIsOptometrist, setUIsOptometrist] = useState(false)
   
   const [submittingUser, setSubmittingUser] = useState(false)
 
   // Handle mutually exclusive toggle select
-  const handleAddToggleChange = (roleType: 'admin' | 'seller' | 'customer', val: boolean) => {
-    if (roleType === 'admin') {
-      setUIsAdmin(val)
-      if (val) {
-        setUIsSeller(false)
-        setUIsCustomer(false)
-      }
-    } else if (roleType === 'seller') {
-      setUIsSeller(val)
-      if (val) {
-        setUIsAdmin(false)
-        setUIsCustomer(false)
-      }
-    } else {
-      setUIsCustomer(val)
-      if (val) {
-        setUIsAdmin(false)
-        setUIsSeller(false)
-      }
+  const handleAddToggleChange = (roleType: 'admin' | 'seller' | 'customer' | 'optometrist', val: boolean) => {
+    if (!val) {
+      if (roleType === 'admin') setUIsAdmin(false)
+      if (roleType === 'seller') setUIsSeller(false)
+      if (roleType === 'customer') setUIsCustomer(false)
+      if (roleType === 'optometrist') setUIsOptometrist(false)
+      return
     }
+    setUIsAdmin(roleType === 'admin')
+    setUIsSeller(roleType === 'seller')
+    setUIsCustomer(roleType === 'customer')
+    setUIsOptometrist(roleType === 'optometrist')
   }
 
   // Edit Toggles state
   const [editIsAdmin, setEditIsAdmin] = useState(false)
   const [editIsSeller, setEditIsSeller] = useState(false)
   const [editIsCustomer, setEditIsCustomer] = useState(false)
+  const [editIsOptometrist, setEditIsOptometrist] = useState(false)
 
   // Start editing user and initialize toggle states explicitly
   const handleStartEdit = (u: Profile) => {
@@ -119,28 +114,21 @@ export default function RegisterUsersPage() {
     setEditIsAdmin(u.role === 'owner')
     setEditIsSeller(u.role === 'seller')
     setEditIsCustomer(u.role === 'customer')
+    setEditIsOptometrist(u.role === 'optometrist')
   }
 
-  const handleEditToggleChange = (roleType: 'admin' | 'seller' | 'customer', val: boolean) => {
-    if (roleType === 'admin') {
-      setEditIsAdmin(val)
-      if (val) {
-        setEditIsSeller(false)
-        setEditIsCustomer(false)
-      }
-    } else if (roleType === 'seller') {
-      setEditIsSeller(val)
-      if (val) {
-        setEditIsAdmin(false)
-        setEditIsCustomer(false)
-      }
-    } else {
-      setEditIsCustomer(val)
-      if (val) {
-        setEditIsAdmin(false)
-        setEditIsSeller(false)
-      }
+  const handleEditToggleChange = (roleType: 'admin' | 'seller' | 'customer' | 'optometrist', val: boolean) => {
+    if (!val) {
+      if (roleType === 'admin') setEditIsAdmin(false)
+      if (roleType === 'seller') setEditIsSeller(false)
+      if (roleType === 'customer') setEditIsCustomer(false)
+      if (roleType === 'optometrist') setEditIsOptometrist(false)
+      return
     }
+    setEditIsAdmin(roleType === 'admin')
+    setEditIsSeller(roleType === 'seller')
+    setEditIsCustomer(roleType === 'customer')
+    setEditIsOptometrist(roleType === 'optometrist')
   }
 
   const loadUsersData = async () => {
@@ -172,8 +160,9 @@ export default function RegisterUsersPage() {
       return
     }
 
-    let roleVal: 'owner' | 'seller' | 'customer' | 'dev' = 'customer'
+    let roleVal: UserRole = 'customer'
     if (uIsAdmin) roleVal = 'owner'
+    else if (uIsOptometrist) roleVal = 'optometrist'
     else if (uIsSeller) roleVal = 'seller'
     else if (uIsCustomer) roleVal = 'customer'
 
@@ -213,6 +202,7 @@ export default function RegisterUsersPage() {
         setUIsAdmin(false)
         setUIsSeller(true)
         setUIsCustomer(false)
+        setUIsOptometrist(false)
         await loadUsersData()
       }
     } catch (e) {
@@ -227,10 +217,16 @@ export default function RegisterUsersPage() {
     e.preventDefault()
     if (!editingUser) return
 
-    let roleVal: 'owner' | 'seller' | 'customer' | 'dev' = 'customer'
+    let roleVal: UserRole = 'customer'
     if (editIsAdmin) roleVal = 'owner'
+    else if (editIsOptometrist) roleVal = 'optometrist'
     else if (editIsSeller) roleVal = 'seller'
     else if (editIsCustomer) roleVal = 'customer'
+    // Platform accounts are not managed from this panel: editing a
+    // super_admin (or legacy dev) must never silently demote them.
+    if (editingUser.role === 'super_admin' || editingUser.role === 'dev') {
+      roleVal = 'super_admin'
+    }
 
     try {
       const editPasswordInput = document.getElementById('edit-user-pwd') as HTMLInputElement
@@ -381,6 +377,28 @@ export default function RegisterUsersPage() {
           
           {activeTab === 'staff' && (
             <div className="space-y-6">
+              <details className="group rounded-2xl border border-[#cbd5e1] bg-white shadow-sm">
+                <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 py-3 text-xs font-black uppercase tracking-wider text-[#00357f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
+                  Perfiles definidos y permisos
+                  <span className="text-[10px] font-bold normal-case tracking-normal text-[#737784] group-open:hidden">Ver guía</span>
+                  <span className="hidden text-[10px] font-bold normal-case tracking-normal text-[#737784] group-open:inline">Ocultar</span>
+                </summary>
+                <div className="grid gap-3 border-t border-[#e7eeff] p-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {Object.values(ROLE_DEFINITIONS).map(role => (
+                    <article key={role.label} className="rounded-xl bg-[#f9f9ff] p-3">
+                      <h3 className="text-xs font-black text-[#111c2d]">{role.label}</h3>
+                      <p className="mt-1 text-[11px] leading-relaxed text-[#434653]">{role.description}</p>
+                    </article>
+                  ))}
+                  <article className="rounded-xl bg-[#f9f9ff] p-3">
+                    <h3 className="text-xs font-black text-[#111c2d]">{GUEST_ROLE_DEFINITION.label}</h3>
+                    <p className="mt-1 text-[11px] leading-relaxed text-[#434653]">{GUEST_ROLE_DEFINITION.description}</p>
+                  </article>
+                </div>
+                <p className="border-t border-[#e7eeff] px-4 py-3 text-[11px] font-semibold text-[#737784]">
+                  El rol Super Administrador está reservado al equipo desarrollador y no se asigna desde este panel.
+                </p>
+              </details>
               
               {/* Staff Title & Add button */}
               <div className="flex justify-between items-center gap-4">
@@ -418,13 +436,13 @@ export default function RegisterUsersPage() {
                         {/* Header Role tag */}
                         <div className="flex items-center justify-between mb-4">
                           <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                            u.role === 'owner' 
-                              ? 'bg-[#dee8ff] text-[#00357f]' 
-                              : u.role === 'seller' 
-                              ? 'bg-[#dee8ff]/60 text-[#00668a]' 
+                            u.role === 'owner' || u.role === 'super_admin' || u.role === 'dev'
+                              ? 'bg-[#dee8ff] text-[#00357f]'
+                              : u.role === 'seller'
+                              ? 'bg-[#dee8ff]/60 text-[#00668a]'
                               : 'bg-[#49da9f]/20 text-[#00422b]'
                           }`}>
-                            {u.role === 'owner' ? 'Administrador' : u.role === 'seller' ? 'Ventas' : 'Optometrista/Dev'}
+                            {roleLabel(u.role)}
                           </span>
                         </div>
 
@@ -582,6 +600,12 @@ export default function RegisterUsersPage() {
                   description="Registra ventas, abonos y alta de clientes."
                 />
                 <ToggleSwitch
+                  checked={uIsOptometrist}
+                  onChange={(val) => handleAddToggleChange('optometrist', val)}
+                  label="Optometrista"
+                  description="Expedientes, exámenes y graduaciones; sin finanzas ni cuentas."
+                />
+                <ToggleSwitch
                   checked={uIsCustomer}
                   onChange={(val) => handleAddToggleChange('customer', val)}
                   label="Cliente / Paciente"
@@ -663,6 +687,12 @@ export default function RegisterUsersPage() {
                   onChange={(val) => handleEditToggleChange('seller', val)}
                   label="Vendedor POS / Cajero"
                   description="Registra ventas, abonos y alta de clientes."
+                />
+                <ToggleSwitch
+                  checked={editIsOptometrist}
+                  onChange={(val) => handleEditToggleChange('optometrist', val)}
+                  label="Optometrista"
+                  description="Expedientes, exámenes y graduaciones; sin finanzas ni cuentas."
                 />
                 <ToggleSwitch
                   checked={editIsCustomer}

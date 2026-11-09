@@ -24,17 +24,17 @@ export default function NewCustomerPage() {
   const [checkingPhone, setCheckingPhone] = useState(false)
 
   // Rx Prescription states
-  const [odSphere, setOdSphere] = useState('0.00')
-  const [odCylinder, setOdCylinder] = useState('0.00')
-  const [odAxis, setOdAxis] = useState('0')
-  const [odAdd, setOdAdd] = useState('0.00')
+  const [odSphere, setOdSphere] = useState('')
+  const [odCylinder, setOdCylinder] = useState('')
+  const [odAxis, setOdAxis] = useState('')
+  const [odAdd, setOdAdd] = useState('')
 
-  const [oiSphere, setOiSphere] = useState('0.00')
-  const [oiCylinder, setOiCylinder] = useState('0.00')
-  const [oiAxis, setOiAxis] = useState('0')
-  const [oiAdd, setOiAdd] = useState('0.00')
+  const [oiSphere, setOiSphere] = useState('')
+  const [oiCylinder, setOiCylinder] = useState('')
+  const [oiAxis, setOiAxis] = useState('')
+  const [oiAdd, setOiAdd] = useState('')
 
-  const [pdDistance, setPdDistance] = useState('60.0')
+  const [pdDistance, setPdDistance] = useState('')
 
   // Auto-generate username from full name
   useEffect(() => {

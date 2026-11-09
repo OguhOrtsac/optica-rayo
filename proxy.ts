@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { updateSession } from '@/utils/supabase/middleware'
 import { createServerClient } from '@supabase/ssr'
+import { dashboardHrefForRole, normalizeRole } from '@/lib/roles'
 
 /**
  * Global Next.js Proxy.
@@ -20,37 +21,41 @@ export async function proxy(request: NextRequest) {
   if (superadminSession === 'true') {
     const mockRole = request.cookies.get('optica_rayo_mock_role')?.value || 'owner'
 
-    // Root-level dashboard redirection based on role
+    const normalizedMockRole = normalizeRole(mockRole)
+
+    // Root-level dashboard redirection based on the canonical role.
     if (pathname === '/login' || pathname === '/' || pathname === '/change-password' || pathname === '/dashboard') {
       const url = request.nextUrl.clone()
-      if (mockRole === 'seller') {
-        url.pathname = '/dashboard/seller'
-      } else {
-        url.pathname = '/dashboard/admin'
-      }
+      url.pathname = dashboardHrefForRole(normalizedMockRole)
       return NextResponse.redirect(url)
     }
 
     // Role-based path protections for mock sessions
     if (pathname.startsWith('/dashboard/admin')) {
-      if (mockRole !== 'owner' && mockRole !== 'dev') {
+      if (!['owner', 'super_admin'].includes(normalizedMockRole)) {
         const url = request.nextUrl.clone()
-        url.pathname = '/dashboard/seller'
+        url.pathname = dashboardHrefForRole(normalizedMockRole)
         return NextResponse.redirect(url)
       }
     }
 
     if (pathname.startsWith('/dashboard/seller')) {
-      if (mockRole !== 'owner' && mockRole !== 'seller' && mockRole !== 'dev') {
+      if (!['owner', 'seller', 'super_admin'].includes(normalizedMockRole)) {
         const url = request.nextUrl.clone()
-        url.pathname = '/dashboard/admin'
+        url.pathname = dashboardHrefForRole(normalizedMockRole)
         return NextResponse.redirect(url)
       }
     }
 
-    if (pathname.startsWith('/dashboard/customer')) {
+    if (pathname.startsWith('/dashboard/customer') && normalizedMockRole !== 'customer') {
       const url = request.nextUrl.clone()
-      url.pathname = mockRole === 'seller' ? '/dashboard/seller' : '/dashboard/admin'
+      url.pathname = dashboardHrefForRole(normalizedMockRole)
+      return NextResponse.redirect(url)
+    }
+
+    if (pathname.startsWith('/customers') && normalizedMockRole === 'customer') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard/customer'
       return NextResponse.redirect(url)
     }
 
@@ -92,7 +97,7 @@ export async function proxy(request: NextRequest) {
     return response
   }
 
-  const userRole = user.user_metadata?.role || 'customer'
+  const userRole = normalizeRole(user.user_metadata?.role || 'customer')
   const temporalPasswordChanged = user.user_metadata?.temporal_password_changed ?? true
 
   if (!temporalPasswordChanged) {
@@ -113,7 +118,7 @@ export async function proxy(request: NextRequest) {
 
   // Role-based route protection
   if (pathname.startsWith('/customers')) {
-    if (userRole !== 'owner' && userRole !== 'seller' && userRole !== 'dev') {
+    if (!['owner', 'seller', 'super_admin', 'optometrist'].includes(userRole)) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)
@@ -121,7 +126,7 @@ export async function proxy(request: NextRequest) {
   }
 
   if (pathname.startsWith('/dashboard/admin')) {
-    if (userRole !== 'owner' && userRole !== 'dev') {
+    if (!['owner', 'super_admin'].includes(userRole)) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)
@@ -129,7 +134,7 @@ export async function proxy(request: NextRequest) {
   }
 
   if (pathname.startsWith('/dashboard/seller')) {
-    if (userRole !== 'owner' && userRole !== 'seller' && userRole !== 'dev') {
+    if (!['owner', 'seller', 'super_admin'].includes(userRole)) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)

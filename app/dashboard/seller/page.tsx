@@ -232,8 +232,14 @@ export default function SellerDashboard() {
         quantity: item.quantity
       }))
 
-      // Register sale
-      await createSale(nameToRegister, items, paidAmount || total, paymentMethod)
+      // Register sale with everything captured on screen: the registered
+      // customer (when one was selected), the applied coupon and the note.
+      await createSale(nameToRegister, items, paidAmount || total, paymentMethod, {
+        customerId: selectedCustomer?.id || null,
+        couponId: activeCoupon?.id || null,
+        discountApplied: discount,
+        notes: saleNotes.trim() || undefined,
+      })
       
       showFeedback('success', '¡Venta registrada exitosamente! El inventario se actualizó y se programó la cita de revisión.')
       
@@ -243,6 +249,8 @@ export default function SellerDashboard() {
       setSelectedCustomer(null)
       setPaidAmountInput('')
       setCouponCode('')
+      setActiveCoupon(null)
+      setSaleNotes('')
       setActiveCoupon(null)
       setSaleNotes('')
       setActiveTab('products')

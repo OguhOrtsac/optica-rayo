@@ -3,12 +3,13 @@ import { createClient } from '@/utils/supabase/server'
 
 /**
  * Root page component.
- * Performs a server-side check of the active user session and redirects
- * to either the Dashboard or the Login screen accordingly.
+ * Signed-in users go to their workspace; guests land on the public
+ * storefront (the owner's model: anyone may browse the catalog without
+ * an account, and sign-in is one tap away in the menu).
  */
 export default async function HomePage() {
   const supabase = await createClient()
-  
+
   // Read current active user session
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -16,6 +17,6 @@ export default async function HomePage() {
     redirect('/dashboard')
   }
 
-  redirect('/login')
+  redirect('/catalog')
 }
 

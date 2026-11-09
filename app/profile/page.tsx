@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from 'react'
 import { updateProfile, logout, getProfileData, updateThemeAction } from '@/app/auth/actions'
 import { User, Shield, ShieldAlert, Key, LogOut, CheckCircle, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { dashboardHrefForRole, isAdminRole, roleLabel } from '@/lib/roles'
 
 const initialState = {
   error: null as string | null,
@@ -65,16 +66,7 @@ export default function ProfilePage() {
     await updateThemeAction(theme)
   }
 
-  const getRoleBadgeLabel = (role: string) => {
-    const labels: Record<string, string> = {
-      dev: 'Desarrollador',
-      owner: 'Dueño / Administrador',
-      seller: 'Vendedor',
-      customer: 'Cliente',
-      superadmin: 'Super Admin',
-    }
-    return labels[role] || role
-  }
+  const getRoleBadgeLabel = (role: string) => roleLabel(role)
 
   const getRoleBadgeColor = (role: string) => {
     const colors: Record<string, string> = {
@@ -128,11 +120,11 @@ export default function ProfilePage() {
 
   return (
     <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
-      
+
       {/* Back link */}
       <div>
-        <Link 
-          href={profileData.role === 'owner' ? '/dashboard/admin' : profileData.role === 'seller' ? '/dashboard/seller' : '/dashboard/customer'} 
+        <Link
+          href={dashboardHrefForRole(profileData.role)}
           className="inline-flex items-center gap-2 text-xs font-bold text-[#737784] hover:text-[#00357f] transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -335,7 +327,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Staff Management Quick Link (admin only) */}
-        {(profileData.role === 'owner' || profileData.role === 'dev') && (
+        {isAdminRole(profileData.role) && (
           <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-[#f0f3ff] pb-3">
               <h2 className="text-xs font-bold text-[#00357f] uppercase tracking-wider flex items-center gap-1.5">
@@ -357,7 +349,7 @@ export default function ProfilePage() {
         )}
 
         {/* Clinic Settings Summary (admin only) */}
-        {(profileData.role === 'owner' || profileData.role === 'dev') && (
+        {isAdminRole(profileData.role) && (
           <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
             <div className="p-4 border-b border-[#cbd5e1] bg-[#f9f9ff] flex justify-between items-center">
               <h2 className="text-xs font-bold text-[#00357f] uppercase tracking-wider flex items-center gap-1.5">

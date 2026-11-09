@@ -364,6 +364,11 @@ export default function PaymentsPage() {
                                           {isPending ? `Vence: ${formatDate(inst.due_date)}` : `Pagado: ${formatDate(inst.payment_date)}`}
                                         </span>
                                       </div>
+                                      {isPending && Number(inst.amount_paid) > 0 && (
+                                        <span className="block text-[10px] font-bold text-[#00668a]">
+                                          Abonado: {formatPrice(Number(inst.amount_paid))} de {formatPrice(inst.amount)}
+                                        </span>
+                                      )}
                                     </div>
 
                                     {isPending ? (

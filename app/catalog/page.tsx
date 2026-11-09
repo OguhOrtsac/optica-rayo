@@ -2,23 +2,25 @@
 
 import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getProducts, getWishlist, toggleWishlistItem } from '@/lib/services'
+import { getProducts, getWishlist, toggleWishlistItem, getMemberDiscountPercent } from '@/lib/services'
+import { effectiveClientPrice } from '@/lib/pricing'
+import { getProductDescription, getProductDetails, getProductImageAlt, getProductImages } from '@/lib/product-data'
 import { getProfileData } from '@/app/auth/actions'
 import { Database } from '@/types/database.types'
 import useEmblaCarousel from 'embla-carousel-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  SlidersHorizontal, 
-  Search, 
-  Grid, 
-  List, 
-  ChevronLeft, 
-  ChevronRight, 
-  Phone, 
-  Info, 
-  X, 
-  Tag, 
-  Compass, 
+import {
+  SlidersHorizontal,
+  Search,
+  Grid,
+  List,
+  ChevronLeft,
+  ChevronRight,
+  Phone,
+  Info,
+  X,
+  Tag,
+  Compass,
   Percent,
   Heart,
   Eye,
@@ -34,6 +36,7 @@ import {
 type Product = Database['public']['Tables']['products']['Row']
 
 interface ProfileData {
+  id: string
   username: string
   fullName: string
   role: string
@@ -47,10 +50,18 @@ function CatalogContent() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+
   // Authenticated user state (for Wishlist sync)
   const [userProfile, setUserProfile] = useState<ProfileData | null>(null)
   const [wishlist, setWishlist] = useState<string[]>([])
+
+  // Member pricing: logged-in customers get the general discount percent
+  // or the product's special client price; visitors never see either.
+  const [memberPct, setMemberPct] = useState(0)
+  const isClient = !!userProfile && userProfile.role === 'customer'
+  const priceOf = (p: Product) =>
+    isClient ? effectiveClientPrice(p.price, p.client_price, memberPct) : p.price
 
   // Face Shape Filter state (Shallow Routed)
   const faceShapeFilter = searchParams.get('faceShape') || 'all'
@@ -80,7 +91,7 @@ function CatalogContent() {
   const [selectedTreatments, setSelectedTreatments] = useState<string[]>([])
   const [prescriptionMode, setPrescriptionMode] = useState<'upload' | 'manual'>('upload')
   const [uploadedFileName, setUploadedFileName] = useState<string>('')
-  
+
   // Manual prescription values
   const [odSphere, setOdSphere] = useState('0.00')
   const [odCylinder, setOdCylinder] = useState('0.00')
@@ -96,6 +107,8 @@ function CatalogContent() {
         setLoading(true)
         const productsData = await getProducts()
         setProducts(productsData)
+        const pct = await getMemberDiscountPercent()
+        setMemberPct(pct)
 
         // Try to fetch profile
         try {
@@ -103,7 +116,7 @@ function CatalogContent() {
           if (profile) {
             setUserProfile(profile)
             // Fetch wishlist from server
-            const serverWishlist = await getWishlist(profile.email)
+            const serverWishlist = await getWishlist(profile.id)
             setWishlist(serverWishlist)
           }
         } catch (_) {
@@ -156,7 +169,7 @@ function CatalogContent() {
 
   // Filter products for the Hero Carousel (Promos or Featured with images)
   const promoProducts = useMemo(() => {
-    return products.filter(p => (p.is_promo || p.is_featured) && p.image_url)
+    return products.filter(p => (p.is_promo || p.is_featured) && getProductImages(p).length > 0)
   }, [products])
 
   // Embla Carousel navigation helpers
@@ -197,13 +210,13 @@ function CatalogContent() {
     } else {
       let currentList = params.get('category')?.split(',') || []
       currentList = currentList.filter(c => c !== 'all' && c !== '')
-      
+
       if (currentList.includes(catValue)) {
         currentList = currentList.filter(c => c !== catValue)
       } else {
         currentList.push(catValue)
       }
-      
+
       if (currentList.length === 0) {
         params.delete('category')
       } else {
@@ -217,11 +230,19 @@ function CatalogContent() {
     router.replace('/catalog', { scroll: false })
   }
 
-  // Check product face shape compatibility
-  const isFaceShapeCompatible = (productName: string, shape: string) => {
+  // Face-shape guide: prefer the frame_shape selected by the administrator;
+  // legacy products without that field fall back to their name.
+  const isFaceShapeCompatible = (product: Product, shape: string) => {
     if (shape === 'all') return true
-    
-    const nameLower = productName.toLowerCase()
+    const frameShape = getProductDetails(product).frameShape
+    if (frameShape) {
+      if (shape === 'round') return frameShape === 'square' || frameShape === 'rectangular' || frameShape === 'aviator'
+      if (shape === 'square') return frameShape === 'round' || frameShape === 'oval' || frameShape === 'cat_eye'
+      if (shape === 'oval') return true
+      return true
+    }
+
+    const nameLower = product.name.toLowerCase()
     if (shape === 'round') {
       return nameLower.includes('rectangular') || nameLower.includes('cuadrado') || nameLower.includes('aviador')
     }
@@ -249,10 +270,12 @@ function CatalogContent() {
     // 3. Search Term Filter
     if (searchTerm.trim() !== '') {
       const q = searchTerm.toLowerCase()
-      result = result.filter(p => 
-        p.name.toLowerCase().includes(q) || 
-        (p.description && p.description.toLowerCase().includes(q))
-      )
+      result = result.filter(p => {
+        const details = getProductDetails(p)
+        return [p.name, details.brand, details.material, details.sku, details.color, details.notes]
+          .filter(Boolean)
+          .some(value => value.toLowerCase().includes(q))
+      })
     }
 
     // 4. Promo only Filter
@@ -262,7 +285,7 @@ function CatalogContent() {
 
     // 5. Face shape filter
     if (faceShapeFilter !== 'all') {
-      result = result.filter(p => isFaceShapeCompatible(p.name, faceShapeFilter))
+      result = result.filter(p => isFaceShapeCompatible(p, faceShapeFilter))
     }
 
     // 6. Sorting
@@ -280,8 +303,8 @@ function CatalogContent() {
   // Lens Wizard Price calculator helper
   const totalConfiguredPrice = useMemo(() => {
     if (!selectedProduct) return 0
-    let base = selectedProduct.price
-    
+    let base = priceOf(selectedProduct)
+
     if (selectedGraduation === 'monofocal') base += 800
     else if (selectedGraduation === 'bifocal') base += 1200
     else if (selectedGraduation === 'progresivo') base += 2200
@@ -298,22 +321,22 @@ function CatalogContent() {
   // Wishlist handler
   const handleToggleWishlist = async (productId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    
+
     const isCurrentlyFaved = wishlist.includes(productId)
     let updated: string[] = []
-    
+
     if (isCurrentlyFaved) {
       updated = wishlist.filter(id => id !== productId)
     } else {
       updated = [...wishlist, productId]
     }
-    
+
     setWishlist(updated)
 
     if (userProfile) {
       // Sync on server
       try {
-        await toggleWishlistItem(userProfile.email, productId, !isCurrentlyFaved)
+        await toggleWishlistItem(userProfile.id, productId, !isCurrentlyFaved)
       } catch (err) {
         console.error('Error updating server wishlist:', err)
       }
@@ -327,7 +350,7 @@ function CatalogContent() {
   const getWhatsAppLink = (product: Product) => {
     const textBase = `Hola Óptica Rayo, estoy interesado en el producto: ${product.name} (Ref: #${product.id.slice(0, 5).toUpperCase()}). `
     let textGraduation = ''
-    
+
     if (product.category === 'frames' && selectedGraduation !== 'none') {
       textGraduation = `Deseo cotizarlo con micas graduadas tipo: ${selectedGraduation.toUpperCase()}. `
       if (selectedTreatments.length > 0) {
@@ -352,6 +375,7 @@ function CatalogContent() {
 
   const handleOpenDetailModal = (product: Product) => {
     setSelectedProduct(product)
+    setSelectedImageIndex(0)
     setWizardStep(1)
     setSelectedGraduation('none')
     setSelectedTreatments([])
@@ -366,7 +390,7 @@ function CatalogContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen bg-gradient-to-b from-white via-[#f9f9ff] to-[#eef4ff] text-[#111c2d] px-3 py-4 sm:p-5 md:p-8 space-y-5 sm:space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
       <style>{`
         @keyframes gradient-x {
           0%, 100% { background-position: 0% 50%; }
@@ -398,11 +422,11 @@ function CatalogContent() {
           background: #0088cc;
         }
       `}</style>
-      
+
       {/* Header title */}
       <div className="flex justify-between items-center border-b border-[#e7eeff] pb-5">
         <div>
-          <h1 className="text-3xl md:text-4xl font-black tracking-tight flex items-center gap-2">
+          <h1 className="text-[1.65rem] leading-tight sm:text-3xl md:text-4xl font-black tracking-tight flex items-center gap-2">
             <span className="animate-gradient-text">Estilo & Claridad Para Tu Mirada</span>
           </h1>
           <p className="text-xs md:text-sm text-[#434653] mt-2 font-bold uppercase tracking-wider">
@@ -410,6 +434,24 @@ function CatalogContent() {
           </p>
         </div>
       </div>
+
+      {/* Member pricing banner */}
+      {!loading && memberPct > 0 && !isClient && (
+        <div className="flex flex-wrap items-center gap-2 bg-[#dee8ff] border border-[#00357f]/20 rounded-xl px-4 py-3">
+          <Tag className="w-4 h-4 text-[#00357f]" />
+          <p className="text-xs font-bold text-[#00357f]">
+            ¿Ya eres cliente de Óptica Rayo? Inicia sesión y obtén {memberPct}% de descuento en el catálogo, además de precios especiales por producto.
+          </p>
+        </div>
+      )}
+      {!loading && isClient && (
+        <div className="flex flex-wrap items-center gap-2 bg-[#e2f9ee] border border-[#49da9f]/40 rounded-xl px-4 py-3">
+          <Tag className="w-4 h-4 text-[#00422b]" />
+          <p className="text-xs font-bold text-[#00422b]">
+            Estás viendo tus precios de cliente: {memberPct}% de descuento general aplicado, y precio especial en los productos marcados.
+          </p>
+        </div>
+      )}
 
       {/* HERO SECTION: EMBREE PROMO CAROUSEL */}
       {promoProducts.length > 0 && (
@@ -423,7 +465,7 @@ function CatalogContent() {
               {promoProducts.map((p) => (
                 <div key={p.id} className="flex-[0_0_100%] min-w-0 relative h-[340px] md:h-[380px] flex items-center">
                   <div className="grid grid-cols-1 md:grid-cols-2 w-full h-full items-center p-6 md:p-10 gap-6">
-                    
+
                     <div className="space-y-4 text-left order-2 md:order-1 flex flex-col justify-center">
                       <div className="flex gap-2 items-center flex-wrap">
                         <span className="bg-[#dee8ff] text-[#00357f] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded">
@@ -437,17 +479,22 @@ function CatalogContent() {
                       <h3 className="text-xl md:text-2xl font-extrabold text-[#111c2d] tracking-tight leading-tight">
                         {p.name}
                       </h3>
-                      
+
                       <p className="text-xs text-[#737784] line-clamp-3 leading-relaxed max-w-md font-medium">
-                        {p.description || 'Armazón oftálmico de alta resistencia y diseño moderno, compatible con todo tipo de micas graduadas.'}
+                        {getProductDescription(p) || 'Armazón oftálmico de alta resistencia y diseño moderno, compatible con todo tipo de micas graduadas.'}
                       </p>
 
                       <div className="flex items-center gap-5 pt-2">
                         <div>
-                          <span className="text-[9px] text-[#737784] uppercase block font-bold">Precio especial</span>
-                          <span className="text-2xl font-black text-[#00357f] font-mono">{formatPrice(p.price)}</span>
+                          <span className="text-[9px] text-[#737784] uppercase block font-bold">
+                            {isClient && priceOf(p) < p.price ? 'Tu precio de cliente' : 'Precio especial'}
+                          </span>
+                          <span className="text-2xl font-black text-[#00357f] font-mono">{formatPrice(priceOf(p))}</span>
+                          {isClient && priceOf(p) < p.price && (
+                            <span className="block text-[10px] text-[#737784] line-through font-mono">{formatPrice(p.price)}</span>
+                          )}
                         </div>
-                        
+
                         <a
                           href={getWhatsAppLink(p)}
                           target="_blank"
@@ -460,12 +507,12 @@ function CatalogContent() {
                       </div>
                     </div>
 
-                    <div className="w-full h-40 md:h-64 rounded-xl overflow-hidden bg-[#f9f9ff] border border-[#cbd5e1]/40 shadow-sm order-1 md:order-2 relative">
-                      {p.image_url ? (
-                        <img 
-                          src={p.image_url} 
-                          alt={p.name} 
-                          className="w-full h-full object-contain p-2 hover:scale-105 transition-transform duration-700"
+                    <button type="button" onClick={() => handleOpenDetailModal(p)} aria-label={`Ver ${p.name}`} className="group w-full h-44 sm:h-52 md:h-64 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-[#eef4ff] border border-[#cbd5e1]/50 shadow-sm order-1 md:order-2 relative cursor-pointer transition duration-300 hover:shadow-[0_18px_45px_-18px_rgba(0,53,127,0.45)] hover:ring-2 hover:ring-[#00357f]/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
+                      {getProductImages(p).length > 0 ? (
+                        <img
+                          src={getProductImages(p)[0]}
+                          alt={getProductImageAlt(p)}
+                          className="w-full h-full object-contain p-3 transition duration-700 group-hover:scale-[1.06] group-hover:brightness-105"
                         />
                       ) : (
                         <div className="w-full h-full flex flex-col items-center justify-center bg-[#f0f3ff] text-[#00357f]/30">
@@ -473,7 +520,7 @@ function CatalogContent() {
                           <span className="text-[10px] font-bold mt-2 uppercase tracking-wider">Sin Imagen</span>
                         </div>
                       )}
-                    </div>
+                    </button>
 
                   </div>
                 </div>
@@ -500,11 +547,11 @@ function CatalogContent() {
 
       {/* LAYOUT: FILTERS & PRODUCT GRID */}
       <div className="flex flex-col gap-5 items-start w-full">
-        
+
         {/* 1. COLLAPSIBLE TOP FILTERS */}
         <div className="w-full bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm">
-          <div 
-            className="flex justify-between items-center cursor-pointer select-none group" 
+          <div
+            className="flex justify-between items-center cursor-pointer select-none group"
             onClick={() => setIsFiltersOpen(!isFiltersOpen)}
           >
             <span className="text-xs font-bold uppercase tracking-wider text-[#00357f] flex items-center gap-2">
@@ -533,7 +580,7 @@ function CatalogContent() {
                 className="overflow-hidden"
               >
                 <div className="pt-6 mt-4 border-t border-[#f0f3ff] space-y-6">
-                  
+
                   {/* Category Filter (Horizontal, Multi-select) */}
                   <div className="space-y-3">
                     <label className="block text-[9px] font-bold uppercase tracking-wider text-[#737784]">Categorías (Selecciona una o varias)</label>
@@ -542,7 +589,7 @@ function CatalogContent() {
                         const isSelected = cat.value === 'all'
                           ? selectedCategories.length === 0
                           : selectedCategories.includes(cat.value)
-                        
+
                         const count = cat.value === 'all'
                           ? products.length
                           : (categoryCounts[cat.value] || 0)
@@ -568,7 +615,7 @@ function CatalogContent() {
 
                   {/* Other Filters Grid (3 Columns) */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-5 border-t border-[#f0f3ff]">
-                    
+
                     {/* Face Shape */}
                     <div className="space-y-3">
                       <label className="block text-[9px] font-bold uppercase tracking-wider text-[#737784]">Forma de Rostro</label>
@@ -643,10 +690,10 @@ function CatalogContent() {
 
         {/* 2. RESULTS CONTAINER */}
         <div className="w-full space-y-5">
-          
+
           {/* Controls Bar */}
           <div className="bg-white border border-[#cbd5e1] rounded-2xl p-4 flex flex-col sm:flex-row gap-4 items-center justify-between shadow-sm">
-            
+
             {/* Live Search */}
             <div className="relative w-full sm:max-w-md">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#737784]" />
@@ -661,7 +708,7 @@ function CatalogContent() {
 
             {/* View options */}
             <div className="flex items-center gap-3 w-full sm:w-auto shrink-0 justify-between sm:justify-end">
-              
+
               <select
                 value={sortBy}
                 onChange={e => updateFilter('sort', e.target.value)}
@@ -720,11 +767,11 @@ function CatalogContent() {
               </div>
             </div>
           ) : (
-            <motion.div 
-              layout 
+            <motion.div
+              layout
               className={
-                layoutMode === 'grid' 
-                  ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" 
+                layoutMode === 'grid'
+                  ? "grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
                   : "flex flex-col gap-4"
               }
             >
@@ -742,7 +789,7 @@ function CatalogContent() {
                       whileHover={{ y: -4 }}
                       key={p.id}
                       onClick={() => handleOpenDetailModal(p)}
-                      className={`cursor-pointer bg-white border border-[#cbd5e1] rounded-2xl p-4 flex flex-col justify-between gap-4 transition-all shadow-sm hover:shadow-md group relative overflow-hidden text-left ${
+                      className={`cursor-pointer bg-white/95 border border-[#cbd5e1] rounded-3xl p-3 sm:p-4 flex flex-col justify-between gap-4 transition-all duration-300 shadow-sm hover:-translate-y-1 hover:border-[#00357f]/35 hover:shadow-[0_20px_45px_-20px_rgba(0,53,127,0.45)] hover:ring-4 hover:ring-[#00357f]/10 group relative overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
                         layoutMode === 'list' ? 'sm:flex-row sm:items-center' : ''
                       }`}
                     >
@@ -750,7 +797,7 @@ function CatalogContent() {
                       <button
                         type="button"
                         onClick={(e) => handleToggleWishlist(p.id, e)}
-                        className="absolute top-3 right-3 z-30 w-8 h-8 rounded-full bg-white/90 border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-rose-600 transition-colors cursor-pointer shadow-sm"
+                        className="absolute top-2.5 right-2.5 z-30 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white/95 border border-[#cbd5e1] text-[#737784] hover:text-rose-600 hover:shadow-[0_0_0_5px_rgba(244,63,94,0.10)] transition cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                         title={isFaved ? 'Quitar de favoritos' : 'Añadir a favoritos'}
                       >
                         <Heart className={`w-4 h-4 ${isFaved ? 'fill-rose-500 text-rose-500' : 'text-[#737784]'}`} />
@@ -772,14 +819,15 @@ function CatalogContent() {
 
                       <div className={`space-y-3 ${layoutMode === 'list' ? 'flex flex-row items-center gap-4 w-full sm:w-auto' : ''}`}>
                         {/* Image Box */}
-                        {p.image_url ? (
-                          <div className={`rounded-xl overflow-hidden bg-[#f9f9ff] border border-[#cbd5e1]/40 shrink-0 relative ${
-                            layoutMode === 'list' ? 'w-16 h-16 sm:w-20 sm:h-20' : 'w-full h-32 sm:h-36'
+                        {getProductImages(p).length > 0 ? (
+                          <div className={`rounded-2xl overflow-hidden bg-gradient-to-br from-white to-[#eef4ff] border border-[#cbd5e1]/40 shrink-0 relative ${
+                            layoutMode === 'list' ? 'w-20 h-20 sm:w-24 sm:h-24' : 'w-full aspect-[4/3]'
                           }`}>
                             <img
-                              src={p.image_url}
-                              alt={p.name}
-                              className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-500"
+                              src={getProductImages(p)[0]}
+                              alt={getProductImageAlt(p)}
+                              loading="lazy"
+                              className="w-full h-full object-contain p-2.5 transition duration-500 group-hover:scale-[1.07] group-hover:brightness-105"
                             />
                             <div className="absolute inset-0 bg-[#00357f]/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                               <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#00357f]/90 px-2.5 py-1 rounded shadow-sm">
@@ -803,7 +851,7 @@ function CatalogContent() {
                               {p.category === 'contact_lenses' && 'Contacto'}
                               {p.category === 'accessories' && 'Accesorio'}
                             </span>
-                            
+
                             <span className={`text-[8px] font-bold uppercase px-1 rounded ${
                               p.stock === 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' :
                               p.stock < 5 ? 'bg-amber-50 text-amber-600 border border-amber-200' :
@@ -813,13 +861,16 @@ function CatalogContent() {
                             </span>
                           </div>
 
-                          <h3 className="font-bold text-xs text-[#111c2d] group-hover:text-[#00357f] transition-colors truncate max-w-full leading-tight">
+                          <h3 className="font-bold text-sm sm:text-xs text-[#111c2d] group-hover:text-[#00357f] transition-colors line-clamp-2 max-w-full leading-tight">
                             {p.name}
                           </h3>
-                          
+                          {getProductDetails(p).brand && (
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#737784]">{getProductDetails(p).brand}</p>
+                          )}
+
                           {layoutMode === 'grid' && (
-                            <p className="text-[10px] text-[#737784] line-clamp-2 leading-relaxed font-medium">
-                              {p.description || 'Armazón oftálmico premium, compatible con graduación.'}
+                            <p className="text-[11px] sm:text-[10px] text-[#737784] line-clamp-2 leading-relaxed font-medium">
+                              {getProductDescription(p) || 'Armazón oftálmico premium, compatible con graduación.'}
                             </p>
                           )}
                         </div>
@@ -830,14 +881,19 @@ function CatalogContent() {
                         layoutMode === 'list' ? 'sm:border-t-0 sm:pt-0 sm:w-auto' : ''
                       }`}>
                         <div className={`min-w-0 ${layoutMode === 'list' ? 'sm:text-right' : ''}`}>
-                          <p className="text-[8px] text-[#737784] uppercase tracking-widest font-bold">Precio sugerido</p>
-                          <p className="font-black text-[#00357f] text-sm font-mono">{formatPrice(p.price)}</p>
+                          <p className="text-[8px] text-[#737784] uppercase tracking-widest font-bold">
+                            {isClient && priceOf(p) < p.price ? 'Precio cliente' : 'Precio sugerido'}
+                          </p>
+                          <p className="font-black text-[#00357f] text-sm font-mono">{formatPrice(priceOf(p))}</p>
+                          {isClient && priceOf(p) < p.price && (
+                            <p className="text-[9px] text-[#737784] line-through font-mono">{formatPrice(p.price)}</p>
+                          )}
                         </div>
-                        
+
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleOpenDetailModal(p); }}
-                          className="flex items-center justify-center gap-1.5 bg-[#dee8ff] hover:bg-[#dee8ff]/80 text-[#00357f] font-bold text-[10px] px-3.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm"
+                          className="flex min-h-10 items-center justify-center gap-1.5 bg-[#dee8ff] hover:bg-[#c9d8ff] text-[#00357f] font-bold text-[11px] px-4 py-2 rounded-xl transition-all cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>Ver</span>
@@ -860,16 +916,16 @@ function CatalogContent() {
          ======================================================== */}
       <AnimatePresence>
         {selectedProduct && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/35 backdrop-blur-sm">
-            <motion.div 
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/35 backdrop-blur-sm">
+            <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.25 }}
-              className="w-full max-w-lg bg-white border border-[#cbd5e1] rounded-2xl p-6 space-y-5 shadow-xl overflow-y-auto max-h-[90vh] relative"
+              className="w-full max-w-lg bg-white border border-[#cbd5e1] rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[94dvh] sm:max-h-[90vh] relative"
             >
               {/* Close trigger */}
-              <button 
+              <button
                 onClick={() => setSelectedProduct(null)}
                 className="absolute right-4 top-4 text-[#737784] hover:text-[#111c2d] p-1.5 rounded-lg transition-colors cursor-pointer"
               >
@@ -881,24 +937,58 @@ function CatalogContent() {
                 <span className="text-[9px] font-black uppercase text-[#00357f] tracking-wider bg-[#dee8ff] px-2.5 py-0.5 rounded">
                   {selectedProduct.category === 'frames' ? 'Asistente de Cotización' : 'Detalles de Producto'}
                 </span>
-                <h3 className="text-lg font-black text-[#111c2d] mt-2 truncate max-w-[280px]">{selectedProduct.name}</h3>
+                <h3 className="text-lg font-black text-[#111c2d] mt-2 leading-tight pr-8">{selectedProduct.name}</h3>
               </div>
 
-              {/* Image banner inside Modal */}
-              {selectedProduct.image_url && wizardStep === 1 && (
-                <div className="w-full h-40 rounded-xl overflow-hidden bg-[#f9f9ff] border border-[#cbd5e1]/40 flex items-center justify-center p-2">
-                  <img
-                    src={selectedProduct.image_url}
-                    alt={selectedProduct.name}
-                    className="w-full h-full object-contain"
-                  />
+              {/* Product gallery inside the modal */}
+              {getProductImages(selectedProduct).length > 0 && (selectedProduct.category !== 'frames' || wizardStep === 1) && (
+                <div className="space-y-2">
+                  <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-2xl border border-[#cbd5e1]/50 bg-gradient-to-br from-white to-[#eef4ff] p-3 shadow-inner">
+                    <img
+                      src={getProductImages(selectedProduct)[Math.min(selectedImageIndex, getProductImages(selectedProduct).length - 1)]}
+                      alt={getProductImageAlt(selectedProduct)}
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                  {getProductImages(selectedProduct).length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Fotos del producto">
+                      {getProductImages(selectedProduct).map((image, index) => (
+                        <button
+                          key={`${image}-${index}`}
+                          type="button"
+                          onClick={() => setSelectedImageIndex(index)}
+                          aria-label={`Ver foto ${index + 1} de ${selectedProduct.name}`}
+                          aria-pressed={selectedImageIndex === index}
+                          className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-white p-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${selectedImageIndex === index ? 'border-[#00357f] ring-2 ring-[#00357f]/20' : 'border-[#cbd5e1] hover:border-[#00357f]/50'}`}
+                        >
+                          <img src={image} alt="" className="h-full w-full object-contain" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {(getProductDetails(selectedProduct).brand || getProductDetails(selectedProduct).material || getProductDetails(selectedProduct).color || getProductDetails(selectedProduct).sku) && (
+                    <dl className="grid grid-cols-2 gap-2 text-left">
+                      {getProductDetails(selectedProduct).brand && (
+                        <div className="rounded-xl bg-[#f9f9ff] px-3 py-2"><dt className="text-[9px] font-black uppercase tracking-wider text-[#737784]">Marca</dt><dd className="text-xs font-bold text-[#111c2d]">{getProductDetails(selectedProduct).brand}</dd></div>
+                      )}
+                      {getProductDetails(selectedProduct).material && (
+                        <div className="rounded-xl bg-[#f9f9ff] px-3 py-2"><dt className="text-[9px] font-black uppercase tracking-wider text-[#737784]">Material</dt><dd className="text-xs font-bold text-[#111c2d]">{getProductDetails(selectedProduct).material}</dd></div>
+                      )}
+                      {getProductDetails(selectedProduct).color && (
+                        <div className="rounded-xl bg-[#f9f9ff] px-3 py-2"><dt className="text-[9px] font-black uppercase tracking-wider text-[#737784]">Color</dt><dd className="text-xs font-bold text-[#111c2d]">{getProductDetails(selectedProduct).color}</dd></div>
+                      )}
+                      {getProductDetails(selectedProduct).sku && (
+                        <div className="rounded-xl bg-[#f9f9ff] px-3 py-2"><dt className="text-[9px] font-black uppercase tracking-wider text-[#737784]">SKU</dt><dd className="font-mono text-xs font-bold text-[#111c2d]">{getProductDetails(selectedProduct).sku}</dd></div>
+                      )}
+                    </dl>
+                  )}
                 </div>
               )}
 
               {/* CONDITIONAL WIZARD FLOW FOR FRAMES */}
               {selectedProduct.category === 'frames' ? (
                 <div className="space-y-5 text-left border-t border-b border-[#f0f3ff] py-4">
-                  
+
                   {/* STEPPER PROGRESS INDICATOR */}
                   <div className="flex justify-between items-center px-4 bg-[#f0f3ff] py-2 border border-[#cbd5e1]/30 rounded-xl text-[9px] font-black uppercase tracking-wider text-[#737784]">
                     <span className={wizardStep === 1 ? 'text-[#00357f]' : 'text-emerald-600'}>1. Graduación</span>
@@ -915,7 +1005,7 @@ function CatalogContent() {
                         <Activity className="w-4 h-4 text-[#00357f]" />
                         Paso 1: Selecciona el tipo de mica graduada
                       </p>
-                      
+
                       <div className="grid grid-cols-1 gap-2">
                         {[
                           { value: 'none', label: 'Sin graduación (Protección básica)', cost: '+$0 MXN' },
@@ -1011,9 +1101,9 @@ function CatalogContent() {
 
                       {prescriptionMode === 'upload' ? (
                         <div className="border-2 border-dashed border-[#cbd5e1] hover:border-[#00357f] p-6 rounded-xl bg-[#f9f9ff] text-center transition-all relative">
-                          <input 
-                            type="file" 
-                            accept="image/*,.pdf" 
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
                             onChange={handleFakeUpload}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                           />
@@ -1087,7 +1177,7 @@ function CatalogContent() {
                         Atrás
                       </button>
                     )}
-                    
+
                     {wizardStep < 3 ? (
                       <button
                         type="button"
@@ -1106,7 +1196,7 @@ function CatalogContent() {
               ) : (
                 <div className="space-y-4 text-left border-t border-b border-[#f0f3ff] py-4">
                   <p className="text-xs text-[#434653] leading-relaxed bg-[#f9f9ff] border border-[#cbd5e1]/40 p-4 rounded-xl font-medium">
-                    {selectedProduct.description || 'Detalles del accesorio o producto clínico premium.'}
+                    {getProductDescription(selectedProduct) || 'Detalles del accesorio o producto clínico premium.'}
                   </p>
                 </div>
               )}
@@ -1118,7 +1208,7 @@ function CatalogContent() {
                     {selectedGraduation !== 'none' ? 'Total Configurado' : 'Precio Sugerido'}
                   </p>
                   <p className="text-xl font-black text-[#00357f] font-mono">
-                    {formatPrice(selectedProduct.category === 'frames' ? totalConfiguredPrice : selectedProduct.price)}
+                    {formatPrice(selectedProduct.category === 'frames' ? totalConfiguredPrice : priceOf(selectedProduct))}
                   </p>
                 </div>
                 <div className="text-right">
@@ -1128,11 +1218,11 @@ function CatalogContent() {
               </div>
 
               {/* Final Actions */}
-              <div className="flex gap-3 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setSelectedProduct(null)}
-                  className="flex-1 text-xs font-bold text-[#737784] hover:bg-[#dee8ff] py-3 rounded-lg border border-[#cbd5e1] cursor-pointer transition-colors"
+                  className="min-h-12 flex-1 text-xs font-bold text-[#737784] hover:bg-[#dee8ff] py-3 rounded-xl border border-[#cbd5e1] cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                 >
                   Cerrar
                 </button>
@@ -1140,7 +1230,7 @@ function CatalogContent() {
                   href={getWhatsAppLink(selectedProduct)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs py-3 rounded-lg shadow-sm cursor-pointer transition-colors"
+                  className="min-h-12 flex-1 flex items-center justify-center gap-2 bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs py-3 rounded-xl shadow-sm cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
                 >
                   <Phone className="w-4 h-4 text-[#002113] shrink-0" />
                   {selectedProduct.category === 'frames' && selectedGraduation !== 'none' ? 'Comprar Lentes' : 'Consultar Disponibilidad'}

@@ -3,7 +3,8 @@
 import * as React from 'react'
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getCustomerSales } from '@/lib/services'
+import { getCustomerById, getCustomerExams, getCustomerSales, getReminderConfig, type ReminderConfig } from '@/lib/services'
+import { buildReminderMessage } from '@/lib/reminder-config'
 import { 
   ArrowLeft, 
   User, 
@@ -32,6 +33,11 @@ export default function CustomerDetailPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'profile' | 'exams' | 'sales'>('profile')
+  const [reminderCfg, setReminderCfg] = useState<ReminderConfig | null>(null)
+
+  useEffect(() => {
+    getReminderConfig().then(setReminderCfg).catch(() => setReminderCfg(null))
+  }, [])
 
   const loadData = useCallback(async () => {
     try {
@@ -262,7 +268,12 @@ export default function CustomerDetailPage({ params }: PageProps) {
                       onClick={() => {
                         const cleanPhone = cp.phone.replace(/[^\d]/g, '')
                         const phoneWithCode = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone
-                        const message = `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Queremos recordarte que tus lentes están próximos a cumplir un año de su última revisión. Te sugerimos agendar tu examen visual de seguimiento preventivo aquí. ¡Esperamos verte pronto!`
+                        const message = reminderCfg
+                          ? buildReminderMessage(reminderCfg.template, {
+                              nombre: customer.full_name.split(' ')[0] || customer.full_name,
+                              meses: reminderCfg.months,
+                            })
+                          : `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Te invitamos a realizarte un nuevo examen de la vista: recuerda que el examen es GRATIS. ¿Te agendamos una cita? ¡Esperamos verte pronto!`
                         window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(message)}`, '_blank')
                       }}
                       type="button"

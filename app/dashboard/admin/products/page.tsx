@@ -7,9 +7,19 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
-  uploadProductImage
+  uploadProductImage,
+  uploadProductImages,
+  getMemberDiscountPercent,
+  saveMemberDiscountPercent
 } from '@/lib/services'
 import { Database } from '@/types/database.types'
+import { FRAME_SHAPE_OPTIONS, getProductDetails, type FrameShape } from '@/lib/product-data'
+import {
+  PRODUCT_IMAGE_ACCEPT,
+  PRODUCT_IMAGE_MAX_GALLERY_FILES,
+  PRODUCT_IMAGE_RECOMMENDED,
+  validateProductImageFile,
+} from '@/lib/product-images'
 import { 
   Plus, 
   Search, 
@@ -27,31 +37,10 @@ import {
 
 type Product = Database['public']['Tables']['products']['Row']
 
-// Helper to parse description JSON structure safely
-function parseProductDescription(desc: string | null) {
-  const result = {
-    brand: '',
-    material: '',
-    sku: '',
-    notes: ''
-  }
-  if (!desc) return result
-  const trimmed = desc.trim()
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    try {
-      const parsed = JSON.parse(trimmed)
-      return {
-        brand: parsed.brand || '',
-        material: parsed.material || '',
-        sku: parsed.sku || '',
-        notes: parsed.notes || ''
-      }
-    } catch (_) {
-      // Ignore JSON error and treat as plain text
-    }
-  }
-  result.notes = desc
-  return result
+// Compatibility adapter: new rows use real columns; older rows may still
+// carry the legacy JSON description, which getProductDetails can read.
+function parseProductDescription(product: Product) {
+  return getProductDetails(product)
 }
 
 export default function AdminProductsPage() {
@@ -77,8 +66,19 @@ export default function AdminProductsPage() {
   const [pSku, setPSku] = useState('')
   const [pImageFile, setPImageFile] = useState<File | null>(null)
   const [pImagePreview, setPImagePreview] = useState<string>('')
+  const [pImageUrl, setPImageUrl] = useState('')
+  const [pGalleryFiles, setPGalleryFiles] = useState<File[]>([])
+  const [pGalleryPreviews, setPGalleryPreviews] = useState<string[]>([])
+  const [pPhotoMessage, setPPhotoMessage] = useState<{ type: 'error' | 'warning'; text: string } | null>(null)
+  const [pColor, setPColor] = useState('')
+  const [pFrameShape, setPFrameShape] = useState<FrameShape | ''>('')
+  const [pImageAlt, setPImageAlt] = useState('')
   const [pIsPromo, setPIsPromo] = useState(false)
   const [pIsFeatured, setPIsFeatured] = useState(false)
+  const [pClientPrice, setPClientPrice] = useState('')
+
+  // General member discount percent (logged-in customers)
+  const [memberPct, setMemberPct] = useState(20)
   const [submittingProduct, setSubmittingProduct] = useState(false)
 
   // Edit / Delete states
@@ -90,17 +90,33 @@ export default function AdminProductsPage() {
   const [eMaterial, setEMaterial] = useState('')
   const [eSku, setESku] = useState('')
   const [eNotes, setENotes] = useState('')
+  const [eColor, setEColor] = useState('')
+  const [eFrameShape, setEFrameShape] = useState<FrameShape | ''>('')
+  const [eImageAlt, setEImageAlt] = useState('')
+  const [eImageFile, setEImageFile] = useState<File | null>(null)
+  const [eImagePreview, setEImagePreview] = useState('')
+  const [eGalleryUrls, setEGalleryUrls] = useState<string[]>([])
+  const [eGalleryFiles, setEGalleryFiles] = useState<File[]>([])
+  const [eGalleryPreviews, setEGalleryPreviews] = useState<string[]>([])
+  const [ePhotoMessage, setEPhotoMessage] = useState<{ type: 'error' | 'warning'; text: string } | null>(null)
 
   const loadProductsData = async () => {
     try {
       setLoading(true)
       const data = await getProducts()
       setProducts(data)
+      const pct = await getMemberDiscountPercent()
+      setMemberPct(pct)
     } catch (e) {
       showFeedback('error', 'Error al cargar los productos del inventario.')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSaveMemberPct = async () => {
+    await saveMemberDiscountPercent(memberPct)
+    showFeedback('success', `Descuento general a clientes guardado: ${memberPct}% sobre el precio de vitrina.`)
   }
 
   useEffect(() => {
@@ -112,18 +128,85 @@ export default function AdminProductsPage() {
     setTimeout(() => setFeedbackMsg(null), 4000)
   }
 
-  // Handle Product image select
-  const handleProductImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Product image select with the shared photo standard.
+  const handleProductImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      setPImageFile(file)
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        pImagePreview && URL.revokeObjectURL(pImagePreview)
-        setPImagePreview(reader.result as string)
-      }
-      reader.readAsDataURL(file)
+    if (!file) return
+    const validation = await validateProductImageFile(file)
+    if (!validation.valid) {
+      setPImageFile(null)
+      setPImagePreview('')
+      setPPhotoMessage({ type: 'error', text: validation.errors.join(' ') })
+      e.target.value = ''
+      return
     }
+    if (pImagePreview.startsWith('blob:')) URL.revokeObjectURL(pImagePreview)
+    setPImageFile(file)
+    setPImagePreview(URL.createObjectURL(file))
+    setPPhotoMessage(validation.warnings.length > 0
+      ? { type: 'warning', text: validation.warnings.join(' ') }
+      : null)
+  }
+
+  const handleGalleryImageSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    mode: 'create' | 'edit'
+  ) => {
+    const selected = Array.from(e.target.files || [])
+    if (selected.length === 0) return
+    const currentCount = mode === 'create'
+      ? pGalleryFiles.length
+      : eGalleryUrls.length + eGalleryFiles.length
+    const available = PRODUCT_IMAGE_MAX_GALLERY_FILES - currentCount
+    if (available <= 0) {
+      const message = { type: 'error' as const, text: `La galería admite hasta ${PRODUCT_IMAGE_MAX_GALLERY_FILES} fotos adicionales.` }
+      mode === 'create' ? setPPhotoMessage(message) : setEPhotoMessage(message)
+      e.target.value = ''
+      return
+    }
+
+    const accepted: File[] = []
+    const messages: string[] = []
+    for (const file of selected.slice(0, available)) {
+      const validation = await validateProductImageFile(file)
+      if (!validation.valid) messages.push(`${file.name}: ${validation.errors.join(' ')}`)
+      else {
+        accepted.push(file)
+        messages.push(...validation.warnings.map(w => `${file.name}: ${w}`))
+      }
+    }
+    if (selected.length > available) {
+      messages.push(`Solo se agregaron ${available} foto(s); ya alcanzaste el límite de galería.`)
+    }
+
+    if (mode === 'create') {
+      setPGalleryFiles(prev => [...prev, ...accepted])
+      setPGalleryPreviews(prev => [...prev, ...accepted.map(file => URL.createObjectURL(file))])
+      setPPhotoMessage(messages.length > 0 ? { type: 'warning', text: messages.join(' ') } : null)
+    } else {
+      setEGalleryFiles(prev => [...prev, ...accepted])
+      setEGalleryPreviews(prev => [...prev, ...accepted.map(file => URL.createObjectURL(file))])
+      setEPhotoMessage(messages.length > 0 ? { type: 'warning', text: messages.join(' ') } : null)
+    }
+    e.target.value = ''
+  }
+
+  const handleEditImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const validation = await validateProductImageFile(file)
+    if (!validation.valid) {
+      setEImageFile(null)
+      setEPhotoMessage({ type: 'error', text: validation.errors.join(' ') })
+      e.target.value = ''
+      return
+    }
+    if (eImagePreview.startsWith('blob:')) URL.revokeObjectURL(eImagePreview)
+    setEImageFile(file)
+    setEImagePreview(URL.createObjectURL(file))
+    setEPhotoMessage(validation.warnings.length > 0
+      ? { type: 'warning', text: validation.warnings.join(' ') }
+      : null)
   }
 
   // Create Product Submit
@@ -136,26 +219,29 @@ export default function AdminProductsPage() {
 
     setSubmittingProduct(true)
     try {
-      let imageUrl = null
+      let imageUrl = pImageUrl.trim() || null
       if (pImageFile) {
         imageUrl = await uploadProductImage(pImageFile)
       }
+      const galleryUrls = await uploadProductImages(pGalleryFiles)
 
-      // Serialize brand, material, sku, notes inside the description
-      const serializedDescription = JSON.stringify({
-        brand: pBrand.trim(),
-        material: pMaterial.trim(),
-        sku: pSku.trim(),
-        notes: pDescription.trim()
-      })
-
+      // Structured product data: attributes live in their own columns and
+      // description remains the public, human-readable note only.
       await createProduct({
-        name: pName,
-        description: serializedDescription,
+        name: pName.trim(),
+        description: pDescription.trim() || null,
         price: parseFloat(pPrice),
+        client_price: pClientPrice ? parseFloat(pClientPrice) : null,
         stock: parseInt(pStock),
         category: pCategory,
         image_url: imageUrl,
+        brand: pBrand.trim() || null,
+        material: pMaterial.trim() || null,
+        sku: pSku.trim().toUpperCase(),
+        frame_shape: pFrameShape || null,
+        color: pColor.trim() || null,
+        gallery_urls: galleryUrls,
+        image_alt: pImageAlt.trim() || null,
         is_promo: pIsPromo,
         is_featured: pIsFeatured
       })
@@ -171,12 +257,20 @@ export default function AdminProductsPage() {
       setPSku('')
       setPImageFile(null)
       setPImagePreview('')
+      setPImageUrl('')
+      setPGalleryFiles([])
+      setPGalleryPreviews([])
+      setPPhotoMessage(null)
+      setPColor('')
+      setPFrameShape('')
+      setPImageAlt('')
       setPIsPromo(false)
       setPIsFeatured(false)
+      setPClientPrice('')
       setIsCreateModalOpen(false)
       await loadProductsData()
     } catch (e) {
-      showFeedback('error', 'Error al registrar el producto.')
+      showFeedback('error', e instanceof Error ? e.message : 'Error al registrar el producto.')
     } finally {
       setSubmittingProduct(false)
     }
@@ -185,16 +279,34 @@ export default function AdminProductsPage() {
   // Set initial edit state when product is selected
   useEffect(() => {
     if (editingProduct) {
-      const parsed = parseProductDescription(editingProduct.description)
+      const parsed = parseProductDescription(editingProduct)
       setEBrand(parsed.brand)
       setEMaterial(parsed.material)
       setESku(parsed.sku)
       setENotes(parsed.notes)
+      setEColor(parsed.color)
+      setEFrameShape(parsed.frameShape || '')
+      setEImageAlt(editingProduct.image_alt || '')
+      setEImageFile(null)
+      setEImagePreview(editingProduct.image_url || '')
+      setEGalleryUrls(editingProduct.gallery_urls || [])
+      setEGalleryFiles([])
+      setEGalleryPreviews([])
+      setEPhotoMessage(null)
     } else {
       setEBrand('')
       setEMaterial('')
       setESku('')
       setENotes('')
+      setEColor('')
+      setEFrameShape('')
+      setEImageAlt('')
+      setEImageFile(null)
+      setEImagePreview('')
+      setEGalleryUrls([])
+      setEGalleryFiles([])
+      setEGalleryPreviews([])
+      setEPhotoMessage(null)
     }
   }, [editingProduct])
 
@@ -204,26 +316,27 @@ export default function AdminProductsPage() {
     if (!editingProduct) return
     try {
       let finalImageUrl = editingProduct.image_url
-      const fileInput = document.getElementById('edit-product-file') as HTMLInputElement
-      if (fileInput && fileInput.files && fileInput.files[0]) {
-        finalImageUrl = await uploadProductImage(fileInput.files[0])
+      if (eImageFile) {
+        finalImageUrl = await uploadProductImage(eImageFile)
       }
-
-      // Serialize edit fields inside description
-      const serializedDescription = JSON.stringify({
-        brand: eBrand.trim(),
-        material: eMaterial.trim(),
-        sku: eSku.trim(),
-        notes: eNotes.trim()
-      })
+      const uploadedGalleryUrls = await uploadProductImages(eGalleryFiles)
+      const finalGalleryUrls = [...eGalleryUrls, ...uploadedGalleryUrls]
 
       await updateProduct(editingProduct.id, {
         name: editingProduct.name,
-        description: serializedDescription,
+        description: eNotes.trim() || null,
         price: editingProduct.price,
+        client_price: editingProduct.client_price ?? null,
         stock: editingProduct.stock,
         category: editingProduct.category,
         image_url: finalImageUrl,
+        brand: eBrand.trim() || null,
+        material: eMaterial.trim() || null,
+        sku: eSku.trim().toUpperCase(),
+        frame_shape: eFrameShape || null,
+        color: eColor.trim() || null,
+        gallery_urls: finalGalleryUrls,
+        image_alt: eImageAlt.trim() || null,
         is_promo: editingProduct.is_promo,
         is_featured: editingProduct.is_featured
       })
@@ -232,7 +345,7 @@ export default function AdminProductsPage() {
       setEditingProduct(null)
       await loadProductsData()
     } catch (e) {
-      showFeedback('error', 'Fallo al actualizar el producto.')
+      showFeedback('error', e instanceof Error ? e.message : 'Fallo al actualizar el producto.')
     }
   }
 
@@ -264,7 +377,7 @@ export default function AdminProductsPage() {
   const uniqueBrandsList = useMemo(() => {
     const list = new Set<string>()
     products.forEach(p => {
-      const parsed = parseProductDescription(p.description)
+      const parsed = parseProductDescription(p)
       if (parsed.brand) {
         list.add(parsed.brand)
       }
@@ -275,7 +388,7 @@ export default function AdminProductsPage() {
   // Filter calculations
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
-      const parsed = parseProductDescription(p.description)
+      const parsed = parseProductDescription(p)
       
       const matchesSearch = p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
                             parsed.notes.toLowerCase().includes(productSearch.toLowerCase()) ||
@@ -331,6 +444,33 @@ export default function AdminProductsPage() {
           {feedbackMsg.text}
         </div>
       )}
+
+      {/* Member pricing configuration */}
+      <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-2xl border border-[#cbd5e1] shadow-sm">
+        <span className="text-[10px] font-black uppercase tracking-wider text-[#00357f]">
+          Descuento general a clientes logueados
+        </span>
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={memberPct}
+            onChange={(e) => setMemberPct(Math.min(100, Math.max(0, parseInt(e.target.value || '0', 10) || 0)))}
+            className="w-20 bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2 text-xs font-bold text-[#111c2d] focus:border-[#00357f] outline-none"
+          />
+          <span className="text-xs font-bold text-[#434653]">% sobre el precio de vitrina</span>
+        </div>
+        <span className="text-[10px] text-[#737784] font-medium">
+          Aplica cuando el producto no tiene precio especial propio. El visitante nunca ve este descuento.
+        </span>
+        <button
+          onClick={handleSaveMemberPct}
+          className="ml-auto bg-[#00357f] hover:bg-[#004aad] text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition-colors cursor-pointer"
+        >
+          Guardar
+        </button>
+      </div>
 
       {/* Filters Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl border border-[#cbd5e1] shadow-sm">
@@ -401,7 +541,7 @@ export default function AdminProductsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredProducts.map(p => {
-            const parsed = parseProductDescription(p.description)
+            const parsed = parseProductDescription(p)
             return (
               <div key={p.id} className="bg-white rounded-2xl border border-[#cbd5e1] shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow text-left">
                 <div className="h-48 bg-[#f9f9ff] relative flex items-center justify-center border-b border-[#cbd5e1]/30 p-4">
@@ -500,30 +640,74 @@ export default function AdminProductsPage() {
             </div>
             
             <form onSubmit={handleCreateProduct} className="flex-1 overflow-y-auto p-6 space-y-4">
-              {/* Image Upload Preview */}
-              <div className="border-2 border-dashed border-[#cbd5e1] rounded-xl p-4 flex flex-col items-center justify-center bg-[#f0f3ff] hover:bg-[#dee8ff]/40 transition-colors cursor-pointer relative min-h-[120px]">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleProductImageSelect}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                />
-                {pImagePreview ? (
-                  <img 
-                    src={pImagePreview} 
-                    alt="Preview" 
-                    className="max-h-[100px] object-contain rounded-lg"
+              {/* Product photos: one standard for file, preview and database */}
+              <section className="space-y-3 rounded-2xl border border-[#cbd5e1] bg-[#f9f9ff] p-4" aria-label="Fotos del producto">
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Fotos del producto</h3>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#737784]">
+                    Foto principal + hasta {PRODUCT_IMAGE_MAX_GALLERY_FILES} de galería. Formatos JPG, PNG, WebP o AVIF,
+                    máximo 5 MB por foto. Recomendado: {PRODUCT_IMAGE_RECOMMENDED.width}×{PRODUCT_IMAGE_RECOMMENDED.height}px,
+                    horizontal {PRODUCT_IMAGE_RECOMMENDED.aspectLabel}, fondo claro y armazón completo.
+                  </p>
+                </div>
+
+                <div className="relative flex min-h-[132px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#cbd5e1] bg-white p-4 text-center transition hover:border-[#00357f] hover:bg-[#dee8ff]/30">
+                  <input
+                    type="file"
+                    accept={PRODUCT_IMAGE_ACCEPT}
+                    onChange={handleProductImageSelect}
+                    aria-label="Seleccionar foto principal del producto"
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                   />
-                ) : (
-                  <>
-                    <Package className="w-8 h-8 text-[#737784] mb-1.5" />
-                    <p className="text-xs text-[#737784] text-center font-bold">
-                      Haga clic o arrastre una imagen aquí<br/>
-                      <span className="text-[10px] text-slate-400 font-normal">JPG, PNG, WebP (Max 5MB)</span>
-                    </p>
-                  </>
+                  {pImagePreview ? (
+                    <img src={pImagePreview} alt="Vista previa de la foto principal" className="max-h-[112px] rounded-lg object-contain" />
+                  ) : (
+                    <>
+                      <Package className="mb-1.5 h-8 w-8 text-[#737784]" />
+                      <p className="text-xs font-bold text-[#737784]">Toca o haz clic para elegir la foto principal</p>
+                      <p className="mt-1 text-[10px] text-[#737784]">También puedes pegar una URL en el campo siguiente.</p>
+                    </>
+                  )}
+                </div>
+
+                {pPhotoMessage && (
+                  <p role={pPhotoMessage.type === 'error' ? 'alert' : 'status'} className={`rounded-lg px-3 py-2 text-[11px] font-bold ${pPhotoMessage.type === 'error' ? 'bg-[#ffdad6] text-[#93000a]' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                    {pPhotoMessage.text}
+                  </p>
                 )}
-              </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="create-product-image-url" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-[#434653]">URL de foto principal (opcional)</label>
+                    <input id="create-product-image-url" type="url" value={pImageUrl} onChange={(e) => setPImageUrl(e.target.value)} placeholder="https://…" className="min-h-11 w-full rounded-lg border border-[#cbd5e1] bg-white p-2.5 text-xs text-[#111c2d] outline-none focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f]" />
+                  </div>
+                  <div>
+                    <label htmlFor="create-product-image-alt" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-[#434653]">Texto alternativo de la foto</label>
+                    <input id="create-product-image-alt" type="text" value={pImageAlt} onChange={(e) => setPImageAlt(e.target.value)} placeholder="Ej. Armazón negro de frente" className="min-h-11 w-full rounded-lg border border-[#cbd5e1] bg-white p-2.5 text-xs text-[#111c2d] outline-none focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f]" />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="create-product-gallery" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-[#434653]">Fotos de galería (lado, patillas, estuche…)</label>
+                  <input id="create-product-gallery" type="file" accept={PRODUCT_IMAGE_ACCEPT} multiple onChange={(e) => handleGalleryImageSelect(e, 'create')} className="w-full cursor-pointer text-xs text-[#737784] file:mr-2 file:min-h-10 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#dee8ff] file:px-3.5 file:text-xs file:font-bold file:text-[#00357f] hover:file:bg-[#c9d8ff]" />
+                  {pGalleryPreviews.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {pGalleryPreviews.map((preview, index) => (
+                        <div key={preview} className="relative h-16 w-16 overflow-hidden rounded-lg border border-[#cbd5e1] bg-white">
+                          <img src={preview} alt={`Vista previa de galería ${index + 1}`} className="h-full w-full object-cover" />
+                          <button type="button" aria-label={`Quitar foto de galería ${index + 1}`} onClick={() => {
+                            URL.revokeObjectURL(preview)
+                            setPGalleryFiles(prev => prev.filter((_, i) => i !== index))
+                            setPGalleryPreviews(prev => prev.filter((_, i) => i !== index))
+                          }} className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-[#ba1a1a] shadow">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
 
               {/* Form Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-semibold">
@@ -583,6 +767,17 @@ export default function AdminProductsPage() {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Color</label>
+                  <input value={pColor} onChange={(e) => setPColor(e.target.value)} className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]" type="text" placeholder="Ej. Negro mate" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Forma del armazón</label>
+                  <select value={pFrameShape} onChange={(e) => setPFrameShape(e.target.value as FrameShape | '')} className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px] cursor-pointer">
+                    <option value="">Sin clasificar</option>
+                    {FRAME_SHAPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Precio ($) *</label>
                   <input 
                     required
@@ -592,6 +787,17 @@ export default function AdminProductsPage() {
                     onChange={(e) => setPPrice(e.target.value)}
                     className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
                     placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Precio especial a clientes ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={pClientPrice}
+                    onChange={(e) => setPClientPrice(e.target.value)}
+                    className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
+                    placeholder="Opcional — solo logueados"
                   />
                 </div>
                 <div>
@@ -630,20 +836,26 @@ export default function AdminProductsPage() {
                     Habilitar descuento / promoción especial
                   </label>
                 </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="isFeatured" checked={pIsFeatured} onChange={e => setPIsFeatured(e.target.checked)} className="rounded text-[#00357f] focus:ring-[#00357f] cursor-pointer" />
+                  <label className="text-xs font-bold text-[#111c2d] cursor-pointer select-none" htmlFor="isFeatured">
+                    Mostrar en destacados del catálogo
+                  </label>
+                </div>
               </div>
 
               <div className="px-6 py-4 border-t border-[#cbd5e1] flex justify-end gap-2 bg-[#f9f9ff] -mx-6 -mb-6">
                 <button 
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 rounded-lg text-xs font-bold text-[#737784] hover:bg-[#dee8ff] transition-colors cursor-pointer"
+                  className="min-h-11 px-4 py-2 rounded-lg text-xs font-bold text-[#737784] hover:bg-[#dee8ff] transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit"
                   disabled={submittingProduct}
-                  className="px-5 py-2 rounded-lg text-xs font-bold bg-[#00357f] hover:bg-[#004aad] text-white transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+                  className="min-h-11 px-5 py-2 rounded-lg text-xs font-bold bg-[#00357f] hover:bg-[#004aad] text-white transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
                 >
                   {submittingProduct ? 'Añadiendo...' : 'Guardar Producto'}
                 </button>
@@ -723,6 +935,17 @@ export default function AdminProductsPage() {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Color</label>
+                  <input value={eColor} onChange={(e) => setEColor(e.target.value)} className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]" type="text" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Forma del armazón</label>
+                  <select value={eFrameShape} onChange={(e) => setEFrameShape(e.target.value as FrameShape | '')} className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px] cursor-pointer">
+                    <option value="">Sin clasificar</option>
+                    {FRAME_SHAPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Precio ($)</label>
                   <input 
                     required
@@ -731,6 +954,17 @@ export default function AdminProductsPage() {
                     value={editingProduct.price}
                     onChange={(e) => setEditingProduct({ ...editingProduct, price: parseFloat(e.target.value) || 0 })}
                     className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Precio especial a clientes ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editingProduct.client_price ?? ''}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, client_price: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
+                    placeholder="Opcional — solo logueados"
                   />
                 </div>
                 <div>
@@ -751,14 +985,51 @@ export default function AdminProductsPage() {
                     className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[60px] resize-none"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Actualizar Foto del Producto</label>
-                  <input 
-                    type="file"
-                    id="edit-product-file"
-                    accept="image/*"
-                    className="w-full text-xs text-[#737784] file:mr-2 file:py-1.5 file:px-3.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#dee8ff] file:text-[#00357f] hover:file:bg-[#dee8ff]/80 cursor-pointer"
-                  />
+                <div className="md:col-span-2 rounded-2xl border border-[#cbd5e1] bg-[#f9f9ff] p-4 space-y-3">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Fotos del producto</h3>
+                    <p className="mt-1 text-[11px] leading-relaxed text-[#737784]">JPG, PNG, WebP o AVIF · máximo 5 MB · recomendado {PRODUCT_IMAGE_RECOMMENDED.width}×{PRODUCT_IMAGE_RECOMMENDED.height}px.</p>
+                  </div>
+                  {eImagePreview && (
+                    <img src={eImagePreview} alt="Foto principal actual" className="h-28 w-full rounded-xl border border-[#cbd5e1] bg-white object-contain p-2" />
+                  )}
+                  {ePhotoMessage && (
+                    <p role={ePhotoMessage.type === 'error' ? 'alert' : 'status'} className={`rounded-lg px-3 py-2 text-[11px] font-bold ${ePhotoMessage.type === 'error' ? 'bg-[#ffdad6] text-[#93000a]' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>{ePhotoMessage.text}</p>
+                  )}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="edit-product-file" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-[#434653]">Reemplazar foto principal</label>
+                      <input type="file" id="edit-product-file" accept={PRODUCT_IMAGE_ACCEPT} onChange={handleEditImageSelect} className="w-full cursor-pointer text-xs text-[#737784] file:mr-2 file:min-h-10 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#dee8ff] file:px-3.5 file:text-xs file:font-bold file:text-[#00357f] hover:file:bg-[#c9d8ff]" />
+                    </div>
+                    <div>
+                      <label htmlFor="edit-product-image-alt" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-[#434653]">Texto alternativo</label>
+                      <input id="edit-product-image-alt" type="text" value={eImageAlt} onChange={(e) => setEImageAlt(e.target.value)} className="min-h-11 w-full rounded-lg border border-[#cbd5e1] bg-white p-2.5 text-xs text-[#111c2d] outline-none focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f]" />
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="edit-product-gallery" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-[#434653]">Agregar fotos a la galería</label>
+                    <input id="edit-product-gallery" type="file" accept={PRODUCT_IMAGE_ACCEPT} multiple onChange={(e) => handleGalleryImageSelect(e, 'edit')} className="w-full cursor-pointer text-xs text-[#737784] file:mr-2 file:min-h-10 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#dee8ff] file:px-3.5 file:text-xs file:font-bold file:text-[#00357f] hover:file:bg-[#c9d8ff]" />
+                    {(eGalleryUrls.length > 0 || eGalleryPreviews.length > 0) && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {eGalleryUrls.map((url, index) => (
+                          <div key={url} className="relative h-16 w-16 overflow-hidden rounded-lg border border-[#cbd5e1] bg-white">
+                            <img src={url} alt={`Foto de galería ${index + 1}`} className="h-full w-full object-cover" />
+                            <button type="button" aria-label={`Quitar foto guardada ${index + 1}`} onClick={() => setEGalleryUrls(prev => prev.filter((_, i) => i !== index))} className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-[#ba1a1a] shadow"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                        ))}
+                        {eGalleryPreviews.map((preview, index) => (
+                          <div key={preview} className="relative h-16 w-16 overflow-hidden rounded-lg border border-[#00357f]/40 bg-white">
+                            <img src={preview} alt={`Nueva foto de galería ${index + 1}`} className="h-full w-full object-cover" />
+                            <button type="button" aria-label={`Quitar nueva foto ${index + 1}`} onClick={() => {
+                              URL.revokeObjectURL(preview)
+                              setEGalleryFiles(prev => prev.filter((_, i) => i !== index))
+                              setEGalleryPreviews(prev => prev.filter((_, i) => i !== index))
+                            }} className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-[#ba1a1a] shadow"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -773,19 +1044,23 @@ export default function AdminProductsPage() {
                 <label className="text-xs font-bold text-[#111c2d] cursor-pointer select-none" htmlFor="editHasPromo">
                   Producto en promoción especial
                 </label>
+                <input type="checkbox" id="editIsFeatured" checked={editingProduct.is_featured} onChange={e => setEditingProduct({ ...editingProduct, is_featured: e.target.checked })} className="ml-4 rounded text-[#00357f] focus:ring-[#00357f] cursor-pointer" />
+                <label className="text-xs font-bold text-[#111c2d] cursor-pointer select-none" htmlFor="editIsFeatured">
+                  Destacado
+                </label>
               </div>
 
               <div className="px-6 py-4 border-t border-[#cbd5e1] flex justify-end gap-2 bg-[#f9f9ff] -mx-6 -mb-6">
                 <button 
                   type="button"
                   onClick={() => setEditingProduct(null)}
-                  className="px-4 py-2 rounded-lg text-xs font-bold text-[#737784] hover:bg-[#dee8ff] transition-colors cursor-pointer"
+                  className="min-h-11 px-4 py-2 rounded-lg text-xs font-bold text-[#737784] hover:bg-[#dee8ff] transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit"
-                  className="px-5 py-2 rounded-lg text-xs font-bold bg-[#00357f] hover:bg-[#004aad] text-white transition-colors shadow-sm cursor-pointer"
+                  className="min-h-11 px-5 py-2 rounded-lg text-xs font-bold bg-[#00357f] hover:bg-[#004aad] text-white transition-colors shadow-sm cursor-pointer"
                 >
                   Guardar Cambios
                 </button>

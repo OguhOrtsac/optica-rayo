@@ -11,6 +11,7 @@ import {
   markNotificationRead 
 } from '@/lib/services'
 import { Database } from '@/types/database.types'
+import ReminderTray from '@/components/reminder-tray'
 import { 
   TrendingUp, 
   Wallet, 
@@ -430,6 +431,11 @@ export default function AdminDashboard() {
                 })
               )}
             </div>
+          </div>
+
+          {/* Exam Review Reminders (12 cols) */}
+          <div className="md:col-span-12">
+            <ReminderTray />
           </div>
 
           {/* Recent Activity Section (12 cols) */}

@@ -18,6 +18,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1591076482161-42ce6da69f67?auto=format&fit=crop&w=600&q=80',
     is_promo: true,
     is_featured: true,
+    client_price: null,
+    brand: 'Rayo Studio',
+    material: 'Metal y fibra de carbono',
+    sku: 'RAY-AVI-001',
+    frame_shape: 'aviator',
+    color: 'Negro carbono',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -30,6 +38,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
+    brand: 'Blue Shield',
+    material: 'Policarbonato',
+    sku: 'MIC-BLUE-001',
+    frame_shape: null,
+    color: 'Transparente',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -42,6 +58,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
+    brand: 'Acuvue',
+    material: 'Hidrogel de silicona',
+    sku: 'ACU-OAS-006',
+    frame_shape: null,
+    color: 'Transparente',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -54,6 +78,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?auto=format&fit=crop&w=600&q=80',
     is_promo: false,
     is_featured: true,
+    client_price: null,
+    brand: 'Rayo Vintage',
+    material: 'Acetato italiano',
+    sku: 'RAY-CAR-002',
+    frame_shape: 'round',
+    color: 'Carey',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -66,6 +98,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
+    brand: 'Rayo Care',
+    material: 'Plástico',
+    sku: 'ACC-CLEAN-001',
+    frame_shape: null,
+    color: 'Transparente',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -78,6 +118,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1577803645773-f96470509666?auto=format&fit=crop&w=600&q=80',
     is_promo: true,
     is_featured: true,
+    client_price: 2999.00,
+    brand: 'Ray-Ban',
+    material: 'Acetato y metal',
+    sku: 'RB-CLUB-001',
+    frame_shape: 'square',
+    color: 'Negro y dorado',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -90,6 +138,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=600&q=80',
     is_promo: false,
     is_featured: true,
+    client_price: 3499.00,
+    brand: 'Oakley',
+    material: 'O Matter',
+    sku: 'OAK-HOL-001',
+    frame_shape: 'square',
+    color: 'Negro mate',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -102,6 +158,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1591076482161-42ce6da69f67?auto=format&fit=crop&w=600&q=80',
     is_promo: false,
     is_featured: false,
+    client_price: null,
+    brand: 'Gucci',
+    material: 'Acetato',
+    sku: 'GUC-REC-001',
+    frame_shape: 'rectangular',
+    color: 'Negro',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -114,6 +178,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?auto=format&fit=crop&w=600&q=80',
     is_promo: true,
     is_featured: true,
+    client_price: null,
+    brand: 'Carrera',
+    material: 'Metal',
+    sku: 'CAR-NAV-001',
+    frame_shape: 'aviator',
+    color: 'Negro',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -126,6 +198,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
+    brand: 'Varilux',
+    material: 'Alto índice',
+    sku: 'MIC-VAR-001',
+    frame_shape: null,
+    color: 'Transparente',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -138,6 +218,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: true,
     is_featured: false,
+    client_price: null,
+    brand: 'Essilor',
+    material: 'Policarbonato',
+    sku: 'MIC-TRA-001',
+    frame_shape: null,
+    color: 'Gris fotosensible',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -150,6 +238,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
+    brand: 'Biofinity',
+    material: 'Hidrogel de silicona',
+    sku: 'BIO-TOR-006',
+    frame_shape: null,
+    color: 'Transparente',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   },
   {
@@ -162,6 +258,14 @@ export let MOCK_PRODUCTS: Product[] = [
     image_url: null,
     is_promo: false,
     is_featured: false,
+    client_price: null,
+    brand: 'Rayo',
+    material: 'Piel genuina',
+    sku: 'ACC-CASE-001',
+    frame_shape: null,
+    color: 'Tabaco',
+    gallery_urls: [],
+    image_alt: null,
     created_at: new Date().toISOString()
   }
 ]
@@ -375,8 +479,10 @@ export function updateMockSaleStatus(id: string, newStatus: 'Cotizacion' | 'Anti
 }
 
 export let MOCK_PROFILES = [
+  { id: 'super-1', email: 'superadmin@opticarayo.com', full_name: 'Super Administrador', role: 'super_admin', temporal_password_changed: true },
+  { id: 'owner-1', email: 'dueno@opticarayo.com', full_name: 'Ing. Hugo Ortsac', role: 'owner', temporal_password_changed: true },
   { id: 'sell-1', email: 'vendedora@opticarayo.com', full_name: 'Patricia Vendedora', role: 'seller', temporal_password_changed: true },
-  { id: 'opt-1', email: 'optometrista@opticarayo.com', full_name: 'Dr. Hugo Optometrista', role: 'dev', temporal_password_changed: true },
+  { id: 'opt-1', email: 'optometrista@opticarayo.com', full_name: 'Dr. Hugo Optometrista', role: 'optometrist', temporal_password_changed: true },
   { id: 'cust-1', email: 'carlos@gmail.com', full_name: 'Carlos Mendoza', role: 'customer', temporal_password_changed: true },
   { id: 'cust-2', email: 'sofia@gmail.com', full_name: 'Ana Sofia Gomez', role: 'customer', temporal_password_changed: true }
 ]

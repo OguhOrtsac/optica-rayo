@@ -258,6 +258,27 @@ export default function LoginPage() {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <label htmlFor="reg-confirm-password" className="block text-xs font-bold text-[#434653] uppercase tracking-wider">
+                Confirmar Contraseña *
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#737784]">
+                  <Lock className="w-4 h-4" />
+                </span>
+                <input
+                  id="reg-confirm-password"
+                  name="confirmPassword"
+                  type="password"
+                  required
+                  minLength={6}
+                  disabled={isRegisterPending}
+                  placeholder="Repite tu contraseña"
+                  className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg pl-11 pr-4 py-3.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50 min-h-[44px]"
+                />
+              </div>
+            </div>
+
             {registerState?.error && (
               <div className="bg-[#ffdad6] border border-[#ba1a1a]/30 rounded-lg p-4 flex items-center gap-3">
                 <ShieldAlert className="w-5 h-5 text-[#ba1a1a] shrink-0" />
