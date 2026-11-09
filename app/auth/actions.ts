@@ -494,6 +494,18 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
     if (!userRole || !['owner', 'dev', 'super_admin'].includes(userRole)) {
       return { error: 'No tienes permisos para modificar usuarios.' }
     }
+
+    // Protected account: the Super Admin's role never changes from this
+    // panel, and the account itself is managed only from its own profile.
+    const { data: targetProfile } = await adminClient
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+    if (targetProfile && normalizeRole(targetProfile.role as string) === 'super_admin') {
+      return { error: 'La cuenta de Super Administrador está protegida: su rol no se puede cambiar desde el panel.' }
+    }
+
     const formattedEmail = formatToEmail(data.username)
 
     // Build auth update payload
@@ -564,6 +576,16 @@ export async function adminDeleteUserAction(userId: string) {
 
     if (!userRole || !['owner', 'dev', 'super_admin'].includes(userRole)) {
       return { error: 'No tienes permisos para eliminar usuarios.' }
+    }
+
+    // Protected account: the Super Admin can never be deleted from the panel.
+    const { data: targetProfile } = await adminClient
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
+    if (targetProfile && normalizeRole(targetProfile.role as string) === 'super_admin') {
+      return { error: 'La cuenta de Super Administrador está protegida y no se puede eliminar.' }
     }
 
     // 1. Delete from Supabase Auth (on delete cascade deletes from profiles table)
