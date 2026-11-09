@@ -475,6 +475,61 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
       }
     }
 
+    // Server-side price recompute: NEVER trust the prices the browser sent.
+    // Unit prices are re-read from products / lens_materials / lens_treatments
+    // so a tampered or stale cart cannot change what the business charges.
+    {
+      const productIds = [...new Set(items.map((i: any) => i.productId).filter(Boolean))]
+      const materialIds = [...new Set(items.map((i: any) => i.lensMaterialId).filter(Boolean))]
+      const treatmentIds = [...new Set(items.flatMap((i: any) => i.treatmentIds || []))]
+      const [prodRes, matRes, treatRes] = await Promise.all([
+        productIds.length > 0
+          ? supabase.from('products').select('id, price').in('id', productIds)
+          : Promise.resolve({ data: [], error: null }),
+        materialIds.length > 0
+          ? supabase.from('lens_materials').select('id, price').in('id', materialIds)
+          : Promise.resolve({ data: [], error: null }),
+        treatmentIds.length > 0
+          ? supabase.from('lens_treatments').select('id, price').in('id', treatmentIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+      // A connection-level failure keeps the existing demo fallback alive;
+      // a missing row with a working connection is a real data problem.
+      if (prodRes.error || matRes.error || treatRes.error) {
+        throw new Error('No se pudo verificar el catálogo en la base de datos.')
+      }
+      const productPrice = new Map((prodRes.data || []).map((r: any) => [r.id, Number(r.price)]))
+      const materialPrice = new Map((matRes.data || []).map((r: any) => [r.id, Number(r.price)]))
+      const treatmentPrice = new Map((treatRes.data || []).map((r: any) => [r.id, Number(r.price)]))
+
+      for (const item of items) {
+        const qty = Number(item.quantity)
+        if (!Number.isInteger(qty) || qty < 1 || qty > 100) {
+          return { error: 'Cantidad inválida en uno de los productos del carrito.', success: null }
+        }
+        if (!productPrice.has(item.productId)) {
+          return { error: 'Uno de los productos del carrito ya no existe en el catálogo.', success: null }
+        }
+        item.price = productPrice.get(item.productId)
+        if (item.lensMaterialId) {
+          if (!materialPrice.has(item.lensMaterialId)) {
+            return { error: 'Uno de los materiales seleccionados ya no existe.', success: null }
+          }
+          item.lensMaterialPrice = materialPrice.get(item.lensMaterialId)
+        } else {
+          item.lensMaterialPrice = 0
+        }
+        let treatmentsTotal = 0
+        for (const tid of item.treatmentIds || []) {
+          if (!treatmentPrice.has(tid)) {
+            return { error: 'Uno de los tratamientos seleccionados ya no existe.', success: null }
+          }
+          treatmentsTotal += treatmentPrice.get(tid) || 0
+        }
+        item.treatmentsPrice = treatmentsTotal
+      }
+    }
+
     // Subtotal calculations including base frame + materials + treatments per item
     const subtotal = items.reduce((sum, item) => {
       const itemUnitPrice = item.price + (item.lensMaterialPrice || 0) + (item.treatmentsPrice || 0)
@@ -1004,15 +1059,32 @@ export async function registerInstallmentPaymentAction(
       throw new Error('No se encontró la venta asociada a la cuota.')
     }
 
+    // Partial payments accumulate on the installment: it is only 'paid'
+    // when the accumulated amount covers the installment amount in full.
+    const installmentAmount = Number(installment.amount) || 0
+    const alreadyPaidOnInstallment = Number((installment as any).amount_paid) || 0
+    const remainingOnInstallment = Math.max(0, installmentAmount - alreadyPaidOnInstallment)
+
+    if (!Number.isFinite(amountPaid) || amountPaid <= 0) {
+      return { success: null, error: 'El abono debe ser mayor que cero.' }
+    }
+    if (amountPaid > remainingOnInstallment + 0.01) {
+      return { success: null, error: 'El abono supera el saldo de esta cuota.' }
+    }
+
+    const newInstallmentPaid = alreadyPaidOnInstallment + amountPaid
+    const installmentSettled = newInstallmentPaid >= installmentAmount - 0.005
+
     const newPaidAmount = Number(sale.paid_amount) + amountPaid
     const newPendingBalance = Math.max(0, Number(sale.pending_balance) - amountPaid)
 
-    // 2. Update installment status
+    // 2. Update installment status (paid only when fully covered)
     const { error: updateInstError } = await supabase
       .from('payment_installments')
       .update({
-        status: 'paid',
-        payment_date: new Date().toISOString()
+        amount_paid: newInstallmentPaid,
+        status: installmentSettled ? 'paid' : 'pending',
+        payment_date: installmentSettled ? new Date().toISOString() : installment.payment_date
       })
       .eq('id', installmentId)
 
@@ -1051,15 +1123,24 @@ export async function registerInstallmentPaymentAction(
     }
 
     revalidatePath('/', 'layout')
-    return { success: '¡Pago registrado exitosamente y saldo actualizado!', error: null }
+    return {
+      success: installmentSettled
+        ? '¡Pago registrado exitosamente y saldo actualizado!'
+        : `Abono registrado. A esta cuota aún le faltan $${Math.max(0, installmentAmount - newInstallmentPaid).toFixed(2)} para liquidarse.`,
+      error: null
+    }
   } catch (err: any) {
     console.warn('registerInstallmentPaymentAction Supabase failed, falling back to mockDb:', err.message)
     
     // Fallback Mock
     const inst = mockDb.MOCK_PAYMENT_INSTALLMENTS.find(i => i.id === installmentId)
     if (inst) {
-      inst.status = 'paid'
-      inst.payment_date = new Date().toISOString()
+      const newInstPaid = (Number((inst as any).amount_paid) || 0) + amountPaid
+      ;(inst as any).amount_paid = newInstPaid
+      if (newInstPaid >= Number(inst.amount) - 0.005) {
+        inst.status = 'paid'
+        inst.payment_date = new Date().toISOString()
+      }
 
       const sale = mockDb.MOCK_SALES.find(s => s.id === inst.sale_id)
       if (sale) {

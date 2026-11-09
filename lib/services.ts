@@ -267,11 +267,19 @@ export async function getSales(): Promise<(Sale & { customer_name?: string; sell
 /**
  * Service to register a new transaction sale (Staff only).
  */
+export interface CreateSaleOptions {
+  customerId?: string | null
+  couponId?: string | null
+  discountApplied?: number
+  notes?: string
+}
+
 export async function createSale(
-  customerName: string, 
+  customerName: string,
   items: { productId: string; quantity: number }[],
   paidAmount?: number,
-  paymentMethod?: 'cash' | 'card' | 'transfer'
+  paymentMethod?: 'cash' | 'card' | 'transfer',
+  options?: CreateSaleOptions
 ): Promise<any> {
   if (isSupabaseConfigured()) {
     try {
@@ -283,9 +291,13 @@ export async function createSale(
       const priceOf = (productId: string) =>
         catalog.find(p => p.id === productId)?.price ?? 0
 
-      const total = items.reduce((acc, item) => {
+      const grossTotal = items.reduce((acc, item) => {
         return acc + priceOf(item.productId) * item.quantity
       }, 0)
+      // Coupon discount captured at the POS is part of the stored sale:
+      // the recorded total is what the customer actually owes/pays.
+      const discountApplied = Math.min(Math.max(0, options?.discountApplied || 0), grossTotal)
+      const total = grossTotal - discountApplied
 
       const finalPaidAmount = paidAmount !== undefined ? paidAmount : total
       const pendingBalance = Math.max(0, total - finalPaidAmount)
@@ -298,14 +310,27 @@ export async function createSale(
         statusVal = 'Anticipo_Pagado'
       }
 
+      // Attribute the sale to the registered customer and the signed-in
+      // seller whenever they are known (walk-in sales keep them null).
+      let sellerId: string | null = null
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        sellerId = user?.id || null
+      } catch { /* seller attribution is best effort */ }
+
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
-        .insert([{ 
+        .insert([{
+          customer_id: options?.customerId || null,
+          seller_id: sellerId,
+          coupon_id: options?.couponId || null,
+          discount_applied: discountApplied,
           total,
           paid_amount: finalPaidAmount,
           pending_balance: pendingBalance,
           payment_method: paymentMethod || 'cash',
-          status: statusVal
+          status: statusVal,
+          notes: options?.notes?.trim() || null
         }])
         .select()
         .single()
@@ -321,6 +346,27 @@ export async function createSale(
         })
 
         await supabase.from('sale_items').insert(saleItemsToInsert)
+
+        // Decrement stock for what was actually sold (grouped per product).
+        // A stock failure is logged loudly but does not erase a completed
+        // sale; the discrepancy stays visible in the error log.
+        try {
+          const qtyByProduct = new Map<string, number>()
+          for (const item of items) {
+            qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + item.quantity)
+          }
+          for (const [productId, qty] of qtyByProduct) {
+            const current = catalog.find(prod => prod.id === productId)
+            if (!current) continue
+            const { error: stockError } = await supabase
+              .from('products')
+              .update({ stock: Math.max(0, current.stock - qty) })
+              .eq('id', productId)
+            if (stockError) console.error('Stock decrement failed for', productId, stockError.message)
+          }
+        } catch (stockErr) {
+          console.error('Stock decrement failed:', stockErr)
+        }
 
         // Auto-create a review reminder for the configured period — only
         // for a sale linked to a real customer, and isolated so a reminder

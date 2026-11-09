@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useEffect, useState, useActionState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getProducts, getLensMaterials, getLensTreatments } from '@/lib/services'
+import { getCustomerById, getCustomerExams, getProducts, getLensMaterials, getLensTreatments, getCoupons } from '@/lib/services'
 import { createLinkedSaleAction, CreateSaleState } from '@/app/customers/actions'
 import {
   ArrowLeft,
@@ -52,6 +52,7 @@ export default function NewLinkedSalePage({ params }: PageProps) {
   const [products, setProducts] = useState<any[]>([])
   const [materials, setMaterials] = useState<any[]>([])
   const [treatments, setTreatments] = useState<any[]>([])
+  const [coupons, setCoupons] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   // Cart state
@@ -83,18 +84,20 @@ export default function NewLinkedSalePage({ params }: PageProps) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [custData, examsData, productsData, materialsData, treatmentsData] = await Promise.all([
+      const [custData, examsData, productsData, materialsData, treatmentsData, couponsData] = await Promise.all([
         getCustomerById(customerId),
         getCustomerExams(customerId),
         getProducts(),
         getLensMaterials(),
         getLensTreatments(),
+        getCoupons(),
       ])
       setCustomer(custData)
       setExams(examsData)
       setProducts(productsData)
       setMaterials(materialsData)
       setTreatments(treatmentsData)
+      setCoupons(couponsData)
     } catch (err) {
       console.error('Error loading sale page data:', err)
     } finally {
@@ -235,8 +238,19 @@ export default function NewLinkedSalePage({ params }: PageProps) {
       return sum + itemUnitPrice * item.quantity
     }, 0)
   }, [cart])
-  const iva = useMemo(() => subtotal * 0.16, [subtotal])
-  const total = useMemo(() => subtotal + iva, [subtotal, iva])
+  // Business rule (owner decision, 2026-11-09): catalog prices ALREADY
+  // include IVA. The screen must show exactly what the server will store:
+  // subtotal minus the coupon discount, with no tax added on top.
+  const couponDiscountPercent = useMemo(() => {
+    const code = couponCode.trim().toUpperCase()
+    if (!code) return 0
+    const matched = coupons.find(c => c.code.toUpperCase() === code)
+    return matched && matched.is_active && new Date(matched.valid_until) > new Date()
+      ? matched.discount_percent
+      : 0
+  }, [coupons, couponCode])
+  const discountAmount = useMemo(() => subtotal * (couponDiscountPercent / 100), [subtotal, couponDiscountPercent])
+  const total = useMemo(() => subtotal - discountAmount, [subtotal, discountAmount])
 
   const downPaymentNum = useMemo(() => {
     if (paymentMode === 'single') return total
@@ -499,13 +513,17 @@ export default function NewLinkedSalePage({ params }: PageProps) {
               <div className="flex justify-between text-xs text-[#434653] font-medium">
                 <span>Subtotal</span><span>{formatPrice(subtotal)}</span>
               </div>
-              <div className="flex justify-between text-xs text-[#434653] font-medium">
-                <span>IVA (16%)</span><span>{formatPrice(iva)}</span>
-              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-xs font-medium text-emerald-700">
+                  <span>Cupón {couponCode.trim().toUpperCase()} (−{couponDiscountPercent}%)</span>
+                  <span>−{formatPrice(discountAmount)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center pt-2 border-t border-[#cbd5e1] border-dashed">
                 <span className="font-bold text-sm text-[#111c2d]">Total</span>
                 <span className="font-mono text-lg font-black text-[#00357f]">{formatPrice(total)}</span>
               </div>
+              <p className="text-[10px] text-[#737784] font-medium">Precios con IVA incluido.</p>
               {paymentMode === 'installments' && cart.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-[#cbd5e1]/60 space-y-1">
                   <div className="flex justify-between text-xs text-[#434653]">
