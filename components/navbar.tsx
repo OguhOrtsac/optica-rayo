@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import MobileBottomNav from './mobile-bottom-nav'
+import ScrollNavEffect from './scroll-nav'
 import MainMenu, { type MainMenuLink } from './main-menu'
 import { dashboardHrefForRole, normalizeRole, roleLabel } from '@/lib/roles'
 
@@ -113,8 +114,9 @@ export default async function Navbar() {
 
   return (
     <>
+      <ScrollNavEffect />
       {/* Desktop Top Navbar (Hidden on mobile) */}
-      <nav className="w-full bg-[#f9f9ff] dark:bg-slate-950 border-b border-[#c3c6d5] dark:border-slate-800 sticky top-0 z-50 px-6 h-16 hidden md:block shadow-sm">
+      <nav className="site-nav w-full bg-[#f9f9ff]/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-[#c3c6d5] dark:border-slate-800 sticky top-0 z-50 px-6 h-16 hidden md:block shadow-sm">
         <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center gap-2 group">
@@ -161,7 +163,7 @@ export default async function Navbar() {
             ) : (
               <Link
                 href="/login"
-                className="bg-[#00357f] hover:bg-[#00429b] text-white font-bold text-xs px-5 py-2 rounded-full transition-all duration-300 h-9 flex items-center"
+                className="bg-[#00357f] hover:bg-[#00429b] text-white font-bold text-xs px-5 py-2 rounded-full transition-all duration-300 active:scale-95 h-9 flex items-center"
               >
                 Entrar o crear cuenta
               </Link>
@@ -171,7 +173,7 @@ export default async function Navbar() {
       </nav>
 
       {/* Mobile Top Header (Minimalist for PWA view) */}
-      <header className="relative w-full bg-[#f9f9ff]/95 dark:bg-slate-950/95 backdrop-blur border-b border-[#c3c6d5] dark:border-slate-900 sticky top-0 z-50 px-4 py-2.5 flex md:hidden justify-between items-center shadow-sm">
+      <header className="site-nav relative w-full bg-[#f9f9ff]/95 dark:bg-slate-950/95 backdrop-blur border-b border-[#c3c6d5] dark:border-slate-900 sticky top-0 z-50 px-4 py-2.5 flex md:hidden justify-between items-center shadow-sm">
         <Link href="/" className="flex items-center gap-1.5">
           <span className="text-sm font-bold tracking-tight text-[#00357f] dark:text-cyan-400">
             Óptica Rayo

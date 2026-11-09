@@ -106,6 +106,33 @@ export default function CustomerDetailPage({ params }: PageProps) {
     }).format(price)
   }
 
+  // Cambio entre dos valores de receta (actual − anterior): '=' cuando no
+  // hubo cambio, '--' cuando alguno de los dos no existe.
+  const formatDelta = (current: any, previous: any) => {
+    const parse = (v: any) => (v === null || v === undefined || v === '' ? NaN : parseFloat(v))
+    const c = parse(current)
+    const p = parse(previous)
+    if (isNaN(c) || isNaN(p)) return '--'
+    const d = Math.round((c - p) * 100) / 100
+    if (d === 0) return '='
+    return formatExamValue(d)
+  }
+
+  // Suma de partidas de una venta (producto + micas + tratamientos, por
+  // cantidad) para verificar en pantalla que el desglose cuadra con el
+  // total cobrado (antes del descuento cuando lo hubo).
+  const saleBreakdown = (sale: any) => {
+    const items = sale.sale_items || []
+    const sum = items.reduce((acc: number, it: any) => {
+      const treatments = (it.sale_item_treatments || []).reduce(
+        (a: number, t: any) => a + Number(t.price || 0), 0)
+      return acc + Number(it.quantity || 0) * (Number(it.price || 0) + Number(it.lens_material_price || 0) + treatments)
+    }, 0)
+    const hasComponents = items.some((it: any) =>
+      Number(it.lens_material_price || 0) > 0 || (it.sale_item_treatments || []).length > 0)
+    return { sum, hasComponents }
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 flex flex-col items-center justify-center space-y-4">
@@ -136,6 +163,28 @@ export default function CustomerDetailPage({ params }: PageProps) {
 
   // Calculations for total debt
   const totalPending = sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0)
+
+  // Comparativa de graduación: examen más reciente vs el anterior
+  // (getCustomerExams devuelve la lista del más nuevo al más viejo).
+  const examComparison = (() => {
+    if (exams.length < 2) return null
+    const actual = exams[0]
+    const anterior = exams[1]
+    const hasAdd = (e: any, key: string) => e[key] !== null && e[key] !== undefined && e[key] !== ''
+    const rows = [
+      { label: 'OD · Esfera', ant: formatExamValue(anterior.od_sphere), act: formatExamValue(actual.od_sphere), delta: formatDelta(actual.od_sphere, anterior.od_sphere) },
+      { label: 'OD · Cilindro', ant: formatExamValue(anterior.od_cylinder), act: formatExamValue(actual.od_cylinder), delta: formatDelta(actual.od_cylinder, anterior.od_cylinder) },
+      { label: 'OI · Esfera', ant: formatExamValue(anterior.oi_sphere), act: formatExamValue(actual.oi_sphere), delta: formatDelta(actual.oi_sphere, anterior.oi_sphere) },
+      { label: 'OI · Cilindro', ant: formatExamValue(anterior.oi_cylinder), act: formatExamValue(actual.oi_cylinder), delta: formatDelta(actual.oi_cylinder, anterior.oi_cylinder) },
+    ]
+    if (hasAdd(actual, 'od_add') || hasAdd(anterior, 'od_add')) {
+      rows.push({ label: 'OD · Adición', ant: formatAddValue(anterior.od_add), act: formatAddValue(actual.od_add), delta: formatDelta(actual.od_add, anterior.od_add) })
+    }
+    if (hasAdd(actual, 'oi_add') || hasAdd(anterior, 'oi_add')) {
+      rows.push({ label: 'OI · Adición', ant: formatAddValue(anterior.oi_add), act: formatAddValue(actual.oi_add), delta: formatDelta(actual.oi_add, anterior.oi_add) })
+    }
+    return { actual, anterior, rows }
+  })()
 
   return (
     <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-4xl mx-auto pb-24 md:pb-8 text-left">
@@ -351,6 +400,42 @@ export default function CustomerDetailPage({ params }: PageProps) {
               </div>
             ) : (
               <div className="space-y-6">
+                {/* Comparativa: examen anterior vs actual */}
+                {examComparison && (
+                  <div className="bg-white border border-[#cbd5e1] rounded-2xl overflow-hidden shadow-sm">
+                    <div className="bg-[#f9f9ff] border-b border-[#cbd5e1] px-6 py-4">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[#00357f]">
+                        Comparativa de Graduación
+                      </span>
+                      <h4 className="text-xs font-bold text-[#111c2d]">
+                        Examen anterior vs actual
+                      </h4>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-left text-[#737784] border-b border-[#cbd5e1]/40">
+                            <th className="px-6 py-3 font-bold uppercase text-[9px] tracking-wider">Concepto</th>
+                            <th className="px-3 py-3 font-bold uppercase text-[9px] tracking-wider">Anterior ({formatDate(examComparison.anterior.exam_date)})</th>
+                            <th className="px-3 py-3 font-bold uppercase text-[9px] tracking-wider">Actual ({formatDate(examComparison.actual.exam_date)})</th>
+                            <th className="px-6 py-3 font-bold uppercase text-[9px] tracking-wider text-right">Cambio (Δ)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {examComparison.rows.map(row => (
+                            <tr key={row.label} className="border-b border-[#cbd5e1]/20 last:border-0">
+                              <td className="px-6 py-2.5 font-bold text-[#111c2d]">{row.label}</td>
+                              <td className="px-3 py-2.5 font-mono text-[#434653]">{row.ant}</td>
+                              <td className="px-3 py-2.5 font-mono font-bold text-[#00357f]">{row.act}</td>
+                              <td className="px-6 py-2.5 font-mono font-bold text-right text-[#111c2d]">{row.delta}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 {exams.map((exam, i) => (
                   <div key={exam.id} className="bg-white border border-[#cbd5e1] rounded-2xl overflow-hidden shadow-sm">
                     {/* Header del examen */}
@@ -507,22 +592,61 @@ export default function CustomerDetailPage({ params }: PageProps) {
                       </div>
                     </div>
 
-                    {/* Items de la venta */}
+                    {/* Items de la venta (con desglose de micas y tratamientos) */}
                     <div className="space-y-2 text-left">
                       <span className="text-[9px] font-black text-[#737784] uppercase tracking-wider block">Productos</span>
                       <div className="space-y-1.5">
-                        {sale.sale_items?.map((item: any, idx: number) => (
-                          <div key={idx} className="flex justify-between items-center text-xs bg-[#f9f9ff] px-3.5 py-2.5 rounded-xl border border-[#cbd5e1]/40">
-                            <div>
-                              <span className="font-bold text-[#111c2d]">{item.product?.name || 'Producto'}</span>
-                              <span className="text-[9px] text-[#737784] ml-2 font-bold uppercase">({item.product?.category === 'frames' ? 'Armazón' : item.product?.category === 'lenses' ? 'Micas' : item.product?.category === 'contact_lenses' ? 'Contacto' : 'Accesorio'})</span>
+                        {sale.sale_items?.map((item: any, idx: number) => {
+                          const treatments = item.sale_item_treatments || []
+                          const materialPrice = Number(item.lens_material_price || 0)
+                          const showMaterial = !!item.lens_material?.name && materialPrice > 0
+                          return (
+                            <div key={idx} className="text-xs bg-[#f9f9ff] px-3.5 py-2.5 rounded-xl border border-[#cbd5e1]/40 space-y-1.5">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <span className="font-bold text-[#111c2d]">{item.product?.name || 'Producto'}</span>
+                                  <span className="text-[9px] text-[#737784] ml-2 font-bold uppercase">({item.product?.category === 'frames' ? 'Armazón' : item.product?.category === 'lenses' ? 'Micas' : item.product?.category === 'contact_lenses' ? 'Contacto' : 'Accesorio'})</span>
+                                </div>
+                                <span className="text-[#434653] font-medium">
+                                  {item.quantity} x <strong className="font-mono text-[#00357f]">{formatPrice(item.price)}</strong>
+                                </span>
+                              </div>
+                              {(showMaterial || treatments.length > 0) && (
+                                <div className="border-t border-[#cbd5e1]/40 pt-1.5 space-y-1">
+                                  {showMaterial && (
+                                    <div className="flex justify-between items-center text-[11px] pl-3">
+                                      <span className="text-[#434653] font-medium">Micas: <strong className="text-[#111c2d]">{item.lens_material.name}</strong></span>
+                                      <span className="font-mono text-[#434653]">
+                                        {item.quantity > 1 ? `${item.quantity} x ${formatPrice(materialPrice)} = ` : ''}{formatPrice(materialPrice * item.quantity)}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {treatments.map((t: any, ti: number) => (
+                                    <div key={ti} className="flex justify-between items-center text-[11px] pl-3">
+                                      <span className="text-[#434653] font-medium">Tratamiento: <strong className="text-[#111c2d]">{t.treatment?.name || 'Tratamiento'}</strong></span>
+                                      <span className="font-mono text-[#434653]">
+                                        {item.quantity > 1 ? `${item.quantity} x ${formatPrice(Number(t.price || 0))} = ` : ''}{formatPrice(Number(t.price || 0) * item.quantity)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            <span className="text-[#434653] font-medium">
-                              {item.quantity} x <strong className="font-mono text-[#00357f]">{formatPrice(item.price)}</strong>
-                            </span>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
+                      {saleBreakdown(sale).hasComponents && (
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 justify-between items-center text-[11px] bg-[#dee8ff]/30 border border-[#cbd5e1]/40 rounded-xl px-3.5 py-2">
+                          <span className="font-bold text-[#434653]">
+                            Suma del desglose: <span className="font-mono text-[#00357f]">{formatPrice(saleBreakdown(sale).sum)}</span>
+                          </span>
+                          {Number(sale.discount_applied || 0) > 0 && (
+                            <span className="font-bold text-[#005c3e]">
+                              − Descuento {formatPrice(Number(sale.discount_applied))} = <span className="font-mono">{formatPrice(sale.total)}</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Cupones y notas adicionales */}

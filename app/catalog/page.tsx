@@ -30,7 +30,9 @@ import {
   Upload,
   CheckCircle,
   TrendingDown,
-  Sparkles
+  Sparkles,
+  Glasses,
+  LayoutGrid
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -137,11 +139,11 @@ function CatalogContent() {
 
   // Categories definitions
   const categories = [
-    { value: 'all', label: 'Todos' },
-    { value: 'frames', label: 'Armazones' },
-    { value: 'lenses', label: 'Micas' },
-    { value: 'contact_lenses', label: 'Lentes de Contacto' },
-    { value: 'accessories', label: 'Accesorios' }
+    { value: 'all', label: 'Todos', icon: LayoutGrid },
+    { value: 'frames', label: 'Armazones', icon: Glasses },
+    { value: 'lenses', label: 'Micas', icon: Layers },
+    { value: 'contact_lenses', label: 'Lentes de Contacto', icon: Eye },
+    { value: 'accessories', label: 'Accesorios', icon: Sparkles }
   ]
 
   // Face shape definitions
@@ -423,16 +425,78 @@ function CatalogContent() {
         }
       `}</style>
 
-      {/* Header title */}
-      <div className="flex justify-between items-center border-b border-[#e7eeff] pb-5">
-        <div>
-          <h1 className="text-[1.65rem] leading-tight sm:text-3xl md:text-4xl font-black tracking-tight flex items-center gap-2">
-            <span className="animate-gradient-text">Estilo & Claridad Para Tu Mirada</span>
-          </h1>
-          <p className="text-xs md:text-sm text-[#434653] mt-2 font-bold uppercase tracking-wider">
-            Encuentra tus armazones favoritos y cotiza cristales con nuestro asistente digital.
+      {/* HERO: brand band with headline and protagonist search */}
+      <section className="anim-fade-up relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] text-white px-5 py-7 sm:px-8 sm:py-9 shadow-lg shadow-[#00357f]/20">
+        {/* Decorative light glows */}
+        <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 blur-2xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
+
+        <div className="relative space-y-4 max-w-2xl">
+          <p className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] bg-white/15 border border-white/20 rounded-full px-3 py-1">
+            <Sparkles className="w-3.5 h-3.5" /> Óptica Rayo · Catálogo en línea
           </p>
+          <h1 className="text-3xl sm:text-4xl md:text-[2.75rem] font-black tracking-tight leading-[1.05]">
+            Ve el mundo con claridad
+          </h1>
+          <p className="text-sm sm:text-base text-white/85 font-medium leading-relaxed max-w-xl">
+            Encuentra tus armazones favoritos y cotiza tus micas con nuestro asistente digital: precios claros y modelos para cada rostro.
+          </p>
+
+          {/* Protagonist search: drives the same `search` filter as the results bar */}
+          <div className="relative max-w-xl pt-1">
+            <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#00357f]/50 pointer-events-none" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => updateFilter('search', e.target.value)}
+              placeholder="Busca tu próximo armazón: modelo, marca, color…"
+              aria-label="Buscar en el catálogo"
+              className="w-full rounded-2xl bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-lg shadow-black/10 outline-none focus:ring-4 focus:ring-white/40 transition min-h-[52px]"
+            />
+          </div>
+
+          {!loading && products.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1 text-[10px] font-black uppercase tracking-wider">
+              <span className="bg-white/15 border border-white/15 rounded-full px-3 py-1.5">{products.length} modelos</span>
+              {promoProducts.length > 0 && (
+                <span className="bg-[#49da9f]/25 border border-[#49da9f]/40 rounded-full px-3 py-1.5">{promoProducts.length} destacados y promos</span>
+              )}
+              <span className="bg-white/15 border border-white/15 rounded-full px-3 py-1.5">Examen de la vista gratis</span>
+            </div>
+          )}
         </div>
+      </section>
+
+      {/* Quick category pills: icon + count, same multi-select filter as the panel */}
+      <div className="anim-fade-up flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:flex-wrap sm:overflow-visible" role="group" aria-label="Categorías del catálogo">
+        {categories.map(cat => {
+          const Icon = cat.icon
+          const isSelected = cat.value === 'all'
+            ? selectedCategories.length === 0
+            : selectedCategories.includes(cat.value)
+          const count = cat.value === 'all'
+            ? products.length
+            : (categoryCounts[cat.value] || 0)
+          return (
+            <button
+              key={cat.value}
+              type="button"
+              onClick={() => toggleCategoryFilter(cat.value)}
+              aria-pressed={isSelected}
+              className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-xs font-bold min-h-[44px] transition-all duration-200 active:scale-95 cursor-pointer ${
+                isSelected
+                  ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
+                  : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{cat.label}</span>
+              <span className={`text-[10px] font-black rounded-full px-1.5 py-0.5 ${isSelected ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>
+                {count}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       {/* Member pricing banner */}
@@ -471,7 +535,7 @@ function CatalogContent() {
                         <span className="bg-[#dee8ff] text-[#00357f] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded">
                           {p.category === 'frames' ? 'Armazón' : 'Solar'}
                         </span>
-                        <span className="bg-[#ffdad6] text-[#ba1a1a] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded flex items-center gap-1">
+                        <span className="anim-pulse-soft bg-[#ffdad6] text-[#ba1a1a] text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded flex items-center gap-1">
                           <Percent className="w-3 h-3" /> Especial
                         </span>
                       </div>
@@ -499,7 +563,7 @@ function CatalogContent() {
                           href={getWhatsAppLink(p)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs px-5 py-3 rounded-lg transition-colors shadow-sm flex items-center gap-2 cursor-pointer"
+                          className="bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs px-5 py-3 rounded-lg transition-all active:scale-95 shadow-sm flex items-center gap-2 cursor-pointer"
                         >
                           <Phone className="w-4 h-4" />
                           Pedir por WhatsApp
@@ -531,14 +595,14 @@ function CatalogContent() {
           <button
             onClick={scrollPrev}
             disabled={!prevBtnEnabled}
-            className="absolute left-[-15px] top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm z-20 cursor-pointer"
+            className="absolute left-[-15px] top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm z-20 cursor-pointer"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={scrollNext}
             disabled={!nextBtnEnabled}
-            className="absolute right-[-15px] top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm z-20 cursor-pointer"
+            className="absolute right-[-15px] top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm z-20 cursor-pointer"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -599,7 +663,7 @@ function CatalogContent() {
                             key={cat.value}
                             type="button"
                             onClick={() => toggleCategoryFilter(cat.value)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 cursor-pointer min-h-[38px] ${
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer min-h-[38px] ${
                               isSelected
                                 ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f] shadow-sm scale-102 font-black'
                                 : 'bg-[#f0f3ff] border-[#cbd5e1]/40 text-[#434653] hover:bg-[#dee8ff]/30 hover:border-[#cbd5e1]'
@@ -626,7 +690,7 @@ function CatalogContent() {
                             <button
                               key={shape.value}
                               onClick={() => updateFilter('faceShape', shape.value)}
-                              className={`px-3 py-2 rounded-lg text-[10px] font-bold border text-center transition-colors cursor-pointer min-h-[38px] uppercase tracking-wider ${
+                              className={`px-3 py-2 rounded-lg text-[10px] font-bold border text-center transition-all active:scale-95 cursor-pointer min-h-[38px] uppercase tracking-wider ${
                                 isSelected
                                   ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f]'
                                   : 'bg-[#f0f3ff] border-[#cbd5e1]/40 text-[#434653] hover:bg-[#dee8ff]/30'
@@ -750,9 +814,23 @@ function CatalogContent() {
 
           {/* Results display */}
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-4">
-              <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
-              <p className="text-xs text-[#737784] font-bold">Cargando catálogo...</p>
+            <div
+              className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
+              role="status"
+              aria-label="Cargando catálogo"
+            >
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="rounded-3xl border border-[#cbd5e1]/60 bg-white p-3 sm:p-4 space-y-3 shadow-sm">
+                  <div className="skeleton-shimmer w-full aspect-[4/3] rounded-2xl" />
+                  <div className="skeleton-shimmer h-3 rounded-full w-2/3" />
+                  <div className="skeleton-shimmer h-3 rounded-full w-1/2" />
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="skeleton-shimmer h-4 rounded-full w-1/3" />
+                    <div className="skeleton-shimmer h-8 rounded-xl w-14" />
+                  </div>
+                </div>
+              ))}
+              <span className="sr-only">Cargando catálogo...</span>
             </div>
           ) : processedProducts.length === 0 ? (
             <div className="text-center py-20 bg-white border border-[#cbd5e1] rounded-2xl space-y-3 shadow-sm p-6">
@@ -776,20 +854,19 @@ function CatalogContent() {
               }
             >
               <AnimatePresence mode="popLayout">
-                {processedProducts.map(p => {
+                {processedProducts.map((p, index) => {
                   const isFaved = wishlist.includes(p.id)
                   const isCriticalStock = p.stock <= 3 && p.stock > 0
                   return (
                     <motion.div
                       layout
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ duration: 0.3 }}
                       whileHover={{ y: -4 }}
                       key={p.id}
                       onClick={() => handleOpenDetailModal(p)}
-                      className={`cursor-pointer bg-white/95 border border-[#cbd5e1] rounded-3xl p-3 sm:p-4 flex flex-col justify-between gap-4 transition-all duration-300 shadow-sm hover:-translate-y-1 hover:border-[#00357f]/35 hover:shadow-[0_20px_45px_-20px_rgba(0,53,127,0.45)] hover:ring-4 hover:ring-[#00357f]/10 group relative overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
+                      style={{ '--enter-delay': `${Math.min(index, 11) * 45}ms` } as React.CSSProperties}
+                      className={`anim-stagger-item cursor-pointer bg-white/95 border border-[#cbd5e1] rounded-3xl p-3 sm:p-4 flex flex-col justify-between gap-4 transition-all duration-300 shadow-sm hover:-translate-y-1 hover:border-[#00357f]/35 hover:shadow-[0_20px_45px_-20px_rgba(0,53,127,0.45)] hover:ring-4 hover:ring-[#00357f]/10 group relative overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
                         layoutMode === 'list' ? 'sm:flex-row sm:items-center' : ''
                       }`}
                     >
@@ -797,7 +874,7 @@ function CatalogContent() {
                       <button
                         type="button"
                         onClick={(e) => handleToggleWishlist(p.id, e)}
-                        className="absolute top-2.5 right-2.5 z-30 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white/95 border border-[#cbd5e1] text-[#737784] hover:text-rose-600 hover:shadow-[0_0_0_5px_rgba(244,63,94,0.10)] transition cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                        className="absolute top-2.5 right-2.5 z-30 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white/95 border border-[#cbd5e1] text-[#737784] hover:text-rose-600 hover:shadow-[0_0_0_5px_rgba(244,63,94,0.10)] transition active:scale-90 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                         title={isFaved ? 'Quitar de favoritos' : 'Añadir a favoritos'}
                       >
                         <Heart className={`w-4 h-4 ${isFaved ? 'fill-rose-500 text-rose-500' : 'text-[#737784]'}`} />
@@ -812,7 +889,7 @@ function CatalogContent() {
 
                       {/* Promotion ribbon */}
                       {p.is_promo && !isCriticalStock && (
-                        <div className="absolute top-3 left-3 z-20 bg-[#49da9f]/20 text-[#00422b] text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-[#49da9f]/30">
+                        <div className="anim-pulse-soft absolute top-3 left-3 z-20 bg-gradient-to-r from-emerald-500 to-[#2fbf71] text-white text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded shadow-md shadow-emerald-500/30">
                           Promo
                         </div>
                       )}
@@ -827,7 +904,7 @@ function CatalogContent() {
                               src={getProductImages(p)[0]}
                               alt={getProductImageAlt(p)}
                               loading="lazy"
-                              className="w-full h-full object-contain p-2.5 transition duration-500 group-hover:scale-[1.07] group-hover:brightness-105"
+                              className="w-full h-full object-contain p-2.5 transition duration-500 group-hover:scale-[1.07] group-active:scale-[1.07] group-hover:brightness-105"
                             />
                             <div className="absolute inset-0 bg-[#00357f]/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                               <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#00357f]/90 px-2.5 py-1 rounded shadow-sm">
@@ -886,14 +963,19 @@ function CatalogContent() {
                           </p>
                           <p className="font-black text-[#00357f] text-sm font-mono">{formatPrice(priceOf(p))}</p>
                           {isClient && priceOf(p) < p.price && (
-                            <p className="text-[9px] text-[#737784] line-through font-mono">{formatPrice(p.price)}</p>
+                            <p className="flex items-center gap-1.5 text-[9px] text-[#737784] font-mono">
+                              <span className="line-through">{formatPrice(p.price)}</span>
+                              <span className="bg-[#49da9f]/20 text-[#00422b] font-sans font-black px-1.5 py-px rounded-full">
+                                -{Math.round((1 - priceOf(p) / p.price) * 100)}%
+                              </span>
+                            </p>
                           )}
                         </div>
 
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleOpenDetailModal(p); }}
-                          className="flex min-h-10 items-center justify-center gap-1.5 bg-[#dee8ff] hover:bg-[#c9d8ff] text-[#00357f] font-bold text-[11px] px-4 py-2 rounded-xl transition-all cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                          className="flex min-h-10 items-center justify-center gap-1.5 bg-[#dee8ff] hover:bg-[#c9d8ff] text-[#00357f] font-bold text-[11px] px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>Ver</span>
@@ -1182,7 +1264,7 @@ function CatalogContent() {
                       <button
                         type="button"
                         onClick={() => setWizardStep((wizardStep + 1) as any)}
-                        className="ml-auto text-xs font-bold text-white bg-[#00357f] hover:bg-[#004aad] px-5 py-2 rounded-lg cursor-pointer transition-colors"
+                        className="ml-auto text-xs font-bold text-white bg-[#00357f] hover:bg-[#004aad] px-5 py-2 rounded-lg cursor-pointer transition-all active:scale-95"
                       >
                         Siguiente
                       </button>
@@ -1222,7 +1304,7 @@ function CatalogContent() {
                 <button
                   type="button"
                   onClick={() => setSelectedProduct(null)}
-                  className="min-h-12 flex-1 text-xs font-bold text-[#737784] hover:bg-[#dee8ff] py-3 rounded-xl border border-[#cbd5e1] cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                  className="min-h-12 flex-1 text-xs font-bold text-[#737784] hover:bg-[#dee8ff] py-3 rounded-xl border border-[#cbd5e1] cursor-pointer transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                 >
                   Cerrar
                 </button>
@@ -1230,7 +1312,7 @@ function CatalogContent() {
                   href={getWhatsAppLink(selectedProduct)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="min-h-12 flex-1 flex items-center justify-center gap-2 bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs py-3 rounded-xl shadow-sm cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                  className="min-h-12 flex-1 flex items-center justify-center gap-2 bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113] font-bold text-xs py-3 rounded-xl shadow-sm cursor-pointer transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
                 >
                   <Phone className="w-4 h-4 text-[#002113] shrink-0" />
                   {selectedProduct.category === 'frames' && selectedGraduation !== 'none' ? 'Comprar Lentes' : 'Consultar Disponibilidad'}

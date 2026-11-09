@@ -69,7 +69,7 @@ export default function MainMenu({ links, isAuthenticated, displayName, initials
         aria-expanded={open}
         aria-controls="menu-principal-movil"
         aria-label={open ? 'Cerrar menú principal' : 'Abrir menú principal'}
-        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[#cbd5e1] bg-white text-[#00357f] shadow-sm transition hover:bg-[#dee8ff]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
+        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[#cbd5e1] bg-white text-[#00357f] shadow-sm transition hover:bg-[#dee8ff]/50 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
       >
         {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </button>
@@ -98,7 +98,7 @@ export default function MainMenu({ links, isAuthenticated, displayName, initials
                   className={`flex min-h-12 items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
                     active
                       ? 'bg-[#dee8ff] text-[#00357f]'
-                      : 'text-[#434653] hover:bg-[#f0f3ff] hover:text-[#00357f]'
+                      : 'text-[#434653] hover:bg-[#f0f3ff] active:bg-[#dee8ff]/70 hover:text-[#00357f]'
                   }`}
                 >
                   <Icon className="h-5 w-5 shrink-0" />
@@ -122,7 +122,7 @@ export default function MainMenu({ links, isAuthenticated, displayName, initials
               <div className="mt-2 border-t border-[#e7eeff] p-1 pt-3">
                 <Link
                   href="/login"
-                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#00357f] px-3 text-sm font-bold text-white transition hover:bg-[#004aad] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#00357f] px-3 text-sm font-bold text-white transition hover:bg-[#004aad] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
                 >
                   <LogIn className="h-4 w-4" /> Entrar o crear cuenta
                 </Link>

@@ -101,7 +101,7 @@ export default function ReminderTray() {
           <button
             onClick={handleSaveConfig}
             disabled={saving}
-            className="ml-auto flex items-center gap-1.5 bg-[#00357f] hover:bg-[#004aad] text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition-colors disabled:opacity-60 cursor-pointer"
+            className="ml-auto flex items-center gap-1.5 bg-[#00357f] hover:bg-[#004aad] text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
           >
             <Save className="w-3.5 h-3.5" /> {saving ? 'Guardando…' : 'Guardar'}
           </button>
@@ -156,15 +156,15 @@ export default function ReminderTray() {
                     href={waUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[10px] font-bold text-white transition-colors ${
-                      waNumber ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer' : 'bg-emerald-600/50 cursor-not-allowed'
+                    className={`flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[10px] font-bold text-white transition-all ${
+                      waNumber ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 cursor-pointer' : 'bg-emerald-600/50 cursor-not-allowed'
                     }`}
                   >
                     <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
                   </a>
                   <button
                     onClick={() => handleContacted(r)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#cbd5e1] hover:bg-[#dee8ff]/40 text-[#00357f] text-[10px] font-bold transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#cbd5e1] hover:bg-[#dee8ff]/40 text-[#00357f] text-[10px] font-bold transition-all active:scale-95 cursor-pointer"
                   >
                     <CheckCheck className="w-3.5 h-3.5" /> Ya le escribí
                   </button>

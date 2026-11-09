@@ -4,8 +4,9 @@ import * as React from 'react'
 import { useEffect, useState, useActionState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getProducts, getLensMaterials, getLensTreatments, getCoupons } from '@/lib/services'
+import { getCustomerById, getCustomerExams, getProducts, getLensMaterials, getLensTreatments, getCoupons, getMemberDiscountPercent } from '@/lib/services'
 import { createLinkedSaleAction, CreateSaleState } from '@/app/customers/actions'
+import { effectiveClientPrice } from '@/lib/pricing'
 import {
   ArrowLeft,
   ShoppingCart,
@@ -53,6 +54,7 @@ export default function NewLinkedSalePage({ params }: PageProps) {
   const [materials, setMaterials] = useState<any[]>([])
   const [treatments, setTreatments] = useState<any[]>([])
   const [coupons, setCoupons] = useState<any[]>([])
+  const [memberPct, setMemberPct] = useState(0)
   const [loading, setLoading] = useState(true)
 
   // Cart state
@@ -84,15 +86,17 @@ export default function NewLinkedSalePage({ params }: PageProps) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [custData, examsData, productsData, materialsData, treatmentsData, couponsData] = await Promise.all([
+      const [custData, examsData, productsData, materialsData, treatmentsData, couponsData, memberPctData] = await Promise.all([
         getCustomerById(customerId),
         getCustomerExams(customerId),
         getProducts(),
         getLensMaterials(),
         getLensTreatments(),
         getCoupons(),
+        getMemberDiscountPercent(),
       ])
       setCustomer(custData)
+      setMemberPct(memberPctData)
       setExams(examsData)
       setProducts(productsData)
       setMaterials(materialsData)
@@ -114,6 +118,16 @@ export default function NewLinkedSalePage({ params }: PageProps) {
     }
   }, [state?.success, customerId, router])
 
+  // Member pricing: this sale belongs to a CRM customer, so when their
+  // profile role is 'customer' the product price is the client price —
+  // the server action recomputes with exactly this rule, so the screen
+  // total and the stored total stay identical.
+  const buyerIsCustomer = customer?.role === 'customer'
+  const priceFor = (product: any) =>
+    buyerIsCustomer
+      ? effectiveClientPrice(product.price, product.client_price, memberPct)
+      : product.price
+
   // Cart operations
   const addToCart = (product: any) => {
     setCart(prev => {
@@ -126,7 +140,7 @@ export default function NewLinkedSalePage({ params }: PageProps) {
       return [...prev, {
         productId: product.id,
         name: product.name,
-        price: product.price,
+        price: priceFor(product),
         quantity: 1,
         category: product.category,
         lensMaterialId: '',
@@ -524,6 +538,9 @@ export default function NewLinkedSalePage({ params }: PageProps) {
                 <span className="font-mono text-lg font-black text-[#00357f]">{formatPrice(total)}</span>
               </div>
               <p className="text-[10px] text-[#737784] font-medium">Precios con IVA incluido.</p>
+              {buyerIsCustomer && (
+                <p className="text-[10px] text-[#005c3e] font-bold">Precio de cliente aplicado en los productos (materiales y tratamientos a precio de lista).</p>
+              )}
               {paymentMode === 'installments' && cart.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-[#cbd5e1]/60 space-y-1">
                   <div className="flex justify-between text-xs text-[#434653]">
@@ -583,7 +600,12 @@ export default function NewLinkedSalePage({ params }: PageProps) {
                         <p className="text-[10px] text-[#737784] line-clamp-1 mt-1">{p.description || 'Sin descripción'}</p>
                       </div>
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#cbd5e1]/40">
-                        <span className="font-mono font-bold text-xs text-[#111c2d]">{formatPrice(p.price)}</span>
+                        <span className="font-mono font-bold text-xs text-[#111c2d]">
+                          {formatPrice(priceFor(p))}
+                          {buyerIsCustomer && priceFor(p) !== p.price && (
+                            <span className="ml-1.5 line-through text-[#737784] font-medium">{formatPrice(p.price)}</span>
+                          )}
+                        </span>
                         <button type="button" onClick={() => addToCart(p)}
                           className="bg-[#00357f] hover:bg-[#004aad] text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1">
                           <Plus className="w-3 h-3" /> Agregar

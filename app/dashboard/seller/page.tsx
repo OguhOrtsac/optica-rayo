@@ -8,8 +8,10 @@ import {
   searchCustomers, 
   getCoupons, 
   getSales, 
-  updateSaleStatus 
+  updateSaleStatus,
+  getMemberDiscountPercent
 } from '@/lib/services'
+import { effectiveClientPrice } from '@/lib/pricing'
 import { Database } from '@/types/database.types'
 import { 
   Search, 
@@ -40,6 +42,7 @@ interface CustomerProfile {
   id: string
   full_name: string
   email: string
+  role?: string | null
   customer_profiles?: {
     phone: string | null
   } | null
@@ -50,6 +53,7 @@ export default function SellerDashboard() {
   const [reminders, setReminders] = useState<(Reminder & { customer_name?: string })[]>([])
   const [customers, setCustomers] = useState<CustomerProfile[]>([])
   const [coupons, setCoupons] = useState<Coupon[]>([])
+  const [memberDiscount, setMemberDiscount] = useState(0)
   const [sales, setSales] = useState<(Sale & { customer_name?: string; seller_name?: string })[]>([])
   
   const [loading, setLoading] = useState(true)
@@ -84,13 +88,15 @@ export default function SellerDashboard() {
 
   const loadAllData = async () => {
     try {
-      const [productsData, remindersData, customersData, couponsData, salesData] = await Promise.all([
+      const [productsData, remindersData, customersData, couponsData, salesData, memberPctData] = await Promise.all([
         getProducts(),
         getReminders(),
         searchCustomers(''),
         getCoupons(),
-        getSales()
+        getSales(),
+        getMemberDiscountPercent()
       ])
+      setMemberDiscount(memberPctData)
       setProducts(productsData)
       setReminders(remindersData)
       setCustomers(customersData)
@@ -169,8 +175,17 @@ export default function SellerDashboard() {
     }
   }
 
+  // Member pricing at the counter: when the selected buyer is a registered
+  // customer (profile role 'customer'), the unit price is the client price
+  // (special client_price, else the general member discount). createSale
+  // recomputes with exactly this rule, so screen and stored totals match.
+  // A typed-in walk-in name (no selected profile) keeps visitor prices.
+  const isClientBuyer = selectedCustomer?.role === 'customer'
+  const unitPriceOf = (p: Product) =>
+    isClientBuyer ? effectiveClientPrice(p.price, p.client_price, memberDiscount) : p.price
+
   // Real-time mathematics
-  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0), [cart])
+  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + (unitPriceOf(item.product) * item.quantity), 0), [cart, isClientBuyer, memberDiscount])
   
   // Validate and apply coupon
   const handleApplyCoupon = (e: React.FormEvent) => {
@@ -434,8 +449,13 @@ export default function SellerDashboard() {
                               )}
                             </div>
                             <div className="mt-4 flex justify-between items-center w-full pt-2 border-t border-[#cbd5e1]/40">
-                              <span className="text-[9px] text-[#737784] uppercase font-bold">Precio</span>
-                              <span className="text-xs font-black text-[#00357f] font-mono">{formatPrice(p.price)}</span>
+                              <span className="text-[9px] text-[#737784] uppercase font-bold">{isClientBuyer && unitPriceOf(p) !== p.price ? 'Precio cliente' : 'Precio'}</span>
+                              <span className="text-xs font-black text-[#00357f] font-mono">
+                                {formatPrice(unitPriceOf(p))}
+                                {isClientBuyer && unitPriceOf(p) !== p.price && (
+                                  <span className="ml-1.5 line-through text-[#737784] font-medium">{formatPrice(p.price)}</span>
+                                )}
+                              </span>
                             </div>
                           </button>
                         ))
@@ -469,7 +489,7 @@ export default function SellerDashboard() {
                             <div key={item.product.id} className="flex justify-between items-center bg-[#f9f9ff] border border-[#cbd5e1]/30 rounded-xl p-3 text-xs">
                               <div className="space-y-0.5 max-w-[130px] text-left">
                                 <h4 className="font-bold text-[#111c2d] truncate">{item.product.name}</h4>
-                                <p className="text-[10px] text-[#737784] font-mono">{formatPrice(item.product.price)}</p>
+                                <p className="text-[10px] text-[#737784] font-mono">{formatPrice(unitPriceOf(item.product))}</p>
                               </div>
                               
                               <div className="flex items-center gap-1">
@@ -491,7 +511,7 @@ export default function SellerDashboard() {
                               </div>
 
                               <span className="font-bold text-[#00357f] font-mono text-right min-w-[70px]">
-                                {formatPrice(item.product.price * item.quantity)}
+                                {formatPrice(unitPriceOf(item.product) * item.quantity)}
                               </span>
                             </div>
                           ))}
@@ -554,6 +574,12 @@ export default function SellerDashboard() {
                           </div>
                         )}
                       </div>
+
+                      {isClientBuyer && (
+                        <p className="text-[10px] font-bold text-[#005c3e] bg-[#49da9f]/10 border border-[#49da9f]/30 rounded-lg px-3 py-2 text-left">
+                          Cliente registrado: se aplica su precio de cliente en esta venta.
+                        </p>
+                      )}
 
                       {/* Apply Coupon */}
                       <form onSubmit={handleApplyCoupon} className="flex gap-2">

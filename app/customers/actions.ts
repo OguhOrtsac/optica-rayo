@@ -6,6 +6,7 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
 import * as mockDb from '@/lib/mocks'
 import { addMonthsISO, DEFAULT_REMINDER_MONTHS, REMINDER_MONTHS_KEY } from '@/lib/reminder-config'
+import { effectiveClientPrice, MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT } from '@/lib/pricing'
 
 /**
  * Reads the configured review-reminder period (months) from app_settings.
@@ -26,6 +27,27 @@ async function reminderMonthsServer(client?: any): Promise<number> {
     }
   }
   return DEFAULT_REMINDER_MONTHS
+}
+
+/**
+ * Reads the general member discount percent from app_settings (server side).
+ * Falls back to the default (20%) when unset or unreadable.
+ */
+async function memberDiscountServer(client?: any): Promise<number> {
+  if (client) {
+    try {
+      const { data } = await client
+        .from('app_settings')
+        .select('value')
+        .eq('key', MEMBER_DISCOUNT_KEY)
+        .single()
+      const n = parseFloat(data?.value ?? '')
+      if (Number.isFinite(n) && n >= 0 && n <= 100) return n
+    } catch {
+      // use default below
+    }
+  }
+  return DEFAULT_MEMBER_DISCOUNT_PERCENT
 }
 
 export interface RegisterCustomerState {
@@ -492,7 +514,7 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
       const treatmentIds = [...new Set(items.flatMap((i: any) => i.treatmentIds || []))]
       const [prodRes, matRes, treatRes] = await Promise.all([
         productIds.length > 0
-          ? supabase.from('products').select('id, price').in('id', productIds)
+          ? supabase.from('products').select('id, price, client_price').in('id', productIds)
           : Promise.resolve({ data: [], error: null }),
         materialIds.length > 0
           ? supabase.from('lens_materials').select('id, price').in('id', materialIds)
@@ -507,8 +529,25 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
         throw new Error('No se pudo verificar el catálogo en la base de datos.')
       }
       const productPrice = new Map((prodRes.data || []).map((r: any) => [r.id, Number(r.price)]))
+      const productClientPrice = new Map((prodRes.data || []).map((r: any) => [r.id, r.client_price != null ? Number(r.client_price) : null]))
       const materialPrice = new Map((matRes.data || []).map((r: any) => [r.id, Number(r.price)]))
       const treatmentPrice = new Map((treatRes.data || []).map((r: any) => [r.id, Number(r.price)]))
+
+      // Member pricing: a linked sale always belongs to a CRM customer, so
+      // when that profile has role 'customer' the product price is the
+      // client price (special client_price, else the general member
+      // discount) — the same rule the catalog and the POS apply. Lens
+      // materials and treatments are services and keep their list price.
+      let buyerIsCustomer = false
+      try {
+        const { data: buyer } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', customerId)
+          .maybeSingle()
+        buyerIsCustomer = buyer?.role === 'customer'
+      } catch { /* fall back to visitor price */ }
+      const memberPct = buyerIsCustomer ? await memberDiscountServer(supabase) : 0
 
       for (const item of items) {
         const qty = Number(item.quantity)
@@ -518,7 +557,9 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
         if (!productPrice.has(item.productId)) {
           return { error: 'Uno de los productos del carrito ya no existe en el catálogo.', success: null }
         }
-        item.price = productPrice.get(item.productId)
+        item.price = buyerIsCustomer
+          ? effectiveClientPrice(productPrice.get(item.productId) ?? 0, productClientPrice.get(item.productId) ?? null, memberPct)
+          : productPrice.get(item.productId)
         if (item.lensMaterialId) {
           if (!materialPrice.has(item.lensMaterialId)) {
             return { error: 'Uno de los materiales seleccionados ya no existe.', success: null }
@@ -590,17 +631,20 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
       return { error: `Error al registrar venta: ${saleError?.message}`, success: null }
     }
 
-    // 2. Insert sale items, their treatments, and update stock
+    // 2. Insert sale items, their treatments, and update stock.
+    // sale_items.price stores the PRODUCT unit price only (the same
+    // semantics as the POS createSale and the seeded data): the lens
+    // material lives in lens_material_price and each treatment in
+    // sale_item_treatments, so the customer file can break the total down
+    // line by line and the parts add up to the sale total.
     for (const item of items) {
-      const finalUnitPrice = item.price + (item.lensMaterialPrice || 0) + (item.treatmentsPrice || 0)
-      
       const { data: itemData, error: itemError } = await supabase
         .from('sale_items')
         .insert([{
           sale_id: saleData.id,
           product_id: item.productId,
           quantity: item.quantity,
-          price: finalUnitPrice,
+          price: item.price,
           lens_material_id: item.lensMaterialId || null,
           lens_material_price: item.lensMaterialPrice || 0,
           od_sphere: item.od_sphere ? parseFloat(item.od_sphere) : null,
@@ -734,7 +778,9 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
         sale_id: saleId,
         product_id: item.productId,
         quantity: item.quantity,
-        price: finalUnitPrice,
+        // Product unit price only — same decomposition as the real insert
+        // (material and treatments are stored as separate components).
+        price: item.price,
         lens_material_id: item.lensMaterialId || null,
         lens_material_price: item.lensMaterialPrice || 0,
         od_sphere: item.od_sphere ? parseFloat(item.od_sphere) : null,

@@ -8,7 +8,7 @@ import {
   DEFAULT_REMINDER_TEMPLATE,
   addMonthsISO,
 } from './reminder-config'
-import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT } from './pricing'
+import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT, effectiveClientPrice } from './pricing'
 import {
   PRODUCT_IMAGE_BUCKET,
   productImageExtension,
@@ -288,8 +288,33 @@ export async function createSale(
       // Prices must come from the real catalog (Supabase), never from the
       // demo/mock list: a POS sale priced from mocks corrupts real totals.
       const catalog = await getProducts()
-      const priceOf = (productId: string) =>
-        catalog.find(p => p.id === productId)?.price ?? 0
+
+      // Member pricing at the counter: when the sale is linked to a
+      // registered customer (profile role 'customer'), the unit price is
+      // the client price — the product's special client_price when set, or
+      // the general member discount over the visitor price. Walk-in sales
+      // (no customerId, or a non-customer profile) keep visitor prices.
+      let buyerIsCustomer = false
+      if (options?.customerId) {
+        try {
+          const { data: buyer } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', options.customerId)
+            .maybeSingle()
+          buyerIsCustomer = buyer?.role === 'customer'
+        } catch (roleErr) {
+          console.error('Buyer role lookup failed; charging visitor price:', roleErr)
+        }
+      }
+      const memberPct = buyerIsCustomer ? await getMemberDiscountPercent() : 0
+      const priceOf = (productId: string) => {
+        const product = catalog.find(p => p.id === productId)
+        if (!product) return 0
+        return buyerIsCustomer
+          ? effectiveClientPrice(product.price, product.client_price, memberPct)
+          : product.price
+      }
 
       const grossTotal = items.reduce((acc, item) => {
         return acc + priceOf(item.productId) * item.quantity
@@ -609,8 +634,15 @@ export async function getCustomerSales(customerId: string): Promise<any[]> {
             coupon:coupons(code, discount_percent),
             seller:profiles!sales_seller_id_fkey(full_name),
             sale_items(
+              id,
               quantity,
               price,
+              lens_material_price,
+              lens_material:lens_materials(name),
+              sale_item_treatments(
+                price,
+                treatment:lens_treatments(name)
+              ),
               product:products(name, category)
             )
           `)
@@ -624,8 +656,28 @@ export async function getCustomerSales(customerId: string): Promise<any[]> {
       console.error('Customer sales fetch failed:', e)
     }
   }
-  // Fallback
-  return mockDb.MOCK_SALES.filter(s => s.customer_id === customerId)
+  // Fallback: rebuild the same item breakdown shape from the mock tables so
+  // the customer file renders identically in demo mode.
+  return mockDb.MOCK_SALES.filter(s => s.customer_id === customerId).map(s => ({
+    ...s,
+    sale_items: mockDb.MOCK_SALE_ITEMS.filter(i => i.sale_id === s.id).map((i: any) => {
+      const product = mockDb.MOCK_PRODUCTS.find(p => p.id === i.product_id)
+      const material = i.lens_material_id
+        ? mockDb.MOCK_LENS_MATERIALS.find(m => m.id === i.lens_material_id)
+        : null
+      return {
+        ...i,
+        product: product ? { name: product.name, category: product.category } : null,
+        lens_material: material ? { name: material.name } : null,
+        sale_item_treatments: mockDb.MOCK_SALE_ITEM_TREATMENTS
+          .filter(t => t.sale_item_id === i.id)
+          .map(t => {
+            const treatment = mockDb.MOCK_LENS_TREATMENTS.find(x => x.id === t.treatment_id)
+            return { price: t.price, treatment: { name: treatment ? treatment.name : 'Tratamiento' } }
+          }),
+      }
+    }),
+  }))
 }
 
 /**
