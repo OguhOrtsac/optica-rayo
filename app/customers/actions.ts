@@ -72,8 +72,16 @@ export async function registerCustomerAction(currentState: RegisterCustomerState
   }
 
   const formattedEmail = formatToEmail(username)
-  // Default temporal password: Rayo_Nombre
-  const temporalPassword = `Rayo_${fullName.split(' ')[0]}`
+  // Temporal password: RANDOM, shown once to the staff member in the
+  // success message so they can hand it to the customer in person.
+  // (Until 2026-11-09 it was the predictable pattern Rayo_<FirstName>,
+  // which anyone could guess from this public repository.)
+  const temporalPassword = (() => {
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+    const bytes = new Uint8Array(10)
+    globalThis.crypto.getRandomValues(bytes)
+    return 'Rayo-' + Array.from(bytes, b => alphabet[b % alphabet.length]).join('')
+  })()
 
   let user: any = null
   let isMock = false

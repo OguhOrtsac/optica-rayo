@@ -6,7 +6,9 @@ import { dashboardHrefForRole, normalizeRole } from '@/lib/roles'
 /**
  * Global Next.js Proxy.
  * Standardizes authentication, handles cookies, and enforces RBAC.
- * Includes bypass logic for the temporal Super Admin session.
+ * Sessions come ONLY from Supabase Auth: unsigned local cookies are
+ * never trusted (the former bypass was removed on 2026-11-09, when the
+ * Super Admin became a real Supabase Auth account).
  */
 export async function proxy(request: NextRequest) {
   // 1. Refresh active Supabase session cookies first
@@ -14,54 +16,6 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   
-  // Read local Super Admin bypass session cookie
-  const superadminSession = request.cookies.get('optica_rayo_superadmin_session')?.value
-
-  // CASE A: Mock Bypass is active
-  if (superadminSession === 'true') {
-    const mockRole = request.cookies.get('optica_rayo_mock_role')?.value || 'owner'
-
-    const normalizedMockRole = normalizeRole(mockRole)
-
-    // Root-level dashboard redirection based on the canonical role.
-    if (pathname === '/login' || pathname === '/' || pathname === '/change-password' || pathname === '/dashboard') {
-      const url = request.nextUrl.clone()
-      url.pathname = dashboardHrefForRole(normalizedMockRole)
-      return NextResponse.redirect(url)
-    }
-
-    // Role-based path protections for mock sessions
-    if (pathname.startsWith('/dashboard/admin')) {
-      if (!['owner', 'super_admin'].includes(normalizedMockRole)) {
-        const url = request.nextUrl.clone()
-        url.pathname = dashboardHrefForRole(normalizedMockRole)
-        return NextResponse.redirect(url)
-      }
-    }
-
-    if (pathname.startsWith('/dashboard/seller')) {
-      if (!['owner', 'seller', 'super_admin'].includes(normalizedMockRole)) {
-        const url = request.nextUrl.clone()
-        url.pathname = dashboardHrefForRole(normalizedMockRole)
-        return NextResponse.redirect(url)
-      }
-    }
-
-    if (pathname.startsWith('/dashboard/customer') && normalizedMockRole !== 'customer') {
-      const url = request.nextUrl.clone()
-      url.pathname = dashboardHrefForRole(normalizedMockRole)
-      return NextResponse.redirect(url)
-    }
-
-    if (pathname.startsWith('/customers') && normalizedMockRole === 'customer') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard/customer'
-      return NextResponse.redirect(url)
-    }
-
-    return response
-  }
-
   // CASE B: Standard Supabase Auth Flow
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key'
