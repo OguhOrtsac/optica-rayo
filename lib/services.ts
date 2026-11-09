@@ -962,7 +962,6 @@ export async function getLensRequests(customerId?: string): Promise<any[]> {
         .select(`
           *,
           customer:profiles!lens_requests_customer_id_fkey(full_name, email),
-          customer_profiles!lens_requests_customer_id_fkey(phone),
           frame:products!lens_requests_frame_id_fkey(name, price),
           lens_material:lens_materials!lens_requests_lens_material_id_fkey(name, price)
         `)
@@ -974,8 +973,23 @@ export async function getLensRequests(customerId?: string): Promise<any[]> {
 
       const { data, error } = await q
       if (!error && data) {
-        // Hydrate treatments manually if needed or map values
-        return data
+        // customer_profiles has no FK from lens_requests (its id IS the
+        // profile id), so the phone is hydrated with a second query —
+        // embedding it made PostgREST reject the whole request (PGRST200)
+        // and the panel silently fell back to empty mocks.
+        const ids = [...new Set(data.map((r: any) => r.customer_id).filter(Boolean))]
+        let phones = new Map<string, string>()
+        if (ids.length) {
+          const { data: cps } = await supabase
+            .from('customer_profiles')
+            .select('id, phone')
+            .in('id', ids)
+          if (cps) phones = new Map(cps.map((cp: any) => [cp.id, cp.phone]))
+        }
+        return data.map((r: any) => ({
+          ...r,
+          customer_profiles: { phone: phones.get(r.customer_id) || '' },
+        }))
       }
       console.error('Error fetching lens requests from Supabase:', error?.message)
     } catch (e) {
