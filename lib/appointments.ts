@@ -343,10 +343,13 @@ export async function listAppointmentsForDay(dateISO: string): Promise<Appointme
   const nameById = new Map<string, string | null>((profiles ?? []).map((p: any) => [p.id, p.full_name]))
   const phoneById = new Map<string, string | null>((customerProfiles ?? []).map((p: any) => [p.id, p.phone]))
 
+  // The contact the person typed when booking wins over the account
+  // profile: a customer may book for someone else, and the staff must
+  // see (and call) the typed name/phone. The profile is the fallback.
   return appointments.map(a => ({
     ...a,
-    customer_name: a.customer_id ? (nameById.get(a.customer_id) ?? a.guest_name) : a.guest_name,
-    customer_phone: a.customer_id ? (phoneById.get(a.customer_id) ?? a.guest_phone) : a.guest_phone,
+    customer_name: a.guest_name || (a.customer_id ? (nameById.get(a.customer_id) ?? null) : null),
+    customer_phone: a.guest_phone || (a.customer_id ? (phoneById.get(a.customer_id) ?? null) : null),
   }))
 }
 

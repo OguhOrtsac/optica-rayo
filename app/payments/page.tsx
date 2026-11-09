@@ -50,10 +50,20 @@ type SelectedSummary = {
   isOverdue: boolean
 }
 
+// Due dates are calendar dates ('YYYY-MM-DD', or a midnight timestamp):
+// they must be read as LOCAL dates. `new Date('2026-11-20')` is midnight
+// UTC, which in Mexico renders and compares as November 19 — verified
+// live in production (a quota due on the 20th showed as the 19th, and a
+// quota due "today" could read as overdue).
+const parseLocalDate = (dateStr: string) => {
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
+  return new Date(y, (m || 1) - 1, d || 1)
+}
+
 const isOverdueDate = (dueDate: string) => {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  return new Date(dueDate) < today
+  return parseLocalDate(dueDate) < today
 }
 
 export default function PaymentsPage() {
@@ -130,11 +140,14 @@ export default function PaymentsPage() {
             nextDue = pending[0].due_date
           }
           const pendingCount = pending.length
+          // Ground truth cross-check: what the installments say is owed
+          // wins if the sales' stored balance drifted lower.
+          const installmentsDebt = pending.reduce((sum: number, i: any) => sum + Math.max(0, Number(i.amount || 0) - Number(i.amount_paid || 0)), 0)
           return {
             id,
             full_name: d.name,
             email: d.email,
-            totalDebt: d.totalDebt,
+            totalDebt: Math.max(d.totalDebt, installmentsDebt),
             pendingCount,
             nextDue,
             isOverdue: nextDue ? isOverdueDate(nextDue) : false
@@ -183,10 +196,15 @@ export default function PaymentsPage() {
           getCustomerSales(customer.id),
           getCustomerInstallments(customer.id)
         ])
-        const totalDebt = salesData.reduce((sum: number, s: any) => sum + Number(s.pending_balance || 0), 0)
+        const salesDebt = salesData.reduce((sum: number, s: any) => sum + Number(s.pending_balance || 0), 0)
         const pending = instsData
           .filter((i: any) => i.status === 'pending')
           .sort((a: any, b: any) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+        // The installments are the ground truth of what is owed: if the
+        // sales' stored balance ever drifts from them, the larger figure
+        // is the honest one to show.
+        const installmentsDebt = pending.reduce((sum: number, i: any) => sum + Math.max(0, Number(i.amount || 0) - Number(i.amount_paid || 0)), 0)
+        const totalDebt = Math.max(salesDebt, installmentsDebt)
         setSelectedSummary({
           totalDebt,
           pendingCount: pending.length,
@@ -205,7 +223,7 @@ export default function PaymentsPage() {
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(price)
 
   const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
+    parseLocalDate(dateStr).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
 
   // Con búsqueda: resultados del directorio. Sin búsqueda: deudores primero.
   const directoryResults = useMemo(() => {

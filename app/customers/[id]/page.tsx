@@ -201,9 +201,20 @@ export default function CustomerDetailPage({ params }: PageProps) {
     return Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000))
   }
 
+  // Calendar dates ('YYYY-MM-DD' or midnight timestamps) are read as
+  // LOCAL dates: new Date('2026-11-20') is midnight UTC and renders as
+  // November 19 in Mexico — verified live with a quota due on the 20th.
+  // Real timestamps keep their instant.
+  const parseLocalDate = (dateStr: string) => {
+    const isCalendarDate = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) || /T00:00:00/.test(dateStr)
+    if (!isCalendarDate) return new Date(dateStr)
+    const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
+    return new Date(y, (m || 1) - 1, d || 1)
+  }
+
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'N/A'
-    return new Date(dateStr).toLocaleDateString('es-MX', {
+    return parseLocalDate(dateStr).toLocaleDateString('es-MX', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
@@ -312,7 +323,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
       pendingSalesCount: salesWithPending.size,
       salesWithInstallments,
       nextDue: next ? next.due_date : null,
-      nextOverdue: next ? new Date(next.due_date) < today : false,
+      nextOverdue: next ? parseLocalDate(next.due_date) < today : false,
     }
   })()
 
@@ -924,7 +935,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                           const amountNum = Number(inst.amount || 0)
                           const paidNum = Number(inst.amount_paid || 0)
                           const saldo = Math.max(amountNum - paidNum, 0)
-                          const overdue = isPending && new Date(inst.due_date) < todayStart
+                          const overdue = isPending && parseLocalDate(inst.due_date) < todayStart
                           return (
                             <div
                               key={inst.id}
