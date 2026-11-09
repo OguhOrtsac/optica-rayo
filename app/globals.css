@@ -1,8 +1,37 @@
 @import "tailwindcss";
 
+/* ==========================================
+   Óptica Rayo — TEMA CLARO ÚNICO (sin modo oscuro)
+   Base limpia: la app se pinta igual en cualquier teléfono.
+   Tokens de color del sistema de diseño (§4):
+     --or-primary          #00357f  primario: acciones y estado activo
+                                    (UN solo color para todo lo tocable)
+     --or-primary-support  #00509e  apoyo del primario
+     --or-accent           #0899c9  celeste: detalles, iconos, cifras
+     --or-bg               #edf1fa  fondo de la app, teñido de marca
+     --or-surface          #ffffff  tarjetas flotando sobre el fondo
+     --or-ok-bg / --or-ok-text         #e2f9ee / #00422b  pagado, cobrado
+     --or-warn-bg / --or-warn-text     #fef3c7 / #92400e  pendiente
+     --or-danger-bg / --or-danger-text #ffdad6 / #ba1a1a  vencido, deuda
+     --or-neutral-bg / --or-neutral-text #dee8ff / #00357f  neutro
+   ========================================== */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --background: #edf1fa;
+  --foreground: #111c2d;
+  --or-primary: #00357f;
+  --or-primary-support: #00509e;
+  --or-accent: #0899c9;
+  --or-bg: #edf1fa;
+  --or-surface: #ffffff;
+  --or-ok-bg: #e2f9ee;
+  --or-ok-text: #00422b;
+  --or-warn-bg: #fef3c7;
+  --or-warn-text: #92400e;
+  --or-danger-bg: #ffdad6;
+  --or-danger-text: #ba1a1a;
+  --or-neutral-bg: #dee8ff;
+  --or-neutral-text: #00357f;
 }
 
 @theme inline {
@@ -12,273 +41,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-jakarta-sans), var(--font-geist-sans), Arial, Helvetica, sans-serif;
-}
-
-/* ==========================================
-   Light Mode Overrides (Premium theme transition)
-   ========================================== */
-html.light,
-.light body {
-  background-color: #f8fafc !important; /* slate-50 */
-  color: #0f172a !important; /* slate-900 */
-}
-
-/* Background Class Overrides */
-.light .bg-slate-950,
-.light .bg-slate-950\/80,
-.light .bg-slate-950\/60,
-.light .bg-slate-950\/50,
-.light .bg-slate-950\/40,
-.light .bg-slate-950\/30,
-.light .bg-slate-955,
-.light .bg-slate-955\/85,
-.light .bg-slate-955\/80,
-.light .bg-slate-955\/60,
-.light .bg-slate-955\/50,
-.light .bg-slate-955\/40,
-.light .bg-slate-955\/30 {
-  background-color: #f1f5f9 !important; /* slate-100 */
-}
-
-.light .bg-slate-900,
-.light .bg-slate-900\/80,
-.light .bg-slate-900\/60,
-.light .bg-slate-900\/50,
-.light .bg-slate-900\/40,
-.light .bg-slate-900\/30 {
-  background-color: #ffffff !important; /* white cards */
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -2px rgba(0, 0, 0, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.02) !important;
-}
-
-.light .bg-slate-900\/60.backdrop-blur-xl {
-  background-color: rgba(255, 255, 255, 0.75) !important;
-}
-
-.light .bg-slate-900\/40.backdrop-blur-xl {
-  background-color: rgba(255, 255, 255, 0.7) !important;
-}
-
-.light .bg-slate-955\/85.backdrop-blur-md,
-.light .bg-slate-955\/80.backdrop-blur-md,
-.light .bg-slate-950\/80.backdrop-blur-md {
-  background-color: rgba(248, 250, 252, 0.85) !important;
-}
-
-/* Border Class Overrides */
-.light .border-slate-955,
-.light .border-slate-950,
-.light .border-slate-900,
-.light .border-slate-850,
-.light .border-slate-800,
-.light .border-slate-800\/80,
-.light .border-slate-800\/60,
-.light .border-slate-800\/50,
-.light .border-slate-800\/40,
-.light .border-slate-900\/60 {
-  border-color: #e2e8f0 !important; /* slate-200 */
-}
-
-.light .divide-slate-955 > :not([hidden]) ~ :not([hidden]),
-.light .divide-slate-950 > :not([hidden]) ~ :not([hidden]) {
-  border-color: #e2e8f0 !important;
-}
-
-/* Text Color Overrides */
-.light .text-slate-100,
-.light .text-slate-200,
-.light .text-slate-300,
-.light .text-slate-350 {
-  color: #0f172a !important; /* slate-900 */
-}
-
-.light .text-slate-400,
-.light .text-slate-450,
-.light .text-slate-455 {
-  color: #334155 !important; /* slate-700 */
-}
-
-.light .text-slate-500,
-.light .text-slate-655,
-.light .text-slate-700 {
-  color: #64748b !important; /* slate-500 */
-}
-
-.light .text-slate-600 {
-  color: #475569 !important; /* slate-650/700 equivalent */
-}
-
-/* Glow effects in light mode */
-.light .bg-cyan-500\/5,
-.light .bg-violet-600\/5,
-.light .bg-indigo-500\/5,
-.light .bg-emerald-500\/5 {
-  background-color: rgba(6, 182, 212, 0.04) !important;
-}
-
-/* Inputs, Textareas, Selects overrides in light mode */
-.light input,
-.light select,
-.light textarea {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
-  border-color: #cbd5e1 !important; /* slate-300 */
-}
-
-.light input:focus,
-.light select:focus,
-.light textarea:focus {
-  border-color: #06b6d4 !important; /* cyan-500 */
-  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15) !important;
-}
-
-.light input::placeholder,
-.light textarea::placeholder {
-  color: #94a3b8 !important; /* slate-400 */
-}
-
-/* Buttons in light mode adjustments */
-.light .bg-slate-900.hover\:bg-slate-800 {
-  background-color: #f1f5f9 !important;
-  color: #0f172a !important;
-}
-.light .bg-slate-900.hover\:bg-slate-800:hover {
-  background-color: #e2e8f0 !important;
-}
-
-/* Specific elements adjustments */
-.light .text-cyan-400 {
-  color: #0891b2 !important; /* cyan-600 for better contrast */
-}
-.light .text-indigo-400 {
-  color: #4f46e5 !important; /* indigo-600 */
-}
-.light .text-emerald-400 {
-  color: #16a34a !important; /* emerald-600 */
-}
-.light .text-rose-450 {
-  color: #e11d48 !important; /* rose-600 */
-}
-.light .text-rose-400 {
-  color: #e11d48 !important; /* rose-600 */
-}
-
-.light .bg-cyan-500\/15 {
-  background-color: rgba(6, 182, 212, 0.12) !important;
-}
-.light .bg-indigo-500\/15 {
-  background-color: rgba(79, 70, 229, 0.12) !important;
-}
-.light .bg-emerald-500\/15 {
-  background-color: rgba(22, 163, 74, 0.12) !important;
-}
-.light .bg-rose-500\/15 {
-  background-color: rgba(225, 29, 72, 0.12) !important;
-}
-.light .bg-amber-500\/15 {
-  background-color: rgba(217, 119, 6, 0.12) !important;
-}
-
-/* Extra overrides for customized tailwind utilities */
-.light .text-slate-355 {
-  color: #0f172a !important; /* slate-900 */
-}
-.light .text-slate-250,
-.light .text-slate-255 {
-  color: #1e293b !important; /* slate-800 */
-}
-.light .text-rose-455 {
-  color: #e11d48 !important; /* rose-600 */
-}
-.light .bg-rose-50\/5,
-.light .bg-rose-500\/5 {
-  background-color: rgba(225, 29, 72, 0.08) !important;
-}
-.light .bg-emerald-50\/5,
-.light .bg-emerald-500\/5 {
-  background-color: rgba(22, 163, 74, 0.08) !important;
-}
-
-/* ==========================================
-   Refactored Mobile Dropdown Menu (UI/UX Premium)
-   ========================================== */
-.mobile-dropdown-menu {
-  /* Tema Oscuro: Fondo profundo e inteligente (#1e1e1e con sutil glassmorphism) */
-  background-color: rgba(30, 30, 30, 0.95) !important; 
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-}
-
-/* Enlaces del submenú en Tema Oscuro */
-.mobile-dropdown-menu a,
-.mobile-dropdown-menu label a {
-  color: #e0e0e0 !important; /* Gris claro/blanco roto para evitar fatiga visual */
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  padding: 0.6rem 1rem !important;
-  border-radius: 0.75rem !important;
-  display: block !important;
-  width: 100%;
-}
-
-/* Hover en Tema Oscuro: Acento vibrante pero elegante (cyan/celeste) */
-.mobile-dropdown-menu a:hover,
-.mobile-dropdown-menu label a:hover {
-  background-color: rgba(6, 182, 212, 0.1) !important;
-  color: #22d3ee !important; /* cyan-400 */
-}
-
-/* Tema Claro: Blanco humo (#F8F9FA) con glassmorphism sutil */
-html.light .mobile-dropdown-menu {
-  background-color: rgba(248, 249, 250, 0.95) !important; 
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
-}
-
-/* Enlaces del submenú en Tema Claro */
-html.light .mobile-dropdown-menu a,
-html.light .mobile-dropdown-menu label a {
-  color: #333333 !important; /* Gris muy oscuro para alto contraste */
-}
-
-/* Hover en Tema Claro: Fondo suave que resalta la letra */
-html.light .mobile-dropdown-menu a:hover,
-html.light .mobile-dropdown-menu label a:hover {
-  background-color: rgba(59, 130, 246, 0.08) !important; /* Azul suave */
-  color: #1e3a8a !important; /* Azul marino */
-}
-
-/* Restablecer estilos en escritorio */
-@media (min-width: 768px) {
-  .mobile-dropdown-menu,
-  html.light .mobile-dropdown-menu {
-    background-color: transparent !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    border-bottom: 0 !important;
-  }
-  .mobile-dropdown-menu a,
-  html.light .mobile-dropdown-menu a {
-    background-color: transparent !important;
-    padding: 0.375rem 0.5rem !important;
-    width: auto !important;
-    display: inline-block !important;
-  }
-  .mobile-dropdown-menu a:hover,
-  html.light .mobile-dropdown-menu a:hover {
-    background-color: transparent !important;
-  }
 }
 
 /* ==========================================
@@ -366,34 +132,6 @@ html.light button.bg-gradient-to-r:hover,
 html.light button[type="submit"]:hover,
 html.light .btn-premium:hover {
   box-shadow: 0 10px 25px -4px rgba(79, 70, 229, 0.35) !important; /* Sombra indigo */
-}
-
-/* ==========================================
-   Dark Theme Color Overrides (Fondo #121212 y Superficie #1E1E1E)
-   ========================================== */
-/* Asegurar que el tema oscuro base sea #121212 */
-html:not(.light) body,
-html:not(.light) .bg-slate-950,
-html:not(.light) .bg-slate-955 {
-  background-color: #121212 !important;
-}
-
-/* Asegurar que las superficies de menús y tarjetas en tema oscuro sean #1E1E1E */
-html:not(.light) .bg-slate-900,
-html:not(.light) .bg-slate-900\/30,
-html:not(.light) .bg-slate-900\/40,
-html:not(.light) .bg-slate-900\/50,
-html:not(.light) .bg-slate-950\/40,
-html:not(.light) .bg-slate-955\/30,
-html:not(.light) .mobile-dropdown-menu {
-  background-color: #1e1e1e !important;
-}
-
-/* Ajustar los bordes de tarjetas y menús en tema oscuro para que armonicen con #1E1E1E */
-html:not(.light) .border-slate-900,
-html:not(.light) .border-slate-800,
-html:not(.light) .border-slate-850 {
-  border-color: rgba(255, 255, 255, 0.05) !important;
 }
 
 /* ==========================================

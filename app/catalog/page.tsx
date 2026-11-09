@@ -518,7 +518,7 @@ function CatalogContent() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white via-[#f9f9ff] to-[#eef4ff] text-[#111c2d] px-3 py-4 sm:p-5 md:p-8 space-y-5 sm:space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen bg-gradient-to-b from-white via-[#f9f9ff] to-[#eef4ff] text-[#111c2d] px-4 py-4 sm:p-6 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
       <style>{`
         @keyframes gradient-x {
           0%, 100% { background-position: 0% 50%; }
@@ -660,8 +660,9 @@ function CatalogContent() {
         </section>
       )}
 
-      {/* Floating search: white card overlapping the carousel's bottom edge;
-          drives the same `search` filter as the results bar. */}
+      {/* Floating search: white card overlapping the carousel's bottom edge.
+          This is THE search field of the page (single-search rule): it
+          drives the `search` filter on its own. */}
       <div className={`relative z-10 px-1 ${promoProducts.length > 0 ? '-mt-6' : ''}`}>
         <div className="relative max-w-xl">
           <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#00357f]/50 pointer-events-none" />
@@ -676,31 +677,33 @@ function CatalogContent() {
         </div>
       </div>
 
-      {/* Slim brand line: light one-liner on mobile (no giant blue box);
-          the full gradient band only appears on desktop sizes. */}
-      <section className="anim-fade-up relative overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white px-4 py-4 shadow-sm sm:px-6 md:rounded-3xl md:border-0 md:bg-gradient-to-br md:from-[#00357f] md:via-[#00509e] md:to-[#00668a] md:px-8 md:py-9 md:shadow-lg md:shadow-[#00357f]/20">
+      {/* Brand strip: light, compact brand gradient on every size — on
+          mobile it stays short (small padding, normal-size headline) so it
+          gives color without becoming the giant box the owner rejected;
+          on desktop it simply grows taller. */}
+      <section className="anim-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-4 shadow-lg shadow-[#00357f]/20 sm:px-6 md:rounded-3xl md:px-8 md:py-9">
         {/* Decorative light glows (desktop band only) */}
         <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 hidden md:block w-56 h-56 rounded-full bg-white/10 blur-2xl" />
         <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 hidden md:block w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
 
         <div className="relative space-y-2 md:space-y-4 max-w-2xl">
-          <p className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] bg-[#dee8ff] text-[#00357f] border border-[#00357f]/15 md:bg-white/15 md:text-white md:border-white/20 rounded-full px-3 py-1">
+          <p className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] bg-white/15 text-white border border-white/20 rounded-full px-3 py-1">
             <Sparkles className="w-3.5 h-3.5" /> Óptica Rayo · Catálogo en línea
           </p>
-          <h1 className="text-2xl sm:text-3xl md:text-[2.75rem] font-black tracking-tight leading-[1.05] text-[#111c2d] md:text-white">
+          <h1 className="text-2xl sm:text-3xl md:text-[2.75rem] font-black tracking-tight leading-[1.05] text-white">
             Ve el mundo con claridad
           </h1>
-          <p className="text-xs sm:text-sm md:text-base text-[#434653] md:text-white/85 font-medium leading-relaxed max-w-xl">
+          <p className="text-xs sm:text-sm md:text-base text-white/85 font-medium leading-relaxed max-w-xl">
             Encuentra tus armazones favoritos y cotiza tus micas con nuestro asistente digital: precios claros y modelos para cada rostro.
           </p>
 
           {!loading && products.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-1 text-[10px] font-black uppercase tracking-wider">
-              <span className="bg-[#f0f3ff] border border-[#cbd5e1] text-[#434653] md:bg-white/15 md:border-white/15 md:text-white rounded-full px-3 py-1.5">{products.length} modelos</span>
+              <span className="bg-white/15 border border-white/15 text-white rounded-full px-3 py-1.5">{products.length} modelos</span>
               {promoProducts.length > 0 && (
-                <span className="bg-[#e2f9ee] border border-[#49da9f]/40 text-[#00422b] md:bg-[#49da9f]/25 md:border-[#49da9f]/40 md:text-white rounded-full px-3 py-1.5">{promoProducts.length} destacados y promos</span>
+                <span className="bg-[#49da9f]/25 border border-[#49da9f]/40 text-white rounded-full px-3 py-1.5">{promoProducts.length} destacados y promos</span>
               )}
-              <a href="/agendar" className="bg-[#f0f3ff] border border-[#cbd5e1] text-[#00357f] md:bg-white/15 md:border-white/15 md:text-white rounded-full px-3 py-1.5 transition-all active:scale-95 hover:underline">Examen de la vista gratis · Agenda tu cita</a>
+              <a href="/agendar" className="bg-white/15 border border-white/15 text-white rounded-full px-3 py-1.5 transition-all active:scale-95 hover:underline">Examen de la vista gratis · Agenda tu cita</a>
             </div>
           )}
         </div>
@@ -758,10 +761,10 @@ function CatalogContent() {
 
 
       {/* LAYOUT: FILTERS & PRODUCT GRID */}
-      <div className="flex flex-col gap-5 items-start w-full">
+      <div className="flex flex-col gap-6 items-start w-full">
 
         {/* 1. COLLAPSIBLE TOP FILTERS */}
-        <div className="w-full bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm">
+        <div className="w-full bg-white border border-[#cbd5e1] rounded-2xl p-4 sm:p-6 shadow-sm">
           <div
             className="flex justify-between items-center cursor-pointer select-none group"
             onClick={() => setIsFiltersOpen(!isFiltersOpen)}
@@ -901,22 +904,19 @@ function CatalogContent() {
         </div>
 
         {/* 2. RESULTS CONTAINER */}
-        <div className="w-full space-y-5">
+        <div className="w-full space-y-6">
 
           {/* Controls Bar */}
           <div className="bg-white border border-[#cbd5e1] rounded-2xl p-4 flex flex-col sm:flex-row gap-4 items-center justify-between shadow-sm">
 
-            {/* Live Search */}
-            <div className="relative w-full sm:max-w-md">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#737784]" />
-              <input
-                type="text"
-                placeholder="Buscar modelo, marca, cristal..."
-                value={searchTerm}
-                onChange={e => updateFilter('search', e.target.value)}
-                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg pl-10 pr-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
-              />
-            </div>
+            {/* Results count (the only search field is the floating one
+                above the brand strip — no duplicate field here). */}
+            <p className="text-xs font-bold text-[#434653] w-full sm:w-auto">
+              {processedProducts.length} {processedProducts.length === 1 ? 'producto' : 'productos'}
+              {searchTerm.trim() !== '' && (
+                <span className="text-[#737784] font-medium"> para «{searchTerm.trim()}»</span>
+              )}
+            </p>
 
             {/* View options */}
             <div className="flex items-center gap-3 w-full sm:w-auto shrink-0 justify-between sm:justify-end">
@@ -1068,7 +1068,7 @@ function CatalogContent() {
                           </div>
                         )}
 
-                        <div className="space-y-1.5 min-w-0 text-left">
+                        <div className="space-y-2 min-w-0 text-left">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[8px] font-black uppercase text-[#00668a] tracking-wider">
                               {p.category === 'frames' && 'Armazón'}
@@ -1101,15 +1101,15 @@ function CatalogContent() {
                         </div>
                       </div>
 
-                      {/* Pricing & Call to Actions */}
-                      <div className={`border-t border-[#cbd5e1]/30 pt-2.5 flex items-center justify-between gap-2 w-full ${
+                      {/* Pricing & Call to Actions — the price leads the card */}
+                      <div className={`border-t border-[#cbd5e1]/30 pt-3 flex items-center justify-between gap-2 w-full ${
                         layoutMode === 'list' ? 'sm:border-t-0 sm:pt-0 sm:w-auto' : ''
                       }`}>
                         <div className={`min-w-0 ${layoutMode === 'list' ? 'sm:text-right' : ''}`}>
                           <p className="text-[8px] text-[#737784] uppercase tracking-widest font-bold">
                             {isClient && priceOf(p) < p.price ? 'Precio cliente' : 'Precio sugerido'}
                           </p>
-                          <p className="font-black text-[#00357f] text-sm font-mono">{formatPrice(priceOf(p))}</p>
+                          <p className="font-black text-[#00357f] text-lg leading-tight font-mono">{formatPrice(priceOf(p))}</p>
                           {isClient && priceOf(p) < p.price && (
                             <p className="flex items-center gap-1.5 text-[9px] text-[#737784] font-mono">
                               <span className="line-through">{formatPrice(p.price)}</span>

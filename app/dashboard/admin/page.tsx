@@ -153,13 +153,22 @@ export default function AdminDashboard() {
       .slice(0, 5)
   }, [sales])
 
+  // Total por cobrar: suma de todos los saldos pendientes (la lista de
+  // Cobranza solo muestra los primeros 5; la cifra es sobre el total).
+  const pendingTotal = useMemo(() => {
+    return sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0)
+  }, [sales])
+  const pendingCount = useMemo(() => {
+    return sales.filter(s => (s.pending_balance || 0) > 0).length
+  }, [sales])
+
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
+    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
       
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-5">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Resumen General</h1>
+          <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Resumen General</h1>
           <p className="text-sm text-[#434653] mt-1 font-medium">Bienvenido, aquí está el estado de la óptica hoy.</p>
         </div>
         <div className="flex gap-3 w-full md:w-auto">
@@ -203,107 +212,123 @@ export default function AdminDashboard() {
           <p className="text-xs text-[#737784] font-bold">Recuperando información...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          
-          {/* Sales Summary Bento Column (8 cols) */}
-          <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
-            
-            {/* Sales of the Day */}
-            <div className="anim-stagger-item bg-gradient-to-br from-white via-white to-[#eef4ff] p-6 rounded-2xl border border-[#cbd5e1] shadow-sm flex flex-col justify-between hover:shadow-lg hover:shadow-[#00357f]/10 hover:-translate-y-0.5 transition-all duration-300">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ventas del Día</p>
-                  <h2 className="text-3xl font-black text-[#00357f] mt-2 font-mono">{formatPrice(todayStats.total)}</h2>
+        <div className="space-y-6">
+
+          {/* Fila de cifras: superficie teñida e icono en pastilla de color */}
+          <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+            {/* Ventas de hoy — azul */}
+            <div className="anim-stagger-item bg-[#dee8ff] border border-[#00357f]/10 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#111c2d]">Ventas de hoy</p>
+                  <p className="text-3xl font-black font-mono text-[#111c2d] mt-2">{formatPrice(todayStats.total)}</p>
                 </div>
-                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#00357f] to-[#00668a] flex items-center justify-center text-white shadow-md shadow-[#00357f]/30">
+                <span className="w-11 h-11 rounded-2xl bg-[#00357f] text-white flex items-center justify-center shrink-0 shadow-sm">
                   <TrendingUp className="w-5 h-5" />
-                </div>
+                </span>
               </div>
-              <div className="mt-6 flex items-center gap-1">
+              <p className="mt-3 text-xs font-semibold text-[#434653] flex items-center gap-1">
                 {todayStats.diffPct >= 0 ? (
-                  <span className="text-xs font-bold text-[#00422b] flex items-center gap-0.5">
-                    <ArrowUp className="w-3.5 h-3.5" /> +{todayStats.diffPct}% vs ayer
-                  </span>
+                  <><ArrowUp className="w-3.5 h-3.5 text-[#00422b]" /> +{todayStats.diffPct}% vs ayer</>
                 ) : (
-                  <span className="text-xs font-bold text-[#ba1a1a] flex items-center gap-0.5">
-                    <TrendingDown className="w-3.5 h-3.5" /> {todayStats.diffPct}% vs ayer
-                  </span>
+                  <><TrendingDown className="w-3.5 h-3.5 text-[#ba1a1a]" /> {todayStats.diffPct}% vs ayer</>
                 )}
-              </div>
+              </p>
             </div>
 
-            {/* Sales of the Month */}
-            <div className="anim-stagger-item bg-gradient-to-br from-white via-white to-[#e9faf1] p-6 rounded-2xl border border-[#cbd5e1] shadow-sm flex flex-col justify-between hover:shadow-lg hover:shadow-emerald-500/10 hover:-translate-y-0.5 transition-all duration-300" style={{ '--enter-delay': '70ms' } as React.CSSProperties}>
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ventas del Mes</p>
-                  <h2 className="text-3xl font-black text-[#111c2d] mt-2 font-mono">{formatPrice(monthlyStats.total)}</h2>
+            {/* Ventas del mes — celeste */}
+            <div className="anim-stagger-item bg-[#e6f5fb] border border-[#0899c9]/15 rounded-2xl p-5 shadow-sm" style={{ '--enter-delay': '70ms' } as React.CSSProperties}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#111c2d]">Ventas del mes</p>
+                  <p className="text-3xl font-black font-mono text-[#111c2d] mt-2">{formatPrice(monthlyStats.total)}</p>
                 </div>
-                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-[#2fbf71] flex items-center justify-center text-white shadow-md shadow-emerald-500/30">
-                  <Wallet className="w-5 h-5" />
-                </div>
+                <span className="w-11 h-11 rounded-2xl bg-[#0899c9] text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <CalendarDays className="w-5 h-5" />
+                </span>
               </div>
-              <div className="mt-6 flex items-center gap-1">
+              <p className="mt-3 text-xs font-semibold text-[#434653] flex items-center gap-1">
                 {monthlyStats.diffPct >= 0 ? (
-                  <span className="text-xs font-bold text-[#00422b] flex items-center gap-0.5">
-                    <ArrowUp className="w-3.5 h-3.5" /> +{monthlyStats.diffPct}% vs mes anterior
-                  </span>
+                  <><ArrowUp className="w-3.5 h-3.5 text-[#00422b]" /> +{monthlyStats.diffPct}% vs mes anterior</>
                 ) : (
-                  <span className="text-xs font-bold text-[#ba1a1a] flex items-center gap-0.5">
-                    <TrendingDown className="w-3.5 h-3.5" /> {monthlyStats.diffPct}% vs mes anterior
-                  </span>
+                  <><TrendingDown className="w-3.5 h-3.5 text-[#ba1a1a]" /> {monthlyStats.diffPct}% vs mes anterior</>
                 )}
-              </div>
+              </p>
             </div>
 
-          </div>
-
-          {/* Alerts / Cobranza Column (4 cols) */}
-          <div className="anim-stagger-item md:col-span-4 bg-gradient-to-b from-[#ffdad6] to-[#fff1ef] p-6 rounded-2xl border border-[#ffdad6]/40 shadow-sm flex flex-col justify-between gap-4" style={{ '--enter-delay': '140ms' } as React.CSSProperties}>
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <AlertTriangle className="w-5 h-5 text-[#ba1a1a]" />
-                <h3 className="text-sm font-extrabold text-[#93000a] uppercase tracking-wider">Cobranza Pendiente</h3>
+            {/* Por cobrar — rojo suave si hay adeudo, verde si está todo cobrado */}
+            <div className={`anim-stagger-item border rounded-2xl p-5 shadow-sm ${pendingTotal > 0 ? 'bg-[#ffdad6]/70 border-[#ba1a1a]/15' : 'bg-[#e2f9ee] border-[#00422b]/10'}`} style={{ '--enter-delay': '140ms' } as React.CSSProperties}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#111c2d]">Por cobrar</p>
+                  <p className={`text-3xl font-black font-mono mt-2 ${pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>{formatPrice(pendingTotal)}</p>
+                </div>
+                <span className={`w-11 h-11 rounded-2xl text-white flex items-center justify-center shrink-0 shadow-sm ${pendingTotal > 0 ? 'bg-[#ba1a1a]' : 'bg-emerald-600'}`}>
+                  <Wallet className="w-5 h-5" />
+                </span>
               </div>
-              
-              <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
-                {pendingCollections.length === 0 ? (
-                  <p className="text-xs text-[#93000a]/80 font-bold py-2">Sin adeudos pendientes hoy.</p>
-                ) : (
-                  pendingCollections.map(s => (
-                    <div key={s.id} className="bg-white p-3 rounded-xl border border-[#cbd5e1]/45 flex justify-between items-center shadow-sm">
-                      <div className="text-left min-w-0">
-                        <p className="text-xs font-bold text-[#111c2d] truncate">{s.customer_name || 'Cliente'}</p>
-                        <p className="text-[9px] text-[#737784] font-bold uppercase tracking-wider mt-0.5">
-                          {s.payment_method === 'transfer' ? 'Transferencia' : s.payment_method === 'card' ? 'Tarjeta' : 'Efectivo'}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs font-black text-[#ba1a1a] font-mono">{formatPrice(s.pending_balance)}</p>
-                        <p className="text-[8px] text-[#ba1a1a] font-black uppercase tracking-widest mt-0.5">Adeudo</p>
-                      </div>
+              <p className="mt-3 text-xs font-semibold text-[#434653]">
+                {pendingTotal > 0 ? `${pendingCount} venta${pendingCount !== 1 ? 's' : ''} con saldo pendiente` : 'Todo cobrado, sin adeudos'}
+              </p>
+            </div>
+
+          </section>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+
+          {/* Cobranza Pendiente (5 cols) */}
+          <div className="anim-stagger-item md:col-span-12 lg:col-span-5 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-xl bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </span>
+              <h3 className="text-base font-semibold text-[#111c2d]">Cobranza pendiente</h3>
+              {pendingCount > 0 && (
+                <span className="ml-auto shrink-0 bg-[#ffdad6] text-[#ba1a1a] text-xs font-bold px-2.5 py-1 rounded-full">
+                  {pendingCount}
+                </span>
+              )}
+            </div>
+
+            {pendingCollections.length === 0 ? (
+              <p className="text-sm text-[#434653] font-medium py-2">Sin adeudos pendientes hoy.</p>
+            ) : (
+              <ul className="divide-y divide-[#cbd5e1]/30">
+                {pendingCollections.map(s => (
+                  <li key={s.id} className="flex items-center justify-between gap-3 py-3 min-h-[48px]">
+                    <div className="text-left min-w-0">
+                      <p className="text-sm font-semibold text-[#111c2d] truncate">{s.customer_name || 'Cliente'}</p>
+                      <p className="text-xs text-[#434653] font-medium mt-0.5">
+                        {s.payment_method === 'transfer' ? 'Transferencia' : s.payment_method === 'card' ? 'Tarjeta' : 'Efectivo'}
+                      </p>
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-black text-[#ba1a1a] font-mono">{formatPrice(s.pending_balance)}</p>
+                      <p className="text-[10px] text-[#ba1a1a] font-bold uppercase tracking-wider mt-0.5">Adeudo</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-            <Link 
-              href="/dashboard/admin/customers"
-              className="w-full py-2.5 bg-[#ba1a1a] hover:bg-[#93000a] text-white text-center rounded-xl font-bold text-xs transition-all active:scale-[0.98] shadow-sm block uppercase"
+            <Link
+              href="/customers"
+              className="mt-auto w-full py-2.5 border border-[#ba1a1a]/30 text-[#ba1a1a] hover:bg-[#ffdad6]/50 text-center rounded-xl font-bold text-xs transition-all active:scale-[0.98] block"
             >
               Ver todos los adeudos
             </Link>
           </div>
 
           {/* Notifications Panel (6 cols) */}
-          <div className="anim-stagger-item md:col-span-6 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
-            <div className="flex items-center justify-between border-b border-[#cbd5e1]/40 pb-3">
-              <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] flex items-center gap-1.5">
-                <Bell className="w-4 h-4" /> Alertas del Sistema
-              </h3>
+          <div className="anim-stagger-item md:col-span-12 lg:col-span-7 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4" style={{ '--enter-delay': '220ms' } as React.CSSProperties}>
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+                <Bell className="w-5 h-5" />
+              </span>
+              <h3 className="text-base font-semibold text-[#111c2d]">Alertas del sistema</h3>
               {notifications.filter(n => !n.is_read).length > 0 && (
-                <span className="bg-[#ba1a1a] text-white font-black text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                <span className="ml-auto shrink-0 bg-[#ba1a1a] text-white text-xs font-bold px-2.5 py-1 rounded-full">
                   {notifications.filter(n => !n.is_read).length} nuevas
                 </span>
               )}
@@ -351,13 +376,14 @@ export default function AdminDashboard() {
           </div>
 
           {/* Lens Builder Requests Panel (6 cols) */}
-          <div className="anim-stagger-item md:col-span-6 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4" style={{ '--enter-delay': '220ms' } as React.CSSProperties}>
-            <div className="flex items-center justify-between border-b border-[#cbd5e1]/40 pb-3">
-              <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] flex items-center gap-1.5">
-                <MessageSquare className="w-4 h-4" /> Solicitudes de Lentes Armados
-              </h3>
+          <div className="anim-stagger-item md:col-span-12 lg:col-span-7 bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left flex flex-col gap-4" style={{ '--enter-delay': '260ms' } as React.CSSProperties}>
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-xl bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
+                <MessageSquare className="w-5 h-5" />
+              </span>
+              <h3 className="text-base font-semibold text-[#111c2d]">Solicitudes de lentes armados</h3>
               {lensRequests.filter(r => r.status === 'pending').length > 0 && (
-                <span className="bg-[#00357f] text-white font-black text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider">
+                <span className="ml-auto shrink-0 bg-[#fef3c7] text-[#92400e] text-xs font-bold px-2.5 py-1 rounded-full">
                   {lensRequests.filter(r => r.status === 'pending').length} pendientes
                 </span>
               )}
@@ -398,7 +424,7 @@ export default function AdminDashboard() {
                           <span className="text-[9px] text-[#737784] font-mono">Tel: {customerPhone || 'Sin teléfono'}</span>
                         </div>
                         <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                          req.status === 'pending' ? 'bg-[#dee8ff] text-[#00357f]' : req.status === 'contacted' ? 'bg-amber-100 text-amber-800' : 'bg-[#e2f9ee] text-[#00422b]'
+                          req.status === 'pending' ? 'bg-[#fef3c7] text-[#92400e]' : req.status === 'contacted' ? 'bg-[#dee8ff] text-[#00357f]' : 'bg-[#e2f9ee] text-[#00422b]'
                         }`}>
                           {req.status === 'pending' ? 'Pendiente' : req.status === 'contacted' ? 'Contactado' : 'Completado'}
                         </span>
@@ -442,13 +468,14 @@ export default function AdminDashboard() {
           </div>
 
           {/* Exam Review Reminders (12 cols) */}
-          <div className="anim-stagger-item md:col-span-12" style={{ '--enter-delay': '260ms' } as React.CSSProperties}>
+          <div className="anim-stagger-item md:col-span-12 lg:col-span-5" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
             <ReminderTray />
           </div>
 
           {/* Recent Activity Section (12 cols) — tabla extraída a components/recent-activity.tsx */}
           <RecentActivity sales={sales} />
 
+          </div>
         </div>
       )}
 

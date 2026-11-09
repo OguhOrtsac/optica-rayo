@@ -34,35 +34,84 @@ export default async function Navbar() {
   }
 
   // Setup navigation items based on the canonical role model.
+  // La hamburguesa lleva SOLO destinos secundarios: todo lo que ya vive
+  // en la barra inferior (Inicio, Registrar Pago, Clientes, Realizar
+  // Venta, Perfil) no se repite aquí — cada destino vive en un solo
+  // mecanismo. «Agenda» (staff) y «Agendar examen gratis» (pública) son
+  // destinos distintos, con etiqueta e icono distintos.
   const getNavLinks = (): MainMenuLink[] => {
-    const links: MainMenuLink[] = [{ label: 'Catálogo', href: '/catalog', icon: 'catalog' }]
-    links.push({ label: 'Agendar examen gratis', href: '/agendar', icon: 'agenda' })
-    if (!isAuthenticated) return links
-
+    if (!isAuthenticated) {
+      return [
+        { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
+        { label: 'Agendar examen gratis', href: '/agendar', icon: 'agendar' },
+      ]
+    }
     if (role === 'customer') {
-      links.push({ label: 'Mis beneficios', href: '/dashboard/customer', icon: 'discounts' })
+      return [
+        { label: 'Agendar examen gratis', href: '/agendar', icon: 'agendar' },
+      ]
     }
     if (role === 'optometrist') {
-      links.push({ label: 'Pacientes y exámenes', href: '/customers', icon: 'patients' })
+      return [
+        { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' },
+      ]
     }
-    if (role === 'seller') {
-      links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
-      links.push({ label: 'Registrar Pago', href: '/payments', icon: 'payment' })
-      links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
-      links.push({ label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' })
+    if (role === 'seller' || role === 'owner' || role === 'super_admin') {
+      const links: MainMenuLink[] = [
+        { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
+        { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' },
+        { label: 'Productos', href: '/dashboard/admin/products', icon: 'products' },
+      ]
+      if (role === 'owner' || role === 'super_admin') {
+        links.push({ label: 'Usuarios', href: '/dashboard/admin/users', icon: 'users' })
+      }
+      return links
     }
-    if (role === 'owner' || role === 'super_admin') {
-      links.push({ label: 'Panel', href: '/dashboard/admin', icon: 'admin' })
-      links.push({ label: 'Usuarios', href: '/dashboard/admin/users', icon: 'users' })
-      links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
-      links.push({ label: 'Registrar Pago', href: '/payments', icon: 'payment' })
-      links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
-      links.push({ label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' })
-    }
-    return links
+    return []
   }
 
   const navLinks = getNavLinks()
+
+  // The DESKTOP bar has no bottom navigation to lean on, so it shows the
+  // full set (primary + secondary). The hamburger keeps only the
+  // secondary set above — on mobile the bottom bar owns the primaries.
+  const getDesktopLinks = (): { label: string; href: string }[] => {
+    if (!isAuthenticated) {
+      return [
+        { label: 'Catálogo', href: '/catalog' },
+        { label: 'Agendar examen gratis', href: '/agendar' },
+      ]
+    }
+    const home = { label: 'Inicio', href: dashboardHrefForRole(role) }
+    if (role === 'customer') {
+      return [home, { label: 'Catálogo', href: '/catalog' }, { label: 'Agendar examen gratis', href: '/agendar' }]
+    }
+    if (role === 'optometrist') {
+      return [
+        { label: 'Pacientes', href: '/customers' },
+        { label: 'Catálogo', href: '/catalog' },
+        { label: 'Agenda', href: '/dashboard/appointments' },
+      ]
+    }
+    if (role === 'seller' || role === 'owner' || role === 'super_admin') {
+      const links = [
+        home,
+        { label: 'Clientes', href: '/customers' },
+        { label: 'Registrar Pago', href: '/payments' },
+        { label: 'Realizar Venta', href: '/dashboard/seller' },
+        { label: 'Catálogo', href: '/catalog' },
+        { label: 'Agenda', href: '/dashboard/appointments' },
+        { label: 'Productos', href: '/dashboard/admin/products' },
+      ]
+      if (role === 'owner' || role === 'super_admin') {
+        links.push({ label: 'Usuarios', href: '/dashboard/admin/users' })
+      }
+      return links
+    }
+    return []
+  }
+
+  const desktopLinks = getDesktopLinks()
 
   // Render SVG icons dynamically
   const renderIcon = (type: string) => {
@@ -119,14 +168,14 @@ export default async function Navbar() {
     <>
       <ScrollNavEffect />
       {/* Desktop Top Navbar (Hidden on mobile) */}
-      <nav className="site-nav w-full bg-[#f9f9ff]/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-[#c3c6d5] dark:border-slate-800 sticky top-0 z-50 px-6 h-16 hidden md:block shadow-sm">
+      <nav className="site-nav w-full bg-[#f9f9ff]/90 backdrop-blur-md border-b border-[#c3c6d5] sticky top-0 z-50 px-6 h-16 hidden md:block shadow-sm">
         <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-full bg-[#d9e2ff] dark:bg-slate-900 flex items-center justify-center text-[#00357f] dark:text-cyan-400 font-bold overflow-hidden">
+            <div className="w-8 h-8 rounded-full bg-[#d9e2ff] flex items-center justify-center text-[#00357f] font-bold overflow-hidden">
               {initials || "OR"}
             </div>
-            <span className="text-lg font-bold tracking-tight text-[#00357f] dark:text-cyan-400 transition-colors">
+            <span className="text-lg font-bold tracking-tight text-[#00357f] transition-colors">
               Óptica Rayo
             </span>
           </Link>
@@ -134,18 +183,18 @@ export default async function Navbar() {
           {/* Links */}
           <div className="flex items-center gap-6 h-full">
             <div className="flex gap-4 h-full items-center">
-              {navLinks.map(link => (
+              {desktopLinks.map(link => (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="text-sm font-semibold text-[#434653] dark:text-slate-350 hover:text-[#00357f] dark:hover:text-cyan-400 px-3 py-2 rounded-lg hover:bg-[#dee8ff]/40 dark:hover:bg-slate-900 transition-colors"
+                  className="text-sm font-semibold text-[#434653] hover:text-[#00357f] px-3 py-2 rounded-lg hover:bg-[#dee8ff]/40 transition-colors"
                 >
                   {link.label}
                 </Link>
               ))}
             </div>
 
-            <div className="h-4 w-px bg-[#c3c6d5] dark:bg-slate-800 mx-2" />
+            <div className="h-4 w-px bg-[#c3c6d5] mx-2" />
 
             {/* Auth Profile / Login */}
             {isAuthenticated ? (
@@ -155,7 +204,7 @@ export default async function Navbar() {
                 title={`Perfil de ${displayName}`}
               >
                 <span className="text-right leading-tight">
-                  <span className="block text-xs font-bold text-[#434653] dark:text-slate-450 group-hover/profile:text-[#00357f] transition-colors">
+                  <span className="block text-xs font-bold text-[#434653] group-hover/profile:text-[#00357f] transition-colors">
                     {displayName}
                   </span>
                   <span className="block text-[10px] font-semibold text-[#737784]">
@@ -176,9 +225,9 @@ export default async function Navbar() {
       </nav>
 
       {/* Mobile Top Header (Minimalist for PWA view) */}
-      <header className="site-nav relative w-full bg-[#f9f9ff]/95 dark:bg-slate-950/95 backdrop-blur border-b border-[#c3c6d5] dark:border-slate-900 sticky top-0 z-50 px-4 py-2.5 flex md:hidden justify-between items-center shadow-sm">
+      <header className="site-nav relative w-full bg-[#f9f9ff]/95 backdrop-blur border-b border-[#c3c6d5] sticky top-0 z-50 px-4 py-2.5 flex md:hidden justify-between items-center shadow-sm">
         <Link href="/" className="flex items-center gap-1.5">
-          <span className="text-sm font-bold tracking-tight text-[#00357f] dark:text-cyan-400">
+          <span className="text-sm font-bold tracking-tight text-[#00357f]">
             Óptica Rayo
           </span>
         </Link>
@@ -190,8 +239,8 @@ export default async function Navbar() {
               aria-label={`Abrir perfil de ${displayName}`}
               className="flex min-h-11 min-w-11 items-center justify-center rounded-xl transition hover:bg-[#dee8ff]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#c3c6d5] bg-[#d9e2ff] dark:border-slate-800 dark:bg-slate-900">
-                <span className="text-[10px] font-bold text-[#00357f] dark:text-cyan-400">{initials}</span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#c3c6d5] bg-[#d9e2ff]">
+                <span className="text-[10px] font-bold text-[#00357f]">{initials}</span>
               </span>
             </Link>
           )}

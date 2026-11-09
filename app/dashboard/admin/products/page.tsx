@@ -45,7 +45,9 @@ import {
   Package,
   CheckCircle,
   SlidersHorizontal,
-  Tag
+  Tag,
+  Settings,
+  ChevronDown
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -106,6 +108,9 @@ export default function AdminProductsPage() {
 
   // General member discount percent (logged-in customers)
   const [memberPct, setMemberPct] = useState(20)
+  // «Configuración» section (discount + templates): collapsed by default
+  // so the product grid leads the page.
+  const [isConfigOpen, setIsConfigOpen] = useState(false)
   const [submittingProduct, setSubmittingProduct] = useState(false)
 
   // Lens option templates (editable defaults) + per-product option drafts.
@@ -529,15 +534,18 @@ export default function AdminProductsPage() {
     <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
       
       {/* Page Header & Actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
-              <ArrowLeft className="w-4.5 h-4.5" />
-            </Link>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+            <ArrowLeft className="w-4.5 h-4.5" />
+          </Link>
+          <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+            <Package className="w-5 h-5" />
+          </span>
+          <div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Inventario y Productos</h1>
+            <p className="text-sm text-[#434653] mt-1 font-medium">Gestione su catálogo de armazones, lentes y accesorios.</p>
           </div>
-          <p className="text-sm text-[#434653] mt-1 font-medium pl-9">Gestione su catálogo de armazones, lentes y accesorios.</p>
         </div>
         <button 
           onClick={() => setIsCreateModalOpen(true)}
@@ -559,8 +567,32 @@ export default function AdminProductsPage() {
         </div>
       )}
 
+      {/* Configuración: member pricing + lens option templates live in ONE
+          collapsible section, closed by default, so the product grid is
+          the protagonist of the page. Both blocks keep their exact fields
+          and save handlers — only the visual container changed. */}
+      <section className="bg-white rounded-2xl border border-[#cbd5e1] shadow-sm" aria-label="Configuración">
+        <button
+          type="button"
+          onClick={() => setIsConfigOpen(!isConfigOpen)}
+          aria-expanded={isConfigOpen}
+          className="w-full flex items-center gap-3 p-4 text-left cursor-pointer min-h-[56px] rounded-2xl"
+        >
+          <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+            <Settings className="w-4.5 h-4.5" />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-bold text-[#111c2d]">Configuración</span>
+            <span className="block text-xs text-[#737784] font-medium">Descuento a clientes y plantillas de opciones de lente</span>
+          </span>
+          <ChevronDown className={`w-5 h-5 text-[#737784] shrink-0 transition-transform duration-300 ${isConfigOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {isConfigOpen && (
+          <div className="px-4 pb-4 pt-4 space-y-6 border-t border-[#f0f3ff]">
+
       {/* Member pricing configuration */}
-      <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-2xl border border-[#cbd5e1] shadow-sm">
+      <div className="flex flex-wrap items-center gap-3">
         <span className="text-[10px] font-black uppercase tracking-wider text-[#00357f]">
           Descuento general a clientes logueados
         </span>
@@ -587,7 +619,7 @@ export default function AdminProductsPage() {
       </div>
 
       {/* Lens option templates: the editable defaults for the quote assistant */}
-      <section className="bg-white p-4 md:p-5 rounded-2xl border border-[#cbd5e1] shadow-sm space-y-4" aria-label="Plantillas de opciones de lente">
+      <div className="space-y-4 border-t border-[#e7eeff] pt-4" aria-label="Plantillas de opciones de lente">
         <div>
           <h2 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Plantillas de opciones de lente</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-[#737784] font-medium">
@@ -613,6 +645,10 @@ export default function AdminProductsPage() {
             {savingTemplates ? 'Guardando...' : 'Guardar plantillas'}
           </button>
         </div>
+      </div>
+
+          </div>
+        )}
       </section>
 
       {/* Filters Grid */}

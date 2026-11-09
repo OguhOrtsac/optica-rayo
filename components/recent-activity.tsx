@@ -37,11 +37,16 @@ export default function RecentActivity({ sales }: { sales: RecentActivitySale[] 
 
   return (
     <div className="anim-stagger-item md:col-span-12 bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
-      <div className="flex items-center gap-2.5 mb-2">
-        <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#00357f] to-[#00668a] flex items-center justify-center text-white shadow-sm shadow-[#00357f]/25">
-          <Activity className="w-4 h-4" />
+      <div className="flex items-center gap-3 mb-4">
+        <span className="w-10 h-10 rounded-xl bg-[#0899c9]/15 text-[#0899c9] flex items-center justify-center shrink-0">
+          <Activity className="w-5 h-5" />
         </span>
-        <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f]">Actividad Reciente</h3>
+        <h3 className="text-base font-semibold text-[#111c2d]">Actividad reciente</h3>
+        {recent.length > 0 && (
+          <span className="ml-auto shrink-0 bg-[#dee8ff] text-[#00357f] text-xs font-bold px-2.5 py-1 rounded-full">
+            {recent.length}
+          </span>
+        )}
       </div>
 
       {recent.length === 0 ? (
@@ -58,17 +63,17 @@ export default function RecentActivity({ sales }: { sales: RecentActivitySale[] 
                   type="button"
                   onClick={() => setExpandedId(isOpen ? null : s.id)}
                   aria-expanded={isOpen}
-                  className="w-full flex items-center gap-2 py-2 text-left cursor-pointer"
+                  className="w-full flex items-center gap-2 py-3 min-h-[48px] text-left cursor-pointer"
                 >
                   {/* Cliente + detalle corto */}
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-1.5">
-                      <span className="truncate font-bold text-xs text-[#111c2d]">{customerName}</span>
+                      <span className="truncate font-semibold text-sm text-[#111c2d]">{customerName}</span>
                       <span className="shrink-0 inline-flex items-center px-1.5 py-px rounded-full bg-[#dee8ff] text-[#00357f] font-bold text-[9px] uppercase tracking-wide">
                         Venta
                       </span>
                     </span>
-                    <span className="block truncate text-[11px] text-[#737784] font-medium mt-0.5">
+                    <span className="block truncate text-xs text-[#737784] font-medium mt-0.5">
                       Registrada por {sellerName}
                     </span>
                   </span>

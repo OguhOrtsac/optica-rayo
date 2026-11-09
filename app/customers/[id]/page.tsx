@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, type ReminderConfig } from '@/lib/services'
 import { registerInstallmentPaymentAction } from '@/app/customers/actions'
@@ -12,6 +12,8 @@ import {
   FileText, 
   Phone, 
   Calendar, 
+  CalendarPlus,
+  MessageCircle,
   Briefcase, 
   HeartHandshake, 
   Eye, 
@@ -71,11 +73,11 @@ function InstallmentPayForm({ installment, formatPrice, onDone }: {
   }
 
   return (
-    <div className="mt-2.5 border-t border-[#cbd5e1]/40 pt-2.5">
+    <div className="mt-3 border-t border-[#cbd5e1]/40 pt-3">
       {feedback && (
         <div className={`mb-2 p-2 rounded-lg text-[11px] font-bold border ${
           feedback.type === 'success'
-            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700'
+            ? 'bg-[#e2f9ee] border-[#49da9f]/40 text-[#00422b]'
             : 'bg-rose-500/10 border-rose-500/30 text-rose-600'
         }`}>
           {feedback.text}
@@ -147,6 +149,15 @@ export default function CustomerDetailPage({ params }: PageProps) {
       setActiveTab('billing')
     }
   }, [])
+
+  // La pestaña activa se auto-desplaza hasta quedar visible en su fila
+  // (clave al abrir con #cobranza: Cobranza es la última y quedaría
+  // cortada a la derecha en pantallas angostas).
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  useEffect(() => {
+    if (loading) return
+    tabRefs.current[activeTab]?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeTab, loading])
 
   const loadData = useCallback(async () => {
     try {
@@ -273,7 +284,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 flex flex-col items-center justify-center space-y-4">
+      <main className="min-h-screen bg-[#edf1fa] text-[#111c2d] p-4 md:p-8 flex flex-col items-center justify-center space-y-4">
         <div className="w-10 h-10 border-4 border-[#00357f] border-t-transparent rounded-full animate-spin" />
         <p className="text-sm text-[#737784] font-medium">Cargando expediente del cliente...</p>
       </main>
@@ -282,7 +293,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
 
   if (error || !customer) {
     return (
-      <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8">
+      <main className="min-h-screen bg-[#edf1fa] text-[#111c2d] p-4 md:p-8">
         <div className="max-w-2xl mx-auto space-y-6 text-center py-20 bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm">
           <div className="w-16 h-16 bg-rose-100 border border-rose-200 rounded-full flex items-center justify-center mx-auto text-[#ba1a1a]">
             <AlertTriangle className="w-8 h-8" />
@@ -349,108 +360,164 @@ export default function CustomerDetailPage({ params }: PageProps) {
     return { actual, anterior, rows }
   })()
 
+  // Teléfono del cliente listo para tel:/wa.me (con código de país).
+  const cleanPhone = (cp.phone || '').replace(/[^\d]/g, '')
+  const phoneWithCode = cleanPhone
+    ? (cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone)
+    : ''
+
+  // Acciones rápidas de la cabecera: botones táctiles ≥44px, icono + texto.
+  const quickActionClass = 'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl text-xs font-bold transition-all active:scale-[0.98] cursor-pointer shadow-sm'
+
+  // Pestañas de la ficha: etiquetas de UNA palabra, con sus insignias.
+  const fichaTabs = [
+    { key: 'profile', label: 'Datos', Icon: User, badge: 0, badgeClass: '' },
+    { key: 'exams', label: 'Clínica', Icon: Eye, badge: exams.length, badgeClass: 'bg-[#dee8ff] text-[#00357f]' },
+    { key: 'sales', label: 'Ventas', Icon: ShoppingBag, badge: sales.length, badgeClass: 'bg-[#dee8ff] text-[#00357f]' },
+    { key: 'billing', label: 'Cobranza', Icon: Wallet, badge: billing.pendingCount, badgeClass: 'bg-[#ffdad6] text-[#ba1a1a]' },
+  ] as const
+
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-4xl mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen bg-[#edf1fa] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-4xl mx-auto pb-24 md:pb-8 text-left">
       
       {/* Back and Header */}
       <div className="space-y-4">
-        <Link href="/dashboard/admin/customers" className="inline-flex items-center gap-2 text-xs font-bold text-[#737784] hover:text-[#00357f] transition-colors">
+        <Link href="/customers" className="inline-flex items-center gap-2 text-xs font-bold text-[#737784] hover:text-[#00357f] transition-colors">
           <ArrowLeft className="w-4 h-4" />
           Volver a Clientes
         </Link>
 
-        {/* Customer Profile Header Card */}
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-6 bg-white border border-[#cbd5e1] rounded-2xl shadow-sm">
-          <div className="w-16 h-16 bg-[#dee8ff] text-[#00357f] rounded-full flex items-center justify-center font-black text-xl select-none">
-            {getInitials(customer.full_name)}
-          </div>
-          <div className="flex-1 text-center sm:text-left space-y-1.5 min-w-0">
-            <h1 className="text-2xl font-black text-[#111c2d] leading-none">{customer.full_name}</h1>
-            <p className="text-xs text-[#737784] font-medium">
-              @{customer.email?.replace('@opticarayo.com', '')}
-              {age !== null && ` · ${age} años`}
-              {cp.occupation && ` · ${cp.occupation}`}
-            </p>
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
-              {cp.blood_type && cp.blood_type !== 'NS' && (
-                <span className="bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-[#ffdad6]">
-                  Tipo: {cp.blood_type}
-                </span>
-              )}
-              <span className="bg-[#dee8ff]/60 text-[#00357f] text-[10px] font-bold px-2 py-0.5 rounded">
-                Alta: {new Date(customer.created_at).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}
-              </span>
-              {totalPending > 0 && (
-                <span className="bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded">
-                  Saldo pendiente: {formatPrice(totalPending)}
-                </span>
-              )}
+        {/* Customer Profile Header Card: identidad + saldo protagonista + acciones rápidas */}
+        <div className="p-6 bg-white border border-[#cbd5e1] rounded-2xl shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+            <div className="w-16 h-16 shrink-0 bg-[#dee8ff] text-[#00357f] rounded-full flex items-center justify-center font-black text-xl select-none">
+              {getInitials(customer.full_name)}
             </div>
+            <div className="flex-1 text-center sm:text-left space-y-1.5 min-w-0">
+              <h1 className="text-2xl font-black text-[#111c2d] leading-none">{customer.full_name}</h1>
+              <p className="text-xs text-[#737784] font-medium">
+                @{customer.email?.replace('@opticarayo.com', '')}
+                {age !== null && ` · ${age} años`}
+                {cp.occupation && ` · ${cp.occupation}`}
+              </p>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                {cp.blood_type && cp.blood_type !== 'NS' && (
+                  <span className="bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-[#ffdad6]">
+                    Tipo: {cp.blood_type}
+                  </span>
+                )}
+                <span className="bg-[#dee8ff]/60 text-[#00357f] text-[10px] font-bold px-2 py-0.5 rounded">
+                  Alta: {new Date(customer.created_at).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Saldo: UNA sola vez como cifra protagonista en la cabecera */}
+          {billing.pendingTotal > 0 ? (
+            <div className="flex items-center gap-3 rounded-xl bg-[#ffdad6] px-4 py-3">
+              <span className="shrink-0 w-9 h-9 rounded-full bg-white/60 text-[#ba1a1a] flex items-center justify-center">
+                <Wallet className="w-4.5 h-4.5" />
+              </span>
+              <div className="min-w-0">
+                <span className="block text-[10px] font-black uppercase tracking-wider text-[#ba1a1a]">Saldo pendiente</span>
+                <span className="block text-xl font-black font-mono text-[#ba1a1a] leading-tight">{formatPrice(billing.pendingTotal)}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-xl bg-[#e2f9ee] px-4 py-3">
+              <span className="shrink-0 w-9 h-9 rounded-full bg-white/60 text-[#00422b] flex items-center justify-center">
+                <Check className="w-4.5 h-4.5" />
+              </span>
+              <div className="min-w-0">
+                <span className="block text-sm font-black text-[#00422b] leading-tight">Al corriente</span>
+                <span className="block text-[11px] font-semibold text-[#00422b]">Sin saldo pendiente</span>
+              </div>
+            </div>
+          )}
+
+          {/* Acciones rápidas */}
+          <div className="flex flex-wrap gap-2 border-t border-[#f0f3ff] pt-4">
+            {phoneWithCode && (
+              <a
+                href={`tel:+${phoneWithCode}`}
+                className={`${quickActionClass} bg-white border border-[#cbd5e1] text-[#00357f] hover:bg-[#dee8ff]/40`}
+              >
+                <Phone className="w-4 h-4" />
+                Llamar
+              </a>
+            )}
+            {phoneWithCode && (
+              <a
+                href={`https://wa.me/${phoneWithCode}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${quickActionClass} bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113]`}
+              >
+                <MessageCircle className="w-4 h-4" />
+                WhatsApp
+              </a>
+            )}
+            <Link
+              href="/agendar"
+              className={`${quickActionClass} bg-[#00357f] hover:bg-[#004aad] text-white`}
+            >
+              <CalendarPlus className="w-4 h-4" />
+              Agendar examen
+            </Link>
+            {billing.pendingTotal > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('billing')}
+                className={`${quickActionClass} bg-[#ba1a1a] hover:bg-[#a31616] text-white`}
+              >
+                <Wallet className="w-4 h-4" />
+                Cobrar
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Tabs navigation */}
-      <div className="flex border-b border-[#cbd5e1] bg-white rounded-t-xl overflow-x-auto shadow-sm">
-        <button
-          onClick={() => setActiveTab('profile')}
-          className={`flex-1 min-w-[92px] whitespace-nowrap py-3.5 px-1 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer ${
-            activeTab === 'profile'
-              ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
-              : 'border-transparent text-[#737784] hover:text-[#111c2d]'
-          }`}
+      {/* Tabs navigation: fila desplazable con botones flex-none y
+          etiquetas de una palabra (el patrón anterior, flex-1 con
+          min-w-[92px], dejaba que el texto desbordara sobre la vecina).
+          La siguiente pestaña asoma y un degradado a la derecha avisa
+          que hay más; la activa se auto-desplaza hasta quedar visible. */}
+      <div className="relative">
+        <div
+          role="tablist"
+          className="flex overflow-x-auto bg-white rounded-t-xl border-b border-[#cbd5e1] shadow-sm"
         >
-          <User className="w-4 h-4" />
-          Expediente
-        </button>
-        <button
-          onClick={() => setActiveTab('exams')}
-          className={`flex-1 min-w-[92px] whitespace-nowrap py-3.5 px-1 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
-            activeTab === 'exams'
-              ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
-              : 'border-transparent text-[#737784] hover:text-[#111c2d]'
-          }`}
-        >
-          <Eye className="w-4 h-4" />
-          Historial Clínico
-          {exams.length > 0 && (
-            <span className="ml-1 bg-[#dee8ff] text-[#00357f] text-[9px] font-black px-1.5 py-0.5 rounded-full">
-              {exams.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('sales')}
-          className={`flex-1 min-w-[92px] whitespace-nowrap py-3.5 px-1 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
-            activeTab === 'sales'
-              ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
-              : 'border-transparent text-[#737784] hover:text-[#111c2d]'
-          }`}
-        >
-          <ShoppingBag className="w-4 h-4" />
-          Ventas y Compras
-          {sales.length > 0 && (
-            <span className="ml-1 bg-[#dee8ff] text-[#00357f] text-[9px] font-black px-1.5 py-0.5 rounded-full">
-              {sales.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('billing')}
-          className={`flex-1 min-w-[92px] whitespace-nowrap py-3.5 px-1 text-xs font-bold transition-all border-b-2 text-center flex items-center justify-center gap-1.5 cursor-pointer relative ${
-            activeTab === 'billing'
-              ? 'border-[#00357f] text-[#00357f] bg-[#dee8ff]/20'
-              : 'border-transparent text-[#737784] hover:text-[#111c2d]'
-          }`}
-        >
-          <Wallet className="w-4 h-4" />
-          Cobranza
-          {billing.pendingCount > 0 && (
-            <span className="ml-1 bg-[#ffdad6] text-[#ba1a1a] text-[9px] font-black px-1.5 py-0.5 rounded-full">
-              {billing.pendingCount}
-            </span>
-          )}
-        </button>
+          {fichaTabs.map(({ key, label, Icon, badge, badgeClass }) => {
+            const isActive = activeTab === key
+            return (
+              <button
+                key={key}
+                ref={el => { tabRefs.current[key] = el }}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setActiveTab(key)}
+                className={`flex-none min-h-[48px] whitespace-nowrap px-4 text-sm flex items-center justify-center gap-1.5 cursor-pointer transition-colors border-b-[3px] ${
+                  isActive
+                    ? 'border-[#00357f] text-[#00357f] font-semibold bg-[#dee8ff]/20'
+                    : 'border-transparent text-[#737784] font-medium hover:text-[#111c2d]'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                {label}
+                {badge > 0 && (
+                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${badgeClass}`}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        {/* Pista de «hay más»: degradado que se desvanece en el borde derecho */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-white to-transparent rounded-tr-xl" />
       </div>
 
       {/* Tab content */}
@@ -462,8 +529,13 @@ export default function CustomerDetailPage({ params }: PageProps) {
             <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-6">
               
               <div className="flex justify-between items-center border-b border-[#f0f3ff] pb-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Datos Generales</h3>
-                <span className="text-[10px] bg-[#49da9f]/20 text-[#00422b] px-2 py-0.5 rounded font-black uppercase">
+                <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00357f]">
+                  <span className="w-6 h-6 rounded-lg bg-[#dee8ff] text-[#00357f] flex items-center justify-center">
+                    <User className="w-3.5 h-3.5" />
+                  </span>
+                  Datos Generales
+                </h3>
+                <span className="text-[10px] bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded font-black uppercase">
                   CRM Activo
                 </span>
               </div>
@@ -511,20 +583,23 @@ export default function CustomerDetailPage({ params }: PageProps) {
                       Enviar Recordatorio de Examen
                     </button>
 
-                    {/* Recordatorio de Cobranza */}
-                    {totalPending > 0 && (
+                    {/* Recordatorio de Cobranza: acción propia (envía el
+                        recordatorio por WhatsApp); la cifra del saldo ya
+                        vive como protagonista en la cabecera, así que la
+                        etiqueta no la repite. */}
+                    {billing.pendingTotal > 0 && (
                       <button
                         onClick={() => {
                           const cleanPhone = cp.phone.replace(/[^\d]/g, '')
                           const phoneWithCode = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone
-                          const message = `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Te recordamos cordialmente que cuentas con un saldo pendiente de ${formatPrice(totalPending)} MXN de tu compra. Puedes pasar a liquidarlo a sucursal o realizar una transferencia bancaria. ¡Muchas gracias por tu preferencia!`
+                          const message = `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Te recordamos cordialmente que cuentas con un saldo pendiente de ${formatPrice(billing.pendingTotal)} MXN de tu compra. Puedes pasar a liquidarlo a sucursal o realizar una transferencia bancaria. ¡Muchas gracias por tu preferencia!`
                           window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(message)}`, '_blank')
                         }}
                         type="button"
                         className="flex-1 bg-[#ffdad6] hover:bg-[#ffcdd0] text-[#ba1a1a] font-bold text-xs px-4 py-3 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-2 border border-[#ba1a1a]/25"
                       >
                         <TrendingDown className="w-4 h-4" />
-                        Cobranza de Saldo ({formatPrice(totalPending)})
+                        Recordatorio de Cobranza
                       </button>
                     )}
                   </div>
@@ -534,7 +609,12 @@ export default function CustomerDetailPage({ params }: PageProps) {
 
             {/* Antecedentes clínicos */}
             <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Antecedentes Médicos</h3>
+              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00357f]">
+                <span className="w-6 h-6 rounded-lg bg-[#dee8ff] text-[#00357f] flex items-center justify-center">
+                  <HeartHandshake className="w-3.5 h-3.5" />
+                </span>
+                Antecedentes Médicos
+              </h3>
               <p className="text-xs text-[#434653] leading-relaxed bg-[#f9f9ff] p-4 rounded-xl border border-[#cbd5e1]/40 min-h-[60px] font-medium">
                 {cp.medical_notes || 'Sin observaciones o condiciones registradas.'}
               </p>
@@ -542,7 +622,12 @@ export default function CustomerDetailPage({ params }: PageProps) {
 
             {/* Contacto de Emergencia */}
             <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Contacto de Emergencia</h3>
+              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00357f]">
+                <span className="w-6 h-6 rounded-lg bg-[#dee8ff] text-[#00357f] flex items-center justify-center">
+                  <Phone className="w-3.5 h-3.5" />
+                </span>
+                Contacto de Emergencia
+              </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div>
                   <span className="block text-[#737784] uppercase font-bold tracking-wider mb-1">Nombre del Contacto</span>
@@ -561,7 +646,12 @@ export default function CustomerDetailPage({ params }: PageProps) {
         {activeTab === 'exams' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#737784]">Exámenes del Cliente</h3>
+              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00357f]">
+                <span className="w-6 h-6 rounded-lg bg-[#0899c9]/10 text-[#0899c9] flex items-center justify-center">
+                  <Eye className="w-3.5 h-3.5" />
+                </span>
+                Exámenes del Cliente
+              </h3>
               <Link
                 href={`/customers/${customerId}/exam/new`}
                 className="bg-[#00357f] hover:bg-[#004aad] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
@@ -739,7 +829,12 @@ export default function CustomerDetailPage({ params }: PageProps) {
         {activeTab === 'sales' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#737784]">Historial de Compras</h3>
+              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00357f]">
+                <span className="w-6 h-6 rounded-lg bg-[#dee8ff] text-[#00357f] flex items-center justify-center">
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                </span>
+                Historial de Compras
+              </h3>
               <Link
                 href={`/customers/${customerId}/sale/new`}
                 className="bg-[#00357f] hover:bg-[#004aad] text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
@@ -820,7 +915,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                             Suma del desglose: <span className="font-mono text-[#00357f]">{formatPrice(saleBreakdown(sale).sum)}</span>
                           </span>
                           {Number(sale.discount_applied || 0) > 0 && (
-                            <span className="font-bold text-[#005c3e]">
+                            <span className="font-bold text-[#00422b]">
                               − Descuento {formatPrice(Number(sale.discount_applied))} = <span className="font-mono">{formatPrice(sale.total)}</span>
                             </span>
                           )}
@@ -832,13 +927,13 @@ export default function CustomerDetailPage({ params }: PageProps) {
                     {(sale.coupon || sale.discount_applied > 0 || sale.notes) && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs text-left">
                         {sale.coupon && (
-                          <div className="bg-[#49da9f]/10 border border-[#49da9f]/30 p-2.5 rounded-xl flex items-center justify-between text-[#005c3e] font-bold">
+                          <div className="bg-[#e2f9ee] border border-[#49da9f]/40 p-2.5 rounded-xl flex items-center justify-between text-[#00422b] font-bold">
                             <span>Cupón: <strong className="font-mono uppercase">{sale.coupon.code}</strong></span>
                             <span>-{sale.coupon.discount_percent}%</span>
                           </div>
                         )}
                         {sale.discount_applied > 0 && !sale.coupon && (
-                          <div className="bg-[#49da9f]/10 border border-[#49da9f]/30 p-2.5 rounded-xl text-[#005c3e] font-bold">
+                          <div className="bg-[#e2f9ee] border border-[#49da9f]/40 p-2.5 rounded-xl text-[#00422b] font-bold">
                             Descuento directo: <strong className="font-mono">{formatPrice(sale.discount_applied)}</strong>
                           </div>
                         )}
@@ -861,18 +956,23 @@ export default function CustomerDetailPage({ params }: PageProps) {
         {activeTab === 'billing' && (
           <div className="space-y-6" id="cobranza">
             <div className="flex justify-between items-center">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#737784]">Cobranza y Pagos a Plazos</h3>
+              <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00357f]">
+                <span className="w-6 h-6 rounded-lg bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center">
+                  <Wallet className="w-3.5 h-3.5" />
+                </span>
+                Cobranza y Pagos a Plazos
+              </h3>
               <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[#00357f]">
                 <CreditCard className="w-3.5 h-3.5" /> Estado de cuenta
               </span>
             </div>
 
             {/* Resumen de cobranza */}
-            <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="bg-white border border-[#cbd5e1] rounded-2xl p-4 sm:p-6 shadow-sm space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Pago pendiente total</span>
-                  <span className={`text-3xl font-black font-mono ${billing.pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-emerald-700'}`}>
+                  <span className={`text-3xl font-black font-mono ${billing.pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>
                     {formatPrice(billing.pendingTotal)}
                   </span>
                 </div>
@@ -884,7 +984,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                       {' '}de {billing.pendingSalesCount} venta{billing.pendingSalesCount !== 1 ? 's' : ''}
                     </span>
                   ) : (
-                    <span className="text-sm font-bold text-emerald-700 block">Sin cuotas pendientes</span>
+                    <span className="text-sm font-bold text-[#00422b] block">Sin cuotas pendientes</span>
                   )}
                 </div>
                 <div className="space-y-1 sm:pl-4">
@@ -894,12 +994,12 @@ export default function CustomerDetailPage({ params }: PageProps) {
                       {formatDate(billing.nextDue)}{billing.nextOverdue ? ' (vencido)' : ''}
                     </span>
                   ) : (
-                    <span className="text-sm font-bold text-emerald-700 block">Al corriente</span>
+                    <span className="text-sm font-bold text-[#00422b] block">Al corriente</span>
                   )}
                 </div>
               </div>
               {billing.pendingTotal <= 0 && (
-                <p className="text-xs font-bold text-emerald-700 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                <p className="text-xs font-bold text-[#00422b] bg-[#e2f9ee] border border-[#49da9f]/40 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
                   <Check className="w-4 h-4 shrink-0" /> El cliente no tiene adeudos pendientes en este momento.
                 </p>
               )}
@@ -924,7 +1024,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                         <span className="font-bold text-[#00357f]">Orden #{sale.id.slice(0, 6).toUpperCase()}</span>
                         <span className="text-[#737784]">Total: <strong className="font-mono text-[#111c2d]">{formatPrice(sale.total)}</strong></span>
                         <span className="text-[#737784]">Abonado: <strong className="font-mono text-[#111c2d]">{formatPrice(Number(sale.paid_amount || 0))}</strong></span>
-                        <span className={Number(sale.pending_balance || 0) > 0 ? 'text-[#ba1a1a] font-bold' : 'text-emerald-700 font-bold'}>
+                        <span className={Number(sale.pending_balance || 0) > 0 ? 'text-[#ba1a1a] font-bold' : 'text-[#00422b] font-bold'}>
                           Resta: {formatPrice(Number(sale.pending_balance || 0))}
                         </span>
                       </div>
@@ -939,10 +1039,10 @@ export default function CustomerDetailPage({ params }: PageProps) {
                           return (
                             <div
                               key={inst.id}
-                              className={`p-3.5 border rounded-xl ${
+                              className={`p-4 border rounded-xl ${
                                 isPending
                                   ? 'border-[#cbd5e1] bg-white'
-                                  : 'border-emerald-200 bg-emerald-50/20 opacity-85'
+                                  : 'border-[#b9e7cf] bg-[#e2f9ee]/50'
                               }`}
                             >
                               <div className="flex items-start justify-between gap-3">
@@ -957,7 +1057,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                                         Vence: {formatDate(inst.due_date)}{overdue ? ' (vencida)' : ''}
                                       </span>
                                     ) : (
-                                      <span className="text-emerald-700 font-bold">
+                                      <span className="text-[#00422b] font-bold">
                                         Pagado: {inst.payment_date ? formatDate(inst.payment_date) : '—'}
                                       </span>
                                     )}
@@ -968,8 +1068,12 @@ export default function CustomerDetailPage({ params }: PageProps) {
                                     </span>
                                   )}
                                 </div>
-                                {!isPending && (
-                                  <span className="shrink-0 text-[10px] font-black text-emerald-700 uppercase flex items-center gap-0.5">
+                                {isPending ? (
+                                  <span className={`shrink-0 text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${overdue ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#fef3c7] text-[#92400e]'}`}>
+                                    {overdue ? 'Vencida' : 'Pendiente'}
+                                  </span>
+                                ) : (
+                                  <span className="shrink-0 text-[10px] font-black text-[#00422b] uppercase flex items-center gap-0.5 bg-[#e2f9ee] px-2 py-0.5 rounded-full">
                                     <Check className="w-3.5 h-3.5" /> Pagado
                                   </span>
                                 )}

@@ -43,7 +43,8 @@ import {
   Calendar,
   CalendarDays,
   AlertTriangle,
-  Clock
+  Clock,
+  TicketPercent
 } from 'lucide-react'
 
 type Coupon = Database['public']['Tables']['coupons']['Row']
@@ -270,7 +271,7 @@ export default function CustomerDashboard() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f9f9ff] text-[#111c2d]">
+      <main className="min-h-screen flex items-center justify-center text-[#111c2d]">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
           <p className="text-sm text-[#737784] font-medium">Cargando tu panel de salud...</p>
@@ -280,25 +281,26 @@ export default function CustomerDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-4xl mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-4xl mx-auto pb-24 md:pb-8 text-left">
       
       {/* Profile Overview Card (Glassmorphism design) */}
-      <section className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 relative overflow-hidden">
+      <section className="bg-gradient-to-br from-[#dee8ff] via-white to-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 relative overflow-hidden">
         {/* Decorative subtle background gradient */}
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#dee8ff] rounded-full blur-3xl pointer-events-none" />
         
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 z-10 w-full text-center sm:text-left">
-          <div className="w-16 h-16 rounded-full bg-[#dee8ff] border border-[#cbd5e1] flex items-center justify-center font-black text-xl text-[#00357f] shrink-0">
+          <div className="w-16 h-16 rounded-full bg-[#00357f] flex items-center justify-center font-black text-xl text-white shrink-0 shadow-md shadow-[#00357f]/25">
             {fullName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
           </div>
           <div className="flex-1 mt-1 space-y-1">
-            <h1 className="text-xl font-extrabold text-[#111c2d]">{fullName}</h1>
+            <p className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Hola de nuevo</p>
+            <h1 className="text-xl font-bold text-[#111c2d]">{fullName}</h1>
             <p className="text-xs text-[#737784] font-semibold">
               ID Cliente: #{userId.slice(0, 6).toUpperCase()}
             </p>
             <div className="pt-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#dee8ff]/80 text-[#00357f] text-[9px] font-black uppercase tracking-wider border border-[#cbd5e1]/40">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#00357f] animate-pulse" />
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#e2f9ee] text-[#00422b] text-[9px] font-black uppercase tracking-wider border border-[#00422b]/15">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Cliente Activo
               </span>
             </div>
@@ -436,7 +438,7 @@ export default function CustomerDashboard() {
       </section>
 
       {/* Accordions Container */}
-      <div className="space-y-4">
+      <div className="space-y-6">
         
         {/* Accordion 1: Último Examen */}
         <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden transition-shadow hover:shadow-md">
@@ -445,11 +447,11 @@ export default function CustomerDashboard() {
             className="w-full px-5 py-4 flex items-center justify-between text-left focus:outline-none group cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-full bg-[#0899c9]/15 text-[#0899c9] flex items-center justify-center shrink-0">
                 <Eye className="w-4.5 h-4.5" />
               </div>
               <div>
-                <h3 className="font-extrabold text-sm text-[#111c2d]">Último Examen de la Vista</h3>
+                <h3 className="font-semibold text-base text-[#111c2d]">Último Examen de la Vista</h3>
                 <p className="text-[11px] text-[#737784] mt-0.5 font-medium">
                   {latestExam ? `Realizado el ${formatDate(latestExam.exam_date)}` : 'Sin registros de exámenes'}
                 </p>
@@ -514,11 +516,11 @@ export default function CustomerDashboard() {
             className="w-full px-5 py-4 flex items-center justify-between text-left focus:outline-none group cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${pendingBalance > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#e2f9ee] text-[#00422b]'}`}>
                 <Wallet className="w-4.5 h-4.5" />
               </div>
               <div>
-                <h3 className="font-extrabold text-sm text-[#111c2d]">Resumen de Pagos</h3>
+                <h3 className="font-semibold text-base text-[#111c2d]">Resumen de Pagos</h3>
                 <div className="flex items-center gap-2 mt-0.5 font-medium">
                   <p className="text-[11px] text-[#737784]">Saldo pendiente: {formatPrice(pendingBalance)}</p>
                   {pendingBalance > 0 && (
@@ -563,7 +565,7 @@ export default function CustomerDashboard() {
                         <div className="text-right flex items-center gap-3">
                           <span className="font-mono font-black text-[#00357f]">{formatPrice(inst.amount)}</span>
                           <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                            inst.status === 'paid' ? 'bg-[#e2f9ee] text-[#00422b]' : 'bg-[#ffdad6] text-[#ba1a1a]'
+                            inst.status === 'paid' ? 'bg-[#e2f9ee] text-[#00422b]' : 'bg-[#fef3c7] text-[#92400e]'
                           }`}>
                             {inst.status === 'paid' ? 'Pagado' : 'Pendiente'}
                           </span>
@@ -589,7 +591,7 @@ export default function CustomerDashboard() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-[#e8f5e9]/30 border border-emerald-500/20 p-4 rounded-xl text-center text-xs font-bold text-emerald-700">
+                <div className="bg-[#e2f9ee] border border-[#00422b]/15 p-4 rounded-xl text-center text-xs font-bold text-[#00422b]">
                   ¡Felicidades! No cuentas con saldos pendientes. Tu cuenta está al corriente.
                 </div>
               )}
@@ -609,7 +611,7 @@ export default function CustomerDashboard() {
                 <Receipt className="w-4.5 h-4.5" />
               </div>
               <div>
-                <h3 className="font-extrabold text-sm text-[#111c2d]">Historial de Compras</h3>
+                <h3 className="font-semibold text-base text-[#111c2d]">Historial de Compras</h3>
                 <p className="text-[11px] text-[#737784] mt-0.5 font-medium">
                   {sales.length} artículo{sales.length !== 1 ? 's' : ''} en tu historial
                 </p>
@@ -645,7 +647,7 @@ export default function CustomerDashboard() {
                         <span className={`inline-block mt-1 px-2.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
                           (sale.pending_balance || 0) > 0 
                             ? 'bg-[#ffdad6] text-[#ba1a1a]' 
-                            : 'bg-[#49da9f]/20 text-[#00422b]'
+                            : 'bg-[#e2f9ee] text-[#00422b]'
                         }`}>
                           {(sale.pending_balance || 0) > 0 ? 'Con Adeudo' : 'Pagado'}
                         </span>
@@ -665,11 +667,11 @@ export default function CustomerDashboard() {
             className="w-full px-5 py-4 flex items-center justify-between text-left focus:outline-none group cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-full bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
                 <Sliders className="w-4.5 h-4.5" />
               </div>
               <div>
-                <h3 className="font-extrabold text-sm text-[#111c2d]">Armar mis Lentes</h3>
+                <h3 className="font-semibold text-base text-[#111c2d]">Armar mis Lentes</h3>
                 <p className="text-[11px] text-[#737784] mt-0.5 font-medium">Diseña tu combinación de armazón y micas preferidos</p>
               </div>
             </div>
@@ -780,11 +782,13 @@ export default function CustomerDashboard() {
 
       {/* Benefits Coupons Section */}
       {coupons.length > 0 && (
-        <section className="space-y-4 pt-2">
-          <h3 className="text-xs font-black uppercase tracking-wider text-[#737784] flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#00357f]" />
-            Cupones Exclusivos de Cliente
-          </h3>
+        <section className="space-y-4">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl bg-[#e2f9ee] text-[#00422b] flex items-center justify-center shrink-0">
+              <TicketPercent className="w-5 h-5" />
+            </span>
+            <h3 className="text-base font-semibold text-[#111c2d]">Cupones exclusivos de cliente</h3>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {coupons.map((coupon) => (
@@ -793,8 +797,8 @@ export default function CustomerDashboard() {
                 className="bg-white border border-[#cbd5e1] rounded-2xl p-5 relative overflow-hidden shadow-sm"
               >
                 {/* Visual tickets cutouts */}
-                <div className="absolute top-1/2 -left-2.5 w-5 h-5 bg-[#f9f9ff] border border-[#cbd5e1] rounded-full" />
-                <div className="absolute top-1/2 -right-2.5 w-5 h-5 bg-[#f9f9ff] border border-[#cbd5e1] rounded-full" />
+                <div className="absolute top-1/2 -left-2.5 w-5 h-5 bg-[#edf1fa] border border-[#cbd5e1] rounded-full" />
+                <div className="absolute top-1/2 -right-2.5 w-5 h-5 bg-[#edf1fa] border border-[#cbd5e1] rounded-full" />
 
                 <div className="space-y-3 text-left">
                   <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-wider text-[#737784]">
@@ -820,12 +824,14 @@ export default function CustomerDashboard() {
       )}
 
       {/* Mis Citas Section (appointments module) */}
-      <section className="space-y-4 pt-2">
+      <section className="space-y-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="text-xs font-black uppercase tracking-wider text-[#737784] flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#00357f]" />
-            Mis Citas de Examen
-          </h3>
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl bg-[#0899c9]/15 text-[#0899c9] flex items-center justify-center shrink-0">
+              <CalendarDays className="w-5 h-5" />
+            </span>
+            <h3 className="text-base font-semibold text-[#111c2d]">Mis citas de examen</h3>
+          </div>
           <Link
             href="/agendar"
             className="inline-flex items-center gap-1.5 bg-[#00357f] hover:bg-[#004aad] active:scale-[0.98] text-white text-xs font-black px-3.5 py-2 rounded-lg transition-all shadow-sm"
@@ -837,8 +843,8 @@ export default function CustomerDashboard() {
         {apptFeedback && (
           <p className={`text-sm font-semibold rounded-lg px-3 py-2 border ${
             apptFeedback.type === 'success'
-              ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-              : 'text-[#ba1a1a] bg-red-50 border-red-200'
+              ? 'text-[#00422b] bg-[#e2f9ee] border-[#00422b]/15'
+              : 'text-[#ba1a1a] bg-[#ffdad6]/60 border-[#ba1a1a]/20'
           }`}>
             {apptFeedback.text}
           </p>
@@ -871,17 +877,17 @@ export default function CustomerDashboard() {
                     </div>
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${
                       appt.status === 'pending'
-                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        ? 'bg-[#fef3c7] text-[#92400e] border-[#92400e]/20'
                         : appt.status === 'confirmed'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-red-50 text-[#ba1a1a] border-red-200'
+                          ? 'bg-[#e2f9ee] text-[#00422b] border-[#00422b]/15'
+                          : 'bg-[#ffdad6] text-[#ba1a1a] border-[#ba1a1a]/20'
                     }`}>
                       {appt.status === 'pending' ? 'Pendiente de confirmación' : appt.status === 'confirmed' ? 'Confirmada' : 'Cancelada'}
                     </span>
                   </div>
 
                   {appt.status === 'cancelled' && (
-                    <div className="mt-3 text-xs font-semibold text-[#ba1a1a] bg-red-50 border border-red-100 rounded-lg px-3 py-2 space-y-0.5">
+                    <div className="mt-3 text-xs font-semibold text-[#ba1a1a] bg-[#ffdad6]/60 border border-[#ba1a1a]/15 rounded-lg px-3 py-2 space-y-0.5">
                       <p>{appt.cancelled_by === 'admin' ? 'La óptica canceló esta cita.' : 'Tú cancelaste esta cita.'}</p>
                       {appt.cancel_reason && <p>Motivo: {appt.cancel_reason}</p>}
                     </div>
@@ -890,7 +896,7 @@ export default function CustomerDashboard() {
                   {isLive && !isCancelling && (
                     <button
                       onClick={() => { setApptCancelTargetId(appt.id); setApptCancelReason(''); setApptFeedback(null) }}
-                      className="mt-3 inline-flex items-center gap-1.5 border border-red-200 text-[#ba1a1a] hover:bg-red-50 active:scale-[0.98] text-xs font-black px-3.5 py-2 rounded-lg transition-all cursor-pointer"
+                      className="mt-3 inline-flex items-center gap-1.5 border border-[#ba1a1a]/30 text-[#ba1a1a] hover:bg-[#ffdad6]/50 active:scale-[0.98] text-xs font-black px-3.5 py-2 rounded-lg transition-all cursor-pointer"
                     >
                       <X className="w-4 h-4" /> Cancelar cita
                     </button>
@@ -961,7 +967,7 @@ export default function CustomerDashboard() {
               <div className="flex justify-between items-center text-[10px] text-[#737784] font-semibold border-b border-[#cbd5e1]/30 pb-2">
                 <span>Fecha: {new Date(selectedSaleDetail.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
                 <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                  (selectedSaleDetail.pending_balance || 0) > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#49da9f]/20 text-[#00422b]'
+                  (selectedSaleDetail.pending_balance || 0) > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#e2f9ee] text-[#00422b]'
                 }`}>
                   {(selectedSaleDetail.pending_balance || 0) > 0 ? 'Con Adeudo' : 'Pagado'}
                 </span>

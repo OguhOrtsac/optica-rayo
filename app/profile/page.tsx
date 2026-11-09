@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useState } from 'react'
-import { updateProfile, logout, getProfileData, updateThemeAction } from '@/app/auth/actions'
+import { updateProfile, logout, getProfileData } from '@/app/auth/actions'
 import { User, Shield, ShieldAlert, Key, LogOut, CheckCircle, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { dashboardHrefForRole, isAdminRole, roleLabel } from '@/lib/roles'
@@ -22,16 +22,12 @@ export default function ProfilePage() {
     bg_theme: 'dark' | 'light'
   } | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
-  const [activeTheme, setActiveTheme] = useState<'dark' | 'light'>('dark')
 
   useEffect(() => {
     async function loadProfile() {
       try {
         const data = await getProfileData()
         setProfileData(data as any)
-        if (data) {
-          setActiveTheme(data.bg_theme)
-        }
       } catch {
         setProfileData(null)
       } finally {
@@ -55,16 +51,6 @@ export default function ProfilePage() {
       refreshProfile()
     }
   }, [state?.success])
-
-  const handleThemeChange = async (theme: 'dark' | 'light') => {
-    setActiveTheme(theme)
-    if (theme === 'light') {
-      document.documentElement.classList.add('light')
-    } else {
-      document.documentElement.classList.remove('light')
-    }
-    await updateThemeAction(theme)
-  }
 
   const getRoleBadgeLabel = (role: string) => roleLabel(role)
 
@@ -159,38 +145,6 @@ export default function ProfilePage() {
             </span>
           </div>
 
-          {/* Theme switcher */}
-          {!profileData.isSuperAdmin && (
-            <div className="pt-4 border-t border-[#cbd5e1]/40 flex items-center justify-between">
-              <span className="text-xs font-bold text-[#737784] uppercase tracking-wider">
-                Tema de Fondo
-              </span>
-              <div className="flex items-center gap-2 bg-[#f0f3ff] p-1 rounded-xl border border-[#cbd5e1] shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => handleThemeChange('dark')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeTheme === 'dark'
-                      ? 'bg-white text-[#00357f] shadow-sm font-black'
-                      : 'text-[#737784] hover:text-[#111c2d]'
-                  }`}
-                >
-                  Oscuro
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleThemeChange('light')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeTheme === 'light'
-                      ? 'bg-white text-[#00357f] shadow-sm font-black'
-                      : 'text-[#737784] hover:text-[#111c2d]'
-                  }`}
-                >
-                  Claro
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Edit Profile Form */}

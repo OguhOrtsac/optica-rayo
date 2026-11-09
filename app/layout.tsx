@@ -42,7 +42,6 @@ export const metadata: Metadata = {
   },
 };
 
-import { cookies } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
 
 export default async function RootLayout({
@@ -50,8 +49,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cookieStore = await cookies();
-  const theme = cookieStore.get("bg_theme")?.value || "dark";
+  // Single light theme by design (design system v1): no theme cookie is
+  // read anymore — the old dark/light switch painted the chrome almost
+  // black over a light body on phones in dark mode.
   let isAuthenticated = false;
   try {
     const supabase = await createClient();
@@ -66,9 +66,9 @@ export default async function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} ${jakartaSans.variable} h-full antialiased ${theme}`}
+      className={`${geistSans.variable} ${geistMono.variable} ${jakartaSans.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
+      <body className="min-h-full flex flex-col bg-[#edf1fa] text-[#111c2d]">
         <PWARegister />
         <Navbar />
         <div className={`flex-1 ${isAuthenticated ? 'pb-20 md:pb-0' : 'pb-0'}`}>
