@@ -14,7 +14,7 @@ export interface Database {
           id: string
           email: string
           full_name: string
-          role: 'dev' | 'owner' | 'seller' | 'customer'
+          role: 'super_admin' | 'dev' | 'owner' | 'optometrist' | 'seller' | 'customer'
           temporal_password_changed: boolean
           created_at: string
           bg_theme: 'dark' | 'light'
@@ -23,7 +23,7 @@ export interface Database {
           id: string
           email: string
           full_name: string
-          role?: 'dev' | 'owner' | 'seller' | 'customer'
+          role?: 'super_admin' | 'dev' | 'owner' | 'optometrist' | 'seller' | 'customer'
           temporal_password_changed?: boolean
           created_at?: string
           bg_theme?: 'dark' | 'light'
@@ -32,7 +32,7 @@ export interface Database {
           id?: string
           email?: string
           full_name?: string
-          role?: 'dev' | 'owner' | 'seller' | 'customer'
+          role?: 'super_admin' | 'dev' | 'owner' | 'optometrist' | 'seller' | 'customer'
           temporal_password_changed?: boolean
           created_at?: string
           bg_theme?: 'dark' | 'light'
@@ -166,6 +166,13 @@ export interface Database {
           stock: number
           category: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url: string | null
+          brand: string | null
+          material: string | null
+          sku: string | null
+          frame_shape: 'round' | 'square' | 'rectangular' | 'aviator' | 'cat_eye' | 'oval' | 'other' | null
+          color: string | null
+          gallery_urls: string[]
+          image_alt: string | null
           is_promo: boolean
           is_featured: boolean
           created_at: string
@@ -179,6 +186,13 @@ export interface Database {
           stock?: number
           category: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url?: string | null
+          brand?: string | null
+          material?: string | null
+          sku?: string | null
+          frame_shape?: 'round' | 'square' | 'rectangular' | 'aviator' | 'cat_eye' | 'oval' | 'other' | null
+          color?: string | null
+          gallery_urls?: string[]
+          image_alt?: string | null
           is_promo?: boolean
           is_featured?: boolean
           created_at?: string
@@ -192,6 +206,13 @@ export interface Database {
           stock?: number
           category?: 'frames' | 'lenses' | 'contact_lenses' | 'accessories'
           image_url?: string | null
+          brand?: string | null
+          material?: string | null
+          sku?: string | null
+          frame_shape?: 'round' | 'square' | 'rectangular' | 'aviator' | 'cat_eye' | 'oval' | 'other' | null
+          color?: string | null
+          gallery_urls?: string[]
+          image_alt?: string | null
           is_promo?: boolean
           is_featured?: boolean
           created_at?: string

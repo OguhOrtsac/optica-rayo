@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
+import { dashboardHrefForRole, normalizeRole } from '@/lib/roles'
 
 /**
  * Core Dashboard Router (Server Component).
@@ -15,17 +16,6 @@ export default async function DashboardPage() {
     redirect('/login')
   }
 
-  const role = user.user_metadata?.role || 'customer'
-
-  // Route depending on role permissions
-  if (role === 'owner' || role === 'dev') {
-    redirect('/dashboard/admin')
-  }
-  
-  if (role === 'seller') {
-    redirect('/dashboard/seller')
-  }
-
-  // Default fallback route for customers
-  redirect('/dashboard/customer')
+  const role = normalizeRole(user.user_metadata?.role || 'customer')
+  redirect(dashboardHrefForRole(role))
 }

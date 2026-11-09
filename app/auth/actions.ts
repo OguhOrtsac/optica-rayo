@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { invalidateProfilesCache } from '@/lib/services'
 import * as mockDb from '@/lib/mocks'
+import { normalizeRole, type UserRole } from '@/lib/roles'
 
 /**
  * Centralizes the username-to-email mapping logic.
@@ -179,10 +180,10 @@ export async function login(currentState: LoginState, formData: FormData): Promi
     (formattedEmail === 'optometrista@opticarayo.com' && password === 'Rayo_Optometrista2026') ||
     (mockUser && mockUser.role === 'customer')
   ) {
-    let roleVal = mockUser?.role || 'dev'
+    let roleVal = normalizeRole(mockUser?.role || 'super_admin')
     let nameVal = mockUser?.full_name || 'Dr. Hugo Optometrista'
     if (formattedEmail === 'superadmin@opticarayo.com') {
-      roleVal = 'owner'
+      roleVal = 'super_admin'
       nameVal = 'Super Administrador'
     } else if (formattedEmail === 'vendedora@opticarayo.com') {
       roleVal = 'seller'
@@ -338,7 +339,7 @@ export async function createUserAction(currentState: any, formData: FormData) {
   const username = formData.get('username') as string
   const fullName = formData.get('fullName') as string
   const password = formData.get('password') as string
-  const role = formData.get('role') as 'owner' | 'seller' | 'customer'
+  const role = formData.get('role') as UserRole
 
   if (!username || !fullName || !password || !role) {
     return { error: 'Todos los campos del formulario son requeridos.', success: null }
@@ -597,7 +598,7 @@ export async function updateThemeAction(theme: 'light' | 'dark') {
 /**
  * Server Action to update an existing user's details (admin only).
  */
-export async function adminUpdateUserAction(userId: string, data: { fullName: string; username: string; role: 'owner' | 'seller' | 'customer' | 'dev'; password?: string }) {
+export async function adminUpdateUserAction(userId: string, data: { fullName: string; username: string; role: UserRole; password?: string }) {
   try {
     const supabase = await createClient()
     const { data: { user: currentUser } } = await supabase.auth.getUser()
@@ -614,7 +615,7 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
 
     const userRole = currentUser?.user_metadata?.role || profile?.role
 
-    if (!userRole || !['owner', 'dev'].includes(userRole)) {
+    if (!userRole || !['owner', 'dev', 'super_admin'].includes(userRole)) {
       return { error: 'No tienes permisos para modificar usuarios.' }
     }
     const formattedEmail = formatToEmail(data.username)
@@ -694,7 +695,7 @@ export async function adminDeleteUserAction(userId: string) {
 
     const userRole = currentUser?.user_metadata?.role || profile?.role
 
-    if (!userRole || !['owner', 'dev'].includes(userRole)) {
+    if (!userRole || !['owner', 'dev', 'super_admin'].includes(userRole)) {
       return { error: 'No tienes permisos para eliminar usuarios.' }
     }
 

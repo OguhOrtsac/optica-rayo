@@ -9,6 +9,11 @@ import {
   addMonthsISO,
 } from './reminder-config'
 import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT } from './pricing'
+import {
+  PRODUCT_IMAGE_BUCKET,
+  productImageExtension,
+  validateProductImageFile,
+} from './product-images'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Coupon = Database['public']['Tables']['coupons']['Row']
@@ -58,7 +63,21 @@ export async function getProducts(): Promise<Product[]> {
           .order('name', { ascending: true })
       )
       
-      if (!error && data) return data
+      if (!error && data) {
+        // Older rows (before the media migration) may not carry every new
+        // structured field yet; normalize them for the UI instead of leaking
+        // undefined values into forms and the catalog.
+        return data.map((product: Product) => ({
+          ...product,
+          brand: product.brand ?? null,
+          material: product.material ?? null,
+          sku: product.sku ?? null,
+          frame_shape: product.frame_shape ?? null,
+          color: product.color ?? null,
+          gallery_urls: Array.isArray(product.gallery_urls) ? product.gallery_urls : [],
+          image_alt: product.image_alt ?? null,
+        }))
+      }
       console.error('Error fetching products from Supabase:', error?.message)
     } catch (e) {
       console.error('Supabase fetch failed, falling back to mocks:', e)
@@ -94,22 +113,33 @@ export async function createProduct(product: Omit<Product, 'id' | 'created_at'>)
  * converts the file to base64 and returns it as a data URL.
  */
 export async function uploadProductImage(file: File): Promise<string | null> {
+  const validation = await validateProductImageFile(file)
+  if (!validation.valid) {
+    throw new Error(validation.errors.join(' '))
+  }
+
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`
-      const filePath = `products/${fileName}`
+      const extension = productImageExtension(file)
+      const unique = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `${Math.random().toString(36).substring(2, 15)}_${Date.now()}`
+      const filePath = `products/${unique}.${extension}`
 
       const { data, error } = await supabase.storage
-        .from('product-images')
-        .upload(filePath, file)
+        .from(PRODUCT_IMAGE_BUCKET)
+        .upload(filePath, file, {
+          cacheControl: '31536000',
+          contentType: file.type,
+          upsert: false,
+        })
 
       if (!error && data) {
         const { data: { publicUrl } } = supabase.storage
-          .from('product-images')
+          .from(PRODUCT_IMAGE_BUCKET)
           .getPublicUrl(filePath)
-        
+
         return publicUrl
       }
       console.warn('Supabase storage upload error, trying base64 fallback:', error?.message)
@@ -118,7 +148,9 @@ export async function uploadProductImage(file: File): Promise<string | null> {
     }
   }
 
-  // Fallback: Convert to Base64 data URL
+  // Local/demo fallback only: when Supabase is not connected, keep the photo
+  // as a data URL so the form can be tested end to end. Real deployments
+  // store the binary in Storage and only the URL in the database.
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onloadend = () => {
@@ -129,6 +161,17 @@ export async function uploadProductImage(file: File): Promise<string | null> {
     }
     reader.readAsDataURL(file)
   })
+}
+
+/** Uploads a set of product photos in order, stopping on the first error. */
+export async function uploadProductImages(files: File[]): Promise<string[]> {
+  const urls: string[] = []
+  for (const file of files) {
+    const url = await uploadProductImage(file)
+    if (!url) throw new Error(`No se pudo subir la foto ${file.name}.`)
+    urls.push(url)
+  }
+  return urls
 }
 
 /**

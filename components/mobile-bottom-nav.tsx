@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+import { dashboardHrefForRole, normalizeRole } from '@/lib/roles'
+
 interface MobileBottomNavProps {
   isAuthenticated: boolean
   role: string | null
@@ -12,14 +14,17 @@ interface MobileBottomNavProps {
 export default function MobileBottomNav({ isAuthenticated, role, initials }: MobileBottomNavProps) {
   const pathname = usePathname()
 
+  // Guests use the top hamburger menu; the fixed bottom bar is reserved for
+  // signed-in workspaces so public pages keep their full reading space.
   if (!isAuthenticated) {
     return null
   }
 
   // Define navigation links based on user role
   const getLinks = () => {
+    const normalizedRole = normalizeRole(role)
     // Customer view
-    if (role === 'customer') {
+    if (normalizedRole === 'customer') {
       return [
         { label: 'Inicio', href: '/dashboard/customer', icon: 'home' },
         { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
@@ -27,8 +32,16 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
       ]
     }
 
-    // Staff view (owner, seller, dev)
-    const homeHref = (role === 'owner' || role === 'dev') ? '/dashboard/admin' : '/dashboard/seller'
+    if (normalizedRole === 'optometrist') {
+      return [
+        { label: 'Pacientes', href: '/customers', icon: 'patients' },
+        { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
+        { label: 'Perfil', href: '/profile', icon: 'profile' }
+      ]
+    }
+
+    // Staff view (owner, seller, super_admin/dev)
+    const homeHref = dashboardHrefForRole(normalizedRole)
     return [
       { label: 'Inicio', href: homeHref, icon: 'home' },
       { label: 'Registrar Pago', href: '/payments', icon: 'payment' },

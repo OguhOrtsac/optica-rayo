@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import { cookies } from 'next/headers'
 import MobileBottomNav from './mobile-bottom-nav'
+import MainMenu, { type MainMenuLink } from './main-menu'
+import { dashboardHrefForRole, normalizeRole, roleLabel } from '@/lib/roles'
 
 /**
  * Global Navigation Bar with App Shell Architecture.
@@ -19,16 +21,21 @@ export default async function Navbar() {
 
   if (superadminSession === 'true') {
     isAuthenticated = true
-    role = 'dev'
-    displayName = 'Super Admin'
-    initials = 'SA'
+    role = normalizeRole(cookieStore.get('optica_rayo_mock_role')?.value || 'super_admin')
+    displayName = cookieStore.get('optica_rayo_mock_name')?.value || 'Super Admin'
+    initials = displayName
+      .split(' ')
+      .map((word: string) => word[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
   } else {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     
     if (user) {
       isAuthenticated = true
-      role = user.user_metadata?.role || null
+      role = normalizeRole(user.user_metadata?.role || null)
       displayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'
       initials = displayName
         .split(' ')
@@ -39,24 +46,27 @@ export default async function Navbar() {
     }
   }
 
-  // Setup navigation items based on roles
-  const getNavLinks = () => {
-    const links = [{ label: 'Catálogo', href: '/catalog', icon: 'catalog' }]
-    if (isAuthenticated) {
-      if (role === 'customer') {
-        links.push({ label: 'Descuentos', href: '/dashboard/customer', icon: 'discounts' })
-      }
-      if (role === 'seller') {
-        links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
-        links.push({ label: 'Registrar Pago', href: '/payments', icon: 'payment' })
-        links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
-      }
-      if (role === 'owner' || role === 'dev') {
-        links.push({ label: 'Panel', href: '/dashboard/admin', icon: 'admin' })
-        links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
-        links.push({ label: 'Registrar Pago', href: '/payments', icon: 'payment' })
-        links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
-      }
+  // Setup navigation items based on the canonical role model.
+  const getNavLinks = (): MainMenuLink[] => {
+    const links: MainMenuLink[] = [{ label: 'Catálogo', href: '/catalog', icon: 'catalog' }]
+    if (!isAuthenticated) return links
+
+    if (role === 'customer') {
+      links.push({ label: 'Mis beneficios', href: '/dashboard/customer', icon: 'discounts' })
+    }
+    if (role === 'optometrist') {
+      links.push({ label: 'Pacientes y exámenes', href: '/customers', icon: 'patients' })
+    }
+    if (role === 'seller') {
+      links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
+      links.push({ label: 'Registrar Pago', href: '/payments', icon: 'payment' })
+      links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
+    }
+    if (role === 'owner' || role === 'super_admin') {
+      links.push({ label: 'Panel', href: '/dashboard/admin', icon: 'admin' })
+      links.push({ label: 'Clientes', href: '/customers', icon: 'patients' })
+      links.push({ label: 'Registrar Pago', href: '/payments', icon: 'payment' })
+      links.push({ label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' })
     }
     return links
   }
@@ -108,10 +118,6 @@ export default async function Navbar() {
     }
   }
 
-  if (!isAuthenticated) {
-    return null
-  }
-
   return (
     <>
       {/* Desktop Top Navbar (Hidden on mobile) */}
@@ -150,8 +156,13 @@ export default async function Navbar() {
                 className="flex items-center gap-2.5 group/profile py-1"
                 title={`Perfil de ${displayName}`}
               >
-                <span className="text-xs font-bold text-[#434653] dark:text-slate-450 group-hover/profile:text-[#00357f] transition-colors">
-                  {displayName}
+                <span className="text-right leading-tight">
+                  <span className="block text-xs font-bold text-[#434653] dark:text-slate-450 group-hover/profile:text-[#00357f] transition-colors">
+                    {displayName}
+                  </span>
+                  <span className="block text-[10px] font-semibold text-[#737784]">
+                    {roleLabel(role)}
+                  </span>
                 </span>
               </Link>
             ) : (
@@ -159,7 +170,7 @@ export default async function Navbar() {
                 href="/login"
                 className="bg-[#00357f] hover:bg-[#00429b] text-white font-bold text-xs px-5 py-2 rounded-full transition-all duration-300 h-9 flex items-center"
               >
-                Iniciar Sesión
+                Entrar o crear cuenta
               </Link>
             )}
           </div>
@@ -167,30 +178,32 @@ export default async function Navbar() {
       </nav>
 
       {/* Mobile Top Header (Minimalist for PWA view) */}
-      <header className="w-full bg-[#f9f9ff] dark:bg-slate-950 border-b border-[#c3c6d5] dark:border-slate-900 sticky top-0 z-50 px-4 py-3 flex md:hidden justify-between items-center shadow-sm">
+      <header className="relative w-full bg-[#f9f9ff]/95 dark:bg-slate-950/95 backdrop-blur border-b border-[#c3c6d5] dark:border-slate-900 sticky top-0 z-50 px-4 py-2.5 flex md:hidden justify-between items-center shadow-sm">
         <Link href="/" className="flex items-center gap-1.5">
           <span className="text-sm font-bold tracking-tight text-[#00357f] dark:text-cyan-400">
             Óptica Rayo
           </span>
         </Link>
 
-        {/* Small Profile Quick Link */}
-        {isAuthenticated ? (
-          <Link href="/profile" className="flex items-center">
-            <div className="w-7 h-7 bg-[#d9e2ff] dark:bg-slate-900 rounded-full flex items-center justify-center border border-[#c3c6d5] dark:border-slate-800">
-              <span className="text-[10px] font-bold text-[#00357f] dark:text-cyan-400">
-                {initials}
+        <div className="flex items-center gap-2">
+          {isAuthenticated && (
+            <Link
+              href="/profile"
+              aria-label={`Abrir perfil de ${displayName}`}
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-xl transition hover:bg-[#dee8ff]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#c3c6d5] bg-[#d9e2ff] dark:border-slate-800 dark:bg-slate-900">
+                <span className="text-[10px] font-bold text-[#00357f] dark:text-cyan-400">{initials}</span>
               </span>
-            </div>
-          </Link>
-        ) : (
-          <Link
-            href="/login"
-            className="text-[10px] bg-white border border-[#c3c6d5] text-[#00357f] font-bold px-3 py-1.5 rounded-lg"
-          >
-            Entrar
-          </Link>
-        )}
+            </Link>
+          )}
+          <MainMenu
+            links={navLinks}
+            isAuthenticated={isAuthenticated}
+            displayName={displayName}
+            initials={initials}
+          />
+        </div>
       </header>
 
       {/* Mobile Bottom Navigation Bar */}
