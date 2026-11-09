@@ -222,6 +222,11 @@ export default function RegisterUsersPage() {
     else if (editIsOptometrist) roleVal = 'optometrist'
     else if (editIsSeller) roleVal = 'seller'
     else if (editIsCustomer) roleVal = 'customer'
+    // Platform accounts are not managed from this panel: editing a
+    // super_admin (or legacy dev) must never silently demote them.
+    if (editingUser.role === 'super_admin' || editingUser.role === 'dev') {
+      roleVal = 'super_admin'
+    }
 
     try {
       const editPasswordInput = document.getElementById('edit-user-pwd') as HTMLInputElement
