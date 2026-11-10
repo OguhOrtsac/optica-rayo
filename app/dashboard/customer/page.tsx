@@ -305,7 +305,10 @@ export default function CustomerDashboard() {
   // the admin reminder module uses) and the recommendation.
   const examCycle = useMemo(() => {
     if (!latestExam?.exam_date) return null
-    const examDate = new Date(`${latestExam.exam_date}T12:00:00`)
+    // exam_date is a timestamptz in the base (it arrives as a full ISO
+    // string): keep only the date part before anchoring at local noon,
+    // otherwise the parse is invalid and the whole cycle silently hides.
+    const examDate = new Date(`${String(latestExam.exam_date).slice(0, 10)}T12:00:00`)
     if (isNaN(examDate.getTime())) return null
     const nextDate = new Date(addMonthsISO(examDate, reminderMonths))
     const monthsLeft = (nextDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30.4375)
