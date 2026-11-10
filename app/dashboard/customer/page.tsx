@@ -14,8 +14,15 @@ import {
   getProducts,
   getLensMaterials,
   getLensTreatments,
-  createLensRequest
+  createLensRequest,
+  getReminderConfig,
+  getMemberDiscountPercent,
+  getActivePromotions,
+  type Promotion
 } from '@/lib/services'
+import { addMonthsISO, DEFAULT_REMINDER_MONTHS } from '@/lib/reminder-config'
+import { effectiveClientPrice } from '@/lib/pricing'
+import { getProductImages } from '@/lib/product-data'
 import { getMySalesAction } from '@/app/customers/actions'
 import Link from 'next/link'
 import {
@@ -44,7 +51,9 @@ import {
   CalendarDays,
   AlertTriangle,
   Clock,
-  TicketPercent
+  TicketPercent,
+  Sparkles,
+  Glasses
 } from 'lucide-react'
 
 type Coupon = Database['public']['Tables']['coupons']['Row']
@@ -53,10 +62,19 @@ export default function CustomerDashboard() {
   const [userId, setUserId] = useState<string>('')
   const [fullName, setFullName] = useState('Cliente')
   const [coupons, setCoupons] = useState<Coupon[]>([])
+  // Promotions in force (created only by the administrator; shown to
+  // the customer right after the greeting when any are active).
+  const [promotions, setPromotions] = useState<Promotion[]>([])
   const [latestExam, setLatestExam] = useState<any | null>(null)
   const [sales, setSales] = useState<any[]>([])
   const [reminder, setReminder] = useState<any | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Configured review period (app_settings, same one the admin reminders use)
+  const [reminderMonths, setReminderMonths] = useState<number>(DEFAULT_REMINDER_MONTHS)
+  // Full catalog + member discount, for the "similar to what you bought" suggestions
+  const [catalogProducts, setCatalogProducts] = useState<any[]>([])
+  const [memberPct, setMemberPct] = useState(0)
   
   // Installments and Notifications
   const [installments, setInstallments] = useState<any[]>([])
@@ -79,6 +97,19 @@ export default function CustomerDashboard() {
 
   // Selected sale for receipt modal details
   const [selectedSaleDetail, setSelectedSaleDetail] = useState<any | null>(null)
+
+  // Promotions in force: loaded apart from the main bundle so the
+  // block simply stays hidden when the administrator has none active.
+  useEffect(() => {
+    async function loadPromotions() {
+      try {
+        setPromotions(await getActivePromotions())
+      } catch (err) {
+        console.error('Error loading promotions:', err)
+      }
+    }
+    loadPromotions()
+  }, [])
 
   // Mis citas (appointments module)
   const [myAppointments, setMyAppointments] = useState<Appointment[]>([])
@@ -119,7 +150,9 @@ export default function CustomerDashboard() {
           notificationsData,
           productsData,
           materialsData,
-          treatmentsData
+          treatmentsData,
+          reminderConfigData,
+          memberPctData
         ] = await Promise.all([
           getCoupons(),
           getMyLatestExam(),
@@ -129,7 +162,9 @@ export default function CustomerDashboard() {
           getMyNotifications(),
           getProducts(),
           getLensMaterials(),
-          getLensTreatments()
+          getLensTreatments(),
+          getReminderConfig(),
+          getMemberDiscountPercent()
         ])
 
         setCoupons(couponsData)
@@ -139,8 +174,11 @@ export default function CustomerDashboard() {
         setInstallments(installmentsData)
         setNotifications(notificationsData)
         setFrames(productsData.filter((p: any) => p.category === 'frames'))
+        setCatalogProducts(productsData)
         setMaterials(materialsData)
         setTreatments(treatmentsData)
+        setReminderMonths(reminderConfigData.months)
+        setMemberPct(memberPctData)
       } catch (err) {
         console.error('Error loading customer dashboard data:', err)
       } finally {
@@ -261,6 +299,70 @@ export default function CustomerDashboard() {
   const pendingBalance = useMemo(() => sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0), [sales])
   const paymentProgressPercent = totalPurchased > 0 ? Math.round((totalPaid / totalPurchased) * 100) : 100
 
+  // Owner rule: the customer NEVER sees graduation values (sphere/cylinder/
+  // axis/add or PD) — only when the last exam was, when the next one is due
+  // (exam date + the configured reminder period, the same app_settings period
+  // the admin reminder module uses) and the recommendation.
+  const examCycle = useMemo(() => {
+    if (!latestExam?.exam_date) return null
+    const examDate = new Date(`${latestExam.exam_date}T12:00:00`)
+    if (isNaN(examDate.getTime())) return null
+    const nextDate = new Date(addMonthsISO(examDate, reminderMonths))
+    const monthsLeft = (nextDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30.4375)
+    return {
+      nextDate,
+      monthsLeft,
+      isDue: monthsLeft <= 0,
+      isNear: monthsLeft > 0 && monthsLeft <= 1,
+      nextLabel: nextDate.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }),
+      wholeMonthsLeft: Math.max(1, Math.round(monthsLeft))
+    }
+  }, [latestExam, reminderMonths])
+
+  // Applied options of a purchase (lens material + treatments from the sale
+  // snapshot), used as a summary line on each purchase row.
+  const saleOptionsSummary = (sale: any): string[] => {
+    const options: string[] = []
+    sale.sale_items?.forEach((item: any) => {
+      if (item.lens_material?.name) options.push(`Mica: ${item.lens_material.name}`)
+      item.sale_item_treatments?.forEach((t: any) => {
+        if (t.treatment?.name) options.push(t.treatment.name)
+      })
+    })
+    return Array.from(new Set(options))
+  }
+
+  // "Parecidos a los que compraste": up to 4 catalog products in the SAME
+  // category as the most recent purchase, excluding anything already bought.
+  const suggestions = useMemo(() => {
+    if (sales.length === 0 || catalogProducts.length === 0) return { category: null as string | null, items: [] as any[] }
+    const latestItem = sales[0]?.sale_items?.find((i: any) => i.product?.category)
+    if (!latestItem) return { category: null as string | null, items: [] as any[] }
+    const category = latestItem.product.category as string
+    const purchasedNames = new Set<string>()
+    sales.forEach(s => s.sale_items?.forEach((i: any) => {
+      if (i.product?.name) purchasedNames.add(i.product.name)
+    }))
+    const items = catalogProducts
+      .filter((p: any) => p.category === category && !purchasedNames.has(p.name))
+      .slice(0, 4)
+    return { category, items }
+  }, [sales, catalogProducts])
+
+  const CATEGORY_LABELS: Record<string, string> = {
+    frames: 'Armazones',
+    lenses: 'Lentes',
+    contact_lenses: 'Lentes de contacto',
+    accessories: 'Accesorios'
+  }
+
+  const LENS_TYPE_LABELS: Record<string, string> = {
+    monofocal: 'Monofocal',
+    bifocal: 'Bifocal',
+    progresivo: 'Progresivo',
+    contacto: 'Lentes de contacto'
+  }
+
   // Format currency
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-MX', {
@@ -378,6 +480,70 @@ export default function CustomerDashboard() {
         </div>
       </section>
 
+      {/* Promotions in force (administrator-created; hidden when none) */}
+      {promotions.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="w-8 h-8 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0 shadow-sm">
+              <TicketPercent className="w-4 h-4" />
+            </span>
+            <h2 className="text-base font-bold text-[#111c2d]">Promociones para ti</h2>
+          </div>
+          <div className="space-y-3">
+            {promotions.map(promo => (
+              <article
+                key={promo.id}
+                className="rounded-2xl overflow-hidden shadow-md shadow-[#00357f]/15 border border-[#00357f]/20"
+              >
+                {promo.image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={promo.image_url} alt="" className="w-full h-28 object-cover" />
+                )}
+                <div className="bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#0899c9] text-white p-5 relative overflow-hidden">
+                  <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+                  <div className="flex items-start justify-between gap-4 relative">
+                    <div className="space-y-1.5 min-w-0">
+                      <h3 className="text-lg font-extrabold leading-snug">{promo.title}</h3>
+                      {promo.description && (
+                        <p className="text-sm text-white/85 leading-relaxed">{promo.description}</p>
+                      )}
+                      {promo.ends_at && (
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-white/70">
+                          Válida hasta el {(() => {
+                            const [y, m, d] = promo.ends_at.split('-').map(Number)
+                            return new Date(y, (m || 1) - 1, d || 1).toLocaleDateString('es-MX', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric',
+                            })
+                          })()}
+                        </p>
+                      )}
+                      {promo.code && (
+                        <p className="pt-1">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-white/60 bg-white/10 text-sm font-black tracking-widest">
+                            {promo.code}
+                          </span>
+                          <span className="block text-[10px] font-semibold text-white/70 mt-1">
+                            Menciona este código en mostrador
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                    {promo.discount_percent !== null && (
+                      <div className="text-center shrink-0 bg-white/15 border border-white/25 rounded-2xl px-3 py-2">
+                        <span className="block text-3xl font-black leading-none">-{promo.discount_percent}%</span>
+                        <span className="block text-[9px] font-black uppercase tracking-wider text-white/80 mt-1">Descuento</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Editable Glasses Nickname Section ("Lentes Actuales") */}
       <section className="bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm">
         <div className="flex items-start gap-4">
@@ -464,39 +630,57 @@ export default function CustomerDashboard() {
             <div className="p-5 text-left">
               {latestExam ? (
                 <div className="space-y-4">
-                  {/* Receta Grid */}
-                  <div className="border border-[#cbd5e1]/40 rounded-xl overflow-hidden shadow-sm">
-                    <div className="grid grid-cols-5 bg-[#f9f9ff] text-[9px] font-black uppercase text-[#737784] border-b border-[#cbd5e1]/40 text-center divide-x divide-[#cbd5e1]/30">
-                      <div className="py-2.5">Ojo</div>
-                      <div className="py-2.5">Esfera (SPH)</div>
-                      <div className="py-2.5">Cilindro (CYL)</div>
-                      <div className="py-2.5">Eje (AXIS)</div>
-                      <div className="py-2.5">Adición</div>
-                    </div>
-                    {/* OD Row */}
-                    <div className="grid grid-cols-5 bg-white text-xs text-[#111c2d] border-b border-[#cbd5e1]/45 text-center divide-x divide-[#cbd5e1]/30 items-center">
-                      <div className="py-3 font-extrabold text-[#00357f]">OD <span className="block text-[8px] font-bold text-[#737784] uppercase">Derecho</span></div>
-                      <div className="py-3 font-mono font-bold">{latestExam.od_sphere !== null ? (latestExam.od_sphere >= 0 ? '+' : '') + latestExam.od_sphere.toFixed(2) : '--'}</div>
-                      <div className="py-3 font-mono font-bold">{latestExam.od_cylinder !== null ? (latestExam.od_cylinder >= 0 ? '+' : '') + latestExam.od_cylinder.toFixed(2) : '--'}</div>
-                      <div className="py-3 font-mono font-bold">{latestExam.od_axis !== null ? `${latestExam.od_axis}°` : '--'}</div>
-                      <div className="py-3 font-mono font-bold">{latestExam.od_add !== null ? `+${latestExam.od_add.toFixed(2)}` : '--'}</div>
-                    </div>
-                    {/* OI Row */}
-                    <div className="grid grid-cols-5 bg-[#f9f9ff] text-xs text-[#111c2d] text-center divide-x divide-[#cbd5e1]/30 items-center">
-                      <div className="py-3 font-extrabold text-[#00668a]">OI <span className="block text-[8px] font-bold text-[#737784] uppercase">Izquierdo</span></div>
-                      <div className="py-3 font-mono font-bold">{latestExam.oi_sphere !== null ? (latestExam.oi_sphere >= 0 ? '+' : '') + latestExam.oi_sphere.toFixed(2) : '--'}</div>
-                      <div className="py-3 font-mono font-bold">{latestExam.oi_cylinder !== null ? (latestExam.oi_cylinder >= 0 ? '+' : '') + latestExam.oi_cylinder.toFixed(2) : '--'}</div>
-                      <div className="py-3 font-mono font-bold">{latestExam.oi_axis !== null ? `${latestExam.oi_axis}°` : '--'}</div>
-                      <div className="py-3 font-mono font-bold">{latestExam.oi_add !== null ? `+${latestExam.oi_add.toFixed(2)}` : '--'}</div>
-                    </div>
-                  </div>
+                  {/* Next exam cycle — no graduation values are shown to the
+                      customer (owner rule); only dates and recommendation. */}
+                  {examCycle && (
+                    examCycle.isDue ? (
+                      <div className="flex items-start gap-3 p-4 bg-[#ffdad6]/60 border border-[#ba1a1a]/20 rounded-xl">
+                        <AlertTriangle className="w-5 h-5 text-[#ba1a1a] shrink-0 mt-0.5" />
+                        <div className="space-y-2">
+                          <p className="text-sm font-black text-[#ba1a1a]">Ya es tiempo de tu nuevo examen</p>
+                          <p className="text-xs text-[#434653] font-medium leading-relaxed">
+                            Tu siguiente revisión tocaba en <strong className="capitalize">{examCycle.nextLabel}</strong>. Agenda tu examen gratis y revisa cómo siguen tus lentes.
+                          </p>
+                          <Link
+                            href="/agendar"
+                            className="inline-flex items-center gap-1.5 bg-[#00357f] hover:bg-[#004aad] active:scale-[0.98] text-white text-xs font-black px-3.5 py-2 rounded-lg transition-all shadow-sm"
+                          >
+                            <CalendarDays className="w-4 h-4" /> Agendar examen
+                          </Link>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={`flex items-start gap-3 p-4 border rounded-xl ${
+                        examCycle.isNear
+                          ? 'bg-[#fef3c7] border-[#92400e]/20'
+                          : 'bg-[#dee8ff]/40 border-[#00357f]/15'
+                      }`}>
+                        <CalendarDays className={`w-5 h-5 shrink-0 mt-0.5 ${examCycle.isNear ? 'text-[#92400e]' : 'text-[#00357f]'}`} />
+                        <div>
+                          <p className={`text-sm font-black capitalize ${examCycle.isNear ? 'text-[#92400e]' : 'text-[#00357f]'}`}>
+                            Tu próximo examen: {examCycle.nextLabel}
+                          </p>
+                          <p className="text-xs text-[#434653] font-medium leading-relaxed mt-0.5">
+                            {examCycle.isNear
+                              ? 'Te falta menos de un mes. Agenda tu examen gratis con tiempo.'
+                              : `Te faltan ~${examCycle.wholeMonthsLeft} meses para tu siguiente revisión.`}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  )}
 
+                  {/* Recommendation (lens type / treatments / frame — never
+                      prescription values or clinical notes) */}
                   <div className="flex items-start gap-2.5 p-3 bg-[#dee8ff]/30 border border-[#cbd5e1]/30 rounded-xl">
                     <Info className="w-4.5 h-4.5 text-[#00357f] shrink-0 mt-0.5" />
                     <div className="text-xs text-[#434653] leading-relaxed font-medium">
-                      Distancia Pupilar (DP): <strong>{latestExam.pd_distance || 'N/A'} mm</strong>. 
-                      {latestExam.lens_type && ` Lente recomendado: ${latestExam.lens_type.toUpperCase()}.`}
-                      {latestExam.treatment && ` Tratamientos sugeridos: ${latestExam.treatment}.`}
+                      Te recomendamos un examen completo y revisar el estado de tus lentes.
+                      {latestExam.lens_type && LENS_TYPE_LABELS[latestExam.lens_type] && (
+                        <> Lente recomendado: <strong>{LENS_TYPE_LABELS[latestExam.lens_type]}</strong>.</>
+                      )}
+                      {latestExam.treatment && <> Tratamientos sugeridos: <strong>{latestExam.treatment}</strong>.</>}
+                      {latestExam.frame_recommendation && <> Armazón recomendado: <strong>{latestExam.frame_recommendation}</strong>.</>}
                     </div>
                   </div>
                 </div>
@@ -641,6 +825,11 @@ export default function CustomerDashboard() {
                         <p className="text-[10px] text-[#737784] font-medium">
                           Adquirido el {new Date(sale.created_at).toLocaleDateString('es-MX')}
                         </p>
+                        {saleOptionsSummary(sale).length > 0 && (
+                          <p className="text-[10px] text-[#434653] font-medium mt-0.5 truncate">
+                            {saleOptionsSummary(sale).join(' · ')}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-black text-xs text-[#00357f] font-mono">{formatPrice(sale.total)}</p>
@@ -779,6 +968,60 @@ export default function CustomerDashboard() {
         </div>
 
       </div>
+
+      {/* Suggestions: same category as the most recent purchase */}
+      {suggestions.items.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </span>
+            <div>
+              <h3 className="text-base font-semibold text-[#111c2d]">Parecidos a los que compraste</h3>
+              {suggestions.category && (
+                <p className="text-[11px] text-[#737784] font-medium">
+                  Más {CATEGORY_LABELS[suggestions.category]?.toLowerCase() || 'productos'} como los tuyos
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {suggestions.items.map((product: any) => {
+              const image = getProductImages(product)[0]
+              const displayPrice = effectiveClientPrice(product.price, product.client_price, memberPct)
+              return (
+                <Link
+                  key={product.id}
+                  href="/catalog"
+                  className="bg-white border border-[#cbd5e1] rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow group block"
+                >
+                  <div className="aspect-[4/3] bg-[#f0f3ff] flex items-center justify-center overflow-hidden">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={product.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <Glasses className="w-10 h-10 text-[#00357f]/40" />
+                    )}
+                  </div>
+                  <div className="p-3 space-y-1 text-left">
+                    <p className="font-bold text-xs text-[#111c2d] truncate group-hover:text-[#00357f] transition-colors">
+                      {product.name}
+                    </p>
+                    {product.brand && (
+                      <p className="text-[10px] text-[#737784] font-medium truncate">{product.brand}</p>
+                    )}
+                    <p className="font-black text-sm text-[#00357f] font-mono">{formatPrice(displayPrice)}</p>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Benefits Coupons Section */}
       {coupons.length > 0 && (
@@ -1015,53 +1258,18 @@ export default function CustomerDashboard() {
                 </div>
               </div>
 
-              {/* Prescription Panel */}
+              {/* Graduation safeguard — owner rule: the exact prescription is
+                  never shown to the customer, it stays in the store file. */}
               <div className="border-t border-b border-[#cbd5e1]/40 py-4 my-2">
-                {selectedSaleDetail.sale_items?.some((i: any) => i.od_sphere !== null || i.oi_sphere !== null) ? (
-                  <div className="space-y-2.5">
-                    <h4 className="font-extrabold text-[#00357f] uppercase text-[9px] tracking-wider">Receta Oftalmológica de la Venta</h4>
-                    {selectedSaleDetail.sale_items?.filter((i: any) => i.od_sphere !== null || i.oi_sphere !== null).map((item: any) => (
-                      <div key={item.id} className="space-y-2 bg-[#f0f3ff]/40 border border-[#cbd5e1]/20 p-2.5 rounded-lg">
-                        <span className="text-[10px] font-black text-[#00357f] block truncate">{item.product?.name}</span>
-                        
-                        <div className="grid grid-cols-5 gap-1 text-center font-mono text-[10px] mt-1 border-t border-[#cbd5e1]/20 pt-1">
-                          <span className="text-[8px] text-[#737784] font-black uppercase self-center">OJO</span>
-                          <span className="text-[8px] text-[#737784] font-black uppercase">ESF</span>
-                          <span className="text-[8px] text-[#737784] font-black uppercase">CIL</span>
-                          <span className="text-[8px] text-[#737784] font-black uppercase">EJE</span>
-                          <span className="text-[8px] text-[#737784] font-black uppercase">ADD</span>
-
-                          <span className="font-bold text-[#00357f]">OD</span>
-                          <span>{item.od_sphere ?? '—'}</span>
-                          <span>{item.od_cylinder ?? '—'}</span>
-                          <span>{item.od_axis ?? '—'}</span>
-                          <span>{item.od_add ?? '—'}</span>
-
-                          <span className="font-bold text-[#00357f]">OI</span>
-                          <span>{item.oi_sphere ?? '—'}</span>
-                          <span>{item.oi_cylinder ?? '—'}</span>
-                          <span>{item.oi_axis ?? '—'}</span>
-                          <span>{item.oi_add ?? '—'}</span>
-                        </div>
-
-                        <div className="flex justify-between items-center text-[9px] pt-1.5 mt-1 border-t border-[#cbd5e1]/20">
-                          <span className="text-[#737784] font-bold">DISTANCIA PUPILAR (DIP):</span>
-                          <span className="font-bold font-mono">{item.pd_distance ? `${item.pd_distance} mm` : 'No registrada'}</span>
-                        </div>
-                      </div>
-                    ))}
+                <div className="bg-[#f0f3ff] border border-[#b0c6ff]/40 p-4 rounded-xl flex items-start gap-2.5">
+                  <Info className="w-5 h-5 text-[#00357f] shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-[#00357f] text-xs">Información de Graduación</p>
+                    <p className="text-[10px] text-[#434653] font-medium leading-relaxed mt-1">
+                      Tu graduación exacta está resguardada de forma segura en tu expediente en nuestra sucursal.
+                    </p>
                   </div>
-                ) : (
-                  <div className="bg-[#f0f3ff] border border-[#b0c6ff]/40 p-4 rounded-xl flex items-start gap-2.5">
-                    <Info className="w-5 h-5 text-[#00357f] shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold text-[#00357f] text-xs">Información de Graduación</p>
-                      <p className="text-[10px] text-[#434653] font-medium leading-relaxed mt-1">
-                        Tu graduación exacta está resguardada de forma segura en tu expediente en nuestra sucursal.
-                      </p>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
 
               {/* Financial Totals */}

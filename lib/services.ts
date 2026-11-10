@@ -1445,3 +1445,180 @@ export async function getMemberDiscountPercent(): Promise<number> {
 export async function saveMemberDiscountPercent(percent: number): Promise<void> {
   await setAppSetting(MEMBER_DISCOUNT_KEY, String(percent))
 }
+
+// ----------------------------------------------------
+// Promotions (created ONLY by the administrator — owner / super_admin;
+// sellers cannot create them. Customers see the ones currently in
+// force on their dashboard.)
+// ----------------------------------------------------
+
+export interface Promotion {
+  id: string
+  title: string
+  description: string | null
+  discount_percent: number | null
+  code: string | null
+  image_url: string | null
+  starts_at: string | null
+  ends_at: string | null
+  is_active: boolean
+  created_by: string | null
+  created_at: string
+}
+
+export type PromotionInput = Omit<Promotion, 'id' | 'created_at'>
+
+/** Today's date as YYYY-MM-DD in local time, for DATE column windows. */
+function todayDateString(): string {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+/**
+ * A promotion is in force when it is active and today falls inside its
+ * date window; a NULL bound leaves that side of the window open.
+ */
+export function isPromotionInForce(
+  promo: Pick<Promotion, 'is_active' | 'starts_at' | 'ends_at'>,
+  today: string = todayDateString()
+): boolean {
+  if (!promo.is_active) return false
+  if (promo.starts_at && promo.starts_at > today) return false
+  if (promo.ends_at && promo.ends_at < today) return false
+  return true
+}
+
+/**
+ * Promotions currently in force — these are the ones a customer sees
+ * on their dashboard after signing in.
+ */
+export async function getActivePromotions(): Promise<Promotion[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await withTimeout(
+        supabase
+          .from('promotions')
+          .select('*')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+      )
+
+      if (!error && data) {
+        return (data as Promotion[]).filter(p => isPromotionInForce(p))
+      }
+      console.error('Error fetching promotions from Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase promotions fetch failed:', e)
+    }
+  }
+  // No mock dataset for promotions: demo mode simply shows none.
+  return []
+}
+
+/**
+ * Every promotion regardless of state/window (admin management list).
+ */
+export async function getAllPromotions(): Promise<Promotion[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await withTimeout(
+        supabase
+          .from('promotions')
+          .select('*')
+          .order('created_at', { ascending: false })
+      )
+
+      if (!error && data) return data as Promotion[]
+      console.error('Error fetching all promotions from Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase promotions fetch failed:', e)
+    }
+  }
+  return []
+}
+
+/**
+ * Create a promotion (administrator only — enforced by RLS).
+ */
+export async function createPromotion(promotion: PromotionInput): Promise<Promotion> {
+  if (isSupabaseConfigured()) {
+    const supabase = createBrowserClient()
+    const { data, error } = await supabase
+      .from('promotions')
+      .insert([promotion])
+      .select()
+      .single()
+
+    if (!error && data) return data as Promotion
+    throw new Error(error?.message || 'No se pudo crear la promoción')
+  }
+  throw new Error('Base de datos no configurada')
+}
+
+/**
+ * Update a promotion (administrator only — enforced by RLS).
+ */
+export async function updatePromotion(
+  id: string,
+  promotion: Partial<PromotionInput>
+): Promise<Promotion> {
+  if (isSupabaseConfigured()) {
+    const supabase = createBrowserClient()
+    const { data, error } = await supabase
+      .from('promotions')
+      .update(promotion)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (!error && data) return data as Promotion
+    throw new Error(error?.message || 'No se pudo actualizar la promoción')
+  }
+  throw new Error('Base de datos no configurada')
+}
+
+/**
+ * Activate/deactivate a promotion without touching its other fields.
+ */
+export async function setPromotionActive(id: string, isActive: boolean): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { error } = await supabase
+        .from('promotions')
+        .update({ is_active: isActive })
+        .eq('id', id)
+
+      if (!error) return true
+      console.error('Error toggling promotion in Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase promotion toggle failed:', e)
+    }
+  }
+  return false
+}
+
+/**
+ * Delete a promotion (administrator only — enforced by RLS).
+ */
+export async function deletePromotion(id: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { error } = await supabase
+        .from('promotions')
+        .delete()
+        .eq('id', id)
+
+      if (!error) return true
+      console.error('Error deleting promotion in Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase promotion delete failed:', e)
+    }
+  }
+  return false
+}

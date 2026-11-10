@@ -11,6 +11,7 @@ import {
   Menu,
   Package,
   ShieldCheck,
+  TicketPercent,
   UserRound,
   X,
 } from 'lucide-react'
@@ -18,7 +19,7 @@ import {
 export interface MainMenuLink {
   label: string
   href: string
-  icon: 'catalog' | 'agenda' | 'agendar' | 'products' | 'users'
+  icon: 'catalog' | 'agenda' | 'agendar' | 'products' | 'users' | 'promotions'
 }
 
 // Iconos por destino — «Agenda» (la del staff) y «Agendar examen gratis»
@@ -29,6 +30,7 @@ const ICONS = {
   agendar: CalendarPlus,
   products: Package,
   users: ShieldCheck,
+  promotions: TicketPercent,
 }
 
 interface MainMenuProps {

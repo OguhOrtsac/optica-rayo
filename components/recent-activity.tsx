@@ -36,7 +36,7 @@ export default function RecentActivity({ sales }: { sales: RecentActivitySale[] 
   const recent = sales.slice(0, 5)
 
   return (
-    <div className="anim-stagger-item md:col-span-12 bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
+    <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '420ms' } as React.CSSProperties}>
       <div className="flex items-center gap-3 mb-4">
         <span className="w-10 h-10 rounded-xl bg-[#0899c9]/15 text-[#0899c9] flex items-center justify-center shrink-0">
           <Activity className="w-5 h-5" />

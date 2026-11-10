@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import MobileBottomNav from './mobile-bottom-nav'
 import ScrollNavEffect from './scroll-nav'
 import MainMenu, { type MainMenuLink } from './main-menu'
+import NotificationBell from './notification-bell'
 import { dashboardHrefForRole, normalizeRole, roleLabel } from '@/lib/roles'
 
 /**
@@ -63,6 +64,7 @@ export default async function Navbar() {
         { label: 'Productos', href: '/dashboard/admin/products', icon: 'products' },
       ]
       if (role === 'owner' || role === 'super_admin') {
+        links.push({ label: 'Promociones', href: '/dashboard/admin/promotions', icon: 'promotions' })
         links.push({ label: 'Usuarios', href: '/dashboard/admin/users', icon: 'users' })
       }
       return links
@@ -104,6 +106,7 @@ export default async function Navbar() {
         { label: 'Productos', href: '/dashboard/admin/products' },
       ]
       if (role === 'owner' || role === 'super_admin') {
+        links.push({ label: 'Promociones', href: '/dashboard/admin/promotions' })
         links.push({ label: 'Usuarios', href: '/dashboard/admin/users' })
       }
       return links
@@ -196,6 +199,9 @@ export default async function Navbar() {
 
             <div className="h-4 w-px bg-[#c3c6d5] mx-2" />
 
+            {/* Staff notification bell (renders nothing for guests/customers) */}
+            <NotificationBell role={role} />
+
             {/* Auth Profile / Login */}
             {isAuthenticated ? (
               <Link
@@ -233,6 +239,8 @@ export default async function Navbar() {
         </Link>
 
         <div className="flex items-center gap-2">
+          {/* Staff notification bell (renders nothing for guests/customers) */}
+          <NotificationBell role={role} />
           {isAuthenticated && (
             <Link
               href="/profile"

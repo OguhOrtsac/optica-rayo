@@ -16,7 +16,7 @@ export const DEFAULT_REMINDER_MONTHS = 6
  * Editable by the administrator from the Reminders tray.
  */
 export const DEFAULT_REMINDER_TEMPLATE =
-  'Hola {nombre}, te saludamos de Óptica Rayo. Han pasado {meses} meses desde tu última revisión de la vista y queremos invitarte a realizarte un nuevo examen. Recuerda que el examen es GRATIS y te ayuda a cuidar tu salud visual. ¿Te agendamos una cita? ¡Esperamos verte pronto!'
+  'Hola {nombre}, te saludamos de Óptica Rayo. Han pasado {meses} meses desde tu última revisión de la vista y queremos invitarte a realizarte un nuevo examen. Recuerda que el examen es GRATIS y te ayuda a cuidar tu salud visual. Además, nos llegaron NUEVOS MODELOS de armazones que te pueden encantar. ¿Te agendamos una cita? ¡Esperamos verte pronto!'
 
 /** Returns a new ISO date `months` after the given date. */
 export function addMonthsISO(from: Date, months: number): string {

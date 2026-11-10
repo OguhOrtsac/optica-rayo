@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
 import { getProducts, getWishlist, toggleWishlistItem, getMemberDiscountPercent, createLensRequest, getAppSetting } from '@/lib/services'
 import { getProductLensOptions } from '@/lib/product-lens-options'
 import { uploadPrescriptionFile, attachPrescriptionToRequest, validatePrescriptionFile } from '@/lib/catalog-data'
@@ -32,6 +33,7 @@ import {
   Upload,
   CheckCircle,
   TrendingDown,
+  TrendingUp,
   Sparkles,
   Glasses,
   LayoutGrid
@@ -113,6 +115,14 @@ function CatalogContent() {
   // Empty string = not configured = every WhatsApp button stays hidden.
   const [businessWhatsapp, setBusinessWhatsapp] = useState<string>('')
 
+  // Units sold per product, from the public aggregate view
+  // product_sales_ranking (product + units of REAL sales only, quotes
+  // excluded; the view exposes no sales detail, so it is readable by
+  // everyone — guests included — and the carousel ranking is the
+  // store's true ranking for every visitor). Any read failure leaves
+  // the map empty and the carousel on its featured fallback.
+  const [soldUnits, setSoldUnits] = useState<Record<string, number>>({})
+
   // Manual prescription values
   const [odSphere, setOdSphere] = useState('0.00')
   const [odCylinder, setOdCylinder] = useState('0.00')
@@ -160,6 +170,29 @@ function CatalogContent() {
     initCatalog()
   }, [])
 
+  // Best sellers aggregate: read the public view (see soldUnits note).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('product_sales_ranking')
+          .select('product_id, units_sold')
+        if (error || !data) return
+        const units: Record<string, number> = {}
+        for (const row of data as any[]) {
+          if (!row.product_id) continue
+          units[row.product_id] = Number(row.units_sold) || 0
+        }
+        if (!cancelled) setSoldUnits(units)
+      } catch (e) {
+        console.error('Error loading best sellers:', e)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   // Categories definitions
   const categories = [
     { value: 'all', label: 'Todos', icon: LayoutGrid },
@@ -197,6 +230,28 @@ function CatalogContent() {
     return products.filter(p => (p.is_promo || p.is_featured) && getProductImages(p).length > 0)
   }, [products])
 
+  // How many catalog products have real sales behind them.
+  const bestSellerCount = useMemo(() => {
+    return products.filter(p => (soldUnits[p.id] || 0) > 0).length
+  }, [products, soldUnits])
+
+  // Carousel content: «Más vendidos» first — products WITH real sales,
+  // ordered by units sold (ties broken by name so the order is stable).
+  // Products without sales never enter on their own; only when fewer
+  // than 3 products have sales does the featured selection fill the
+  // remaining slots, so the carousel is never born empty.
+  const carouselProducts = useMemo(() => {
+    const sold = products
+      .filter(p => (soldUnits[p.id] || 0) > 0)
+      .sort((a, b) => (soldUnits[b.id] - soldUnits[a.id]) || a.name.localeCompare(b.name))
+    if (sold.length >= 3) return sold.slice(0, 10)
+    const soldIds = new Set(sold.map(p => p.id))
+    const fill = promoProducts.filter(p => !soldIds.has(p.id))
+    return [...sold, ...fill].slice(0, 10)
+  }, [products, soldUnits, promoProducts])
+
+  const hasBestSellers = bestSellerCount > 0
+
   // Embla Carousel navigation helpers
   const scrollPrev = () => emblaApi && emblaApi.scrollPrev()
   const scrollNext = () => emblaApi && emblaApi.scrollNext()
@@ -215,7 +270,7 @@ function CatalogContent() {
     setScrollSnaps(emblaApi.scrollSnapList())
     emblaApi.on('select', onSelect)
     emblaApi.on('reInit', onSelect)
-  }, [emblaApi, promoProducts])
+  }, [emblaApi, carouselProducts])
 
   // Shallow Routing handler
   const updateFilter = (key: string, value: string | null) => {
@@ -551,20 +606,26 @@ function CatalogContent() {
         }
       `}</style>
 
-      {/* TOP: compact featured/promo carousel — mobile-first pattern:
-          peek the next card so the swipe is obvious, user-controlled
-          (no auto-rotation), low horizontal cards: photo, name, price. */}
-      {promoProducts.length > 0 && (
-        <section className="anim-fade-up space-y-3" aria-label="Destacados y promociones">
+      {/* TOP: compact carousel — mobile-first pattern: peek the next card
+          so the swipe is obvious, user-controlled (no auto-rotation),
+          low horizontal cards: photo, name, price. Content is the real
+          «Más vendidos» ranking when sales data is readable (staff
+          sessions); otherwise the featured/promo selection takes over. */}
+      {carouselProducts.length > 0 && (
+        <section className="anim-fade-up space-y-3" aria-label={hasBestSellers ? 'Más vendidos' : 'Destacados y promociones'}>
           <div className="flex items-center justify-between gap-3 px-0.5">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#737784] flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-[#00357f]" /> Destacados y promociones
+              {hasBestSellers ? (
+                <><TrendingUp className="w-4 h-4 text-[#00357f]" /> Más vendidos</>
+              ) : (
+                <><Sparkles className="w-4 h-4 text-[#00357f]" /> Destacados y promociones</>
+              )}
             </h2>
             <div className="hidden md:flex gap-2">
               <button
                 onClick={scrollPrev}
                 disabled={!prevBtnEnabled}
-                aria-label="Destacado anterior"
+                aria-label={hasBestSellers ? 'Más vendido anterior' : 'Destacado anterior'}
                 className="w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -572,7 +633,7 @@ function CatalogContent() {
               <button
                 onClick={scrollNext}
                 disabled={!nextBtnEnabled}
-                aria-label="Destacado siguiente"
+                aria-label={hasBestSellers ? 'Más vendido siguiente' : 'Destacado siguiente'}
                 className="w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -582,7 +643,7 @@ function CatalogContent() {
 
           <div className="overflow-hidden" ref={emblaRef}>
             <div className="flex">
-              {promoProducts.map((p) => (
+              {carouselProducts.map((p) => (
                 <div key={p.id} className="flex-[0_0_86%] min-[420px]:flex-[0_0_64%] sm:flex-[0_0_47%] lg:flex-[0_0_32%] min-w-0 pr-3">
                   <button
                     type="button"
@@ -651,7 +712,7 @@ function CatalogContent() {
                   key={i}
                   type="button"
                   onClick={() => scrollTo(i)}
-                  aria-label={`Ir al destacado ${i + 1}`}
+                  aria-label={hasBestSellers ? `Ir al más vendido ${i + 1}` : `Ir al destacado ${i + 1}`}
                   className={`h-1.5 rounded-full transition-all cursor-pointer ${i === selectedIndex ? 'w-5 bg-[#00357f]' : 'w-1.5 bg-[#cbd5e1]'}`}
                 />
               ))}
@@ -663,7 +724,7 @@ function CatalogContent() {
       {/* Floating search: white card overlapping the carousel's bottom edge.
           This is THE search field of the page (single-search rule): it
           drives the `search` filter on its own. */}
-      <div className={`relative z-10 px-1 ${promoProducts.length > 0 ? '-mt-6' : ''}`}>
+      <div className={`relative z-10 px-1 ${carouselProducts.length > 0 ? '-mt-6' : ''}`}>
         <div className="relative max-w-xl">
           <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#00357f]/50 pointer-events-none" />
           <input
