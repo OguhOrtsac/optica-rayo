@@ -65,6 +65,8 @@ export default async function Navbar() {
       ]
       if (role === 'owner' || role === 'super_admin') {
         links.push({ label: 'Promociones', href: '/dashboard/admin/promotions', icon: 'promotions' })
+        links.push({ label: 'Gastos', href: '/dashboard/admin/expenses', icon: 'expenses' })
+        links.push({ label: 'Reportes', href: '/dashboard/admin/reports', icon: 'reports' })
         links.push({ label: 'Usuarios', href: '/dashboard/admin/users', icon: 'users' })
       }
       return links
@@ -107,6 +109,8 @@ export default async function Navbar() {
       ]
       if (role === 'owner' || role === 'super_admin') {
         links.push({ label: 'Promociones', href: '/dashboard/admin/promotions' })
+        links.push({ label: 'Gastos', href: '/dashboard/admin/expenses' })
+        links.push({ label: 'Reportes', href: '/dashboard/admin/reports' })
         links.push({ label: 'Usuarios', href: '/dashboard/admin/users' })
       }
       return links

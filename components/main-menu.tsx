@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  BarChart3,
   CalendarDays,
   CalendarPlus,
   Glasses,
   LogIn,
   Menu,
   Package,
+  Receipt,
   ShieldCheck,
   TicketPercent,
   UserRound,
@@ -19,7 +21,7 @@ import {
 export interface MainMenuLink {
   label: string
   href: string
-  icon: 'catalog' | 'agenda' | 'agendar' | 'products' | 'users' | 'promotions'
+  icon: 'catalog' | 'agenda' | 'agendar' | 'products' | 'users' | 'promotions' | 'expenses' | 'reports'
 }
 
 // Iconos por destino — «Agenda» (la del staff) y «Agendar examen gratis»
@@ -31,6 +33,8 @@ const ICONS = {
   products: Package,
   users: ShieldCheck,
   promotions: TicketPercent,
+  expenses: Receipt,
+  reports: BarChart3,
 }
 
 interface MainMenuProps {
