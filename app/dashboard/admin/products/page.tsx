@@ -10,7 +10,9 @@ import {
   uploadProductImage,
   uploadProductImages,
   getMemberDiscountPercent,
-  saveMemberDiscountPercent
+  saveMemberDiscountPercent,
+  getLowStockThreshold,
+  saveLowStockThreshold
 } from '@/lib/services'
 import { Database } from '@/types/database.types'
 import LensOptionsEditor from './lens-options-editor'
@@ -108,6 +110,8 @@ export default function AdminProductsPage() {
 
   // General member discount percent (logged-in customers)
   const [memberPct, setMemberPct] = useState(20)
+  // Low-stock alert threshold (the bell warns staff at/below this stock)
+  const [lowStockThreshold, setLowStockThreshold] = useState(5)
   // «Configuración» section (discount + templates): collapsed by default
   // so the product grid leads the page.
   const [isConfigOpen, setIsConfigOpen] = useState(false)
@@ -146,6 +150,7 @@ export default function AdminProductsPage() {
       setProducts(data)
       const pct = await getMemberDiscountPercent()
       setMemberPct(pct)
+      setLowStockThreshold(await getLowStockThreshold())
       try {
         const templates = await getLensOptionTemplates()
         setTemplateDrafts(templatesToEditorDrafts(templates))
@@ -215,6 +220,11 @@ export default function AdminProductsPage() {
   const handleSaveMemberPct = async () => {
     await saveMemberDiscountPercent(memberPct)
     showFeedback('success', `Descuento general a clientes guardado: ${memberPct}% sobre el precio de vitrina.`)
+  }
+
+  const handleSaveLowStockThreshold = async () => {
+    await saveLowStockThreshold(lowStockThreshold)
+    showFeedback('success', `Aviso de stock bajo guardado: la campanita avisa al llegar a ${lowStockThreshold} piezas o menos.`)
   }
 
   useEffect(() => {
@@ -583,7 +593,7 @@ export default function AdminProductsPage() {
           </span>
           <span className="flex-1 min-w-0">
             <span className="block text-sm font-bold text-[#111c2d]">Configuración</span>
-            <span className="block text-xs text-[#737784] font-medium">Descuento a clientes y plantillas de opciones de lente</span>
+            <span className="block text-xs text-[#737784] font-medium">Descuento a clientes, aviso de stock bajo y plantillas de opciones de lente</span>
           </span>
           <ChevronDown className={`w-5 h-5 text-[#737784] shrink-0 transition-transform duration-300 ${isConfigOpen ? 'rotate-180' : ''}`} />
         </button>
@@ -612,6 +622,36 @@ export default function AdminProductsPage() {
         </span>
         <button
           onClick={handleSaveMemberPct}
+          className="ml-auto bg-[#00357f] hover:bg-[#004aad] text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition-colors cursor-pointer"
+        >
+          Guardar
+        </button>
+      </div>
+
+      {/* Low-stock alert threshold: the bell warns staff when a
+          product's stock reaches this level (crossing detected in the
+          database; see the low-stock migration). */}
+      <div className="flex flex-wrap items-center gap-3 border-t border-[#e7eeff] pt-4">
+        <span className="text-[10px] font-black uppercase tracking-wider text-[#00357f]">
+          Aviso de stock bajo en la campanita
+        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-bold text-[#434653]">Avisar al quedar</span>
+          <input
+            type="number"
+            min={0}
+            max={999}
+            value={lowStockThreshold}
+            onChange={(e) => setLowStockThreshold(Math.min(999, Math.max(0, parseInt(e.target.value || '0', 10) || 0)))}
+            className="w-20 bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2 text-xs font-bold text-[#111c2d] focus:border-[#00357f] outline-none"
+          />
+          <span className="text-xs font-bold text-[#434653]">piezas o menos</span>
+        </div>
+        <span className="text-[10px] text-[#737784] font-medium">
+          El aviso llega una sola vez, cuando el producto cruza el nivel (por una venta o un ajuste).
+        </span>
+        <button
+          onClick={handleSaveLowStockThreshold}
           className="ml-auto bg-[#00357f] hover:bg-[#004aad] text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition-colors cursor-pointer"
         >
           Guardar

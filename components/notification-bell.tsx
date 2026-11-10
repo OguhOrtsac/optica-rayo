@@ -9,6 +9,7 @@ import {
   CheckCheck,
   Glasses,
   Info,
+  Package,
   Wallet,
 } from 'lucide-react'
 import { getMyNotifications, markNotificationRead } from '@/lib/services'
@@ -59,6 +60,13 @@ const TYPE_CONFIG: Record<
     chipBg: 'bg-[#fef3c7]',
     chipText: 'text-[#92400e]',
     Icon: Glasses,
+  },
+  low_stock: {
+    label: 'Inventario',
+    href: '/dashboard/admin/products',
+    chipBg: 'bg-[#ffedd5]',
+    chipText: 'text-[#9a3412]',
+    Icon: Package,
   },
   general: {
     label: 'Aviso',

@@ -1447,6 +1447,26 @@ export async function saveMemberDiscountPercent(percent: number): Promise<void> 
 }
 
 // ----------------------------------------------------
+// Low-stock alerts (the bell warns staff when a product's stock
+// crosses at/below the configured threshold; the crossing itself is
+// detected by the notify_low_stock trigger in the database, which
+// reads this same app_settings key.)
+// ----------------------------------------------------
+
+export const LOW_STOCK_THRESHOLD_KEY = 'low_stock_threshold'
+export const DEFAULT_LOW_STOCK_THRESHOLD = 5
+
+export async function getLowStockThreshold(): Promise<number> {
+  const raw = await getAppSetting(LOW_STOCK_THRESHOLD_KEY)
+  const n = parseInt(raw || '', 10)
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_LOW_STOCK_THRESHOLD
+}
+
+export async function saveLowStockThreshold(threshold: number): Promise<void> {
+  await setAppSetting(LOW_STOCK_THRESHOLD_KEY, String(Math.max(0, Math.floor(threshold))))
+}
+
+// ----------------------------------------------------
 // Promotions (created ONLY by the administrator — owner / super_admin;
 // sellers cannot create them. Customers see the ones currently in
 // force on their dashboard.)
