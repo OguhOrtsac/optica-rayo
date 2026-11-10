@@ -76,8 +76,10 @@ export default function ReminderTray() {
   return (
     <div className="bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-black uppercase tracking-wider text-[#00357f] flex items-center gap-2">
-          <BellRing className="w-4 h-4" />
+        <h3 className="text-base font-bold text-[#111c2d] flex items-center gap-2">
+          <span className="w-8 h-8 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+            <BellRing className="w-4 h-4" />
+          </span>
           Recordatorios de Revisión
         </h3>
         <span className="px-2.5 py-0.5 rounded-full bg-[#dee8ff] text-[#00357f] font-bold text-[10px]">

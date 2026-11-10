@@ -88,8 +88,8 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
         )
       case 'profile':
         return (
-          <div className="w-6 h-6 rounded-full bg-[#dee8ff] dark:bg-slate-800 border border-[#c3c6d5] dark:border-slate-700 flex items-center justify-center shrink-0">
-            <span className="text-[9px] font-black text-[#00357f] dark:text-slate-350">
+          <div className="w-6 h-6 rounded-full bg-[#dee8ff] border border-[#c3c6d5] flex items-center justify-center shrink-0">
+            <span className="text-[9px] font-black text-[#00357f]">
               {initials}
             </span>
           </div>
@@ -106,7 +106,7 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#f9f9ff] dark:bg-slate-950 border-t border-[#cbd5e1] dark:border-slate-900/60 flex md:hidden justify-around items-center h-20 pb-safe px-2 shadow-lg rounded-t-2xl">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#f9f9ff] border-t border-[#cbd5e1] flex md:hidden justify-around items-center h-20 pb-safe px-2 shadow-lg rounded-t-2xl">
       {links.map(link => {
         const active = isActive(link.href)
         return (
@@ -115,11 +115,11 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
             href={link.href}
             className={`flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 transition-all duration-300 active:scale-90 ${
               active 
-                ? 'text-[#00357f] dark:text-cyan-400 scale-105 font-black' 
-                : 'text-[#5d606f] dark:text-slate-400 hover:text-[#00357f] font-semibold'
+                ? 'text-[#00357f] scale-105 font-black' 
+                : 'text-[#5d606f] hover:text-[#00357f] font-semibold'
             }`}
           >
-            <div className={`p-1 rounded-lg transition-colors ${active ? 'bg-[#dee8ff]/50 dark:bg-slate-900' : ''}`}>
+            <div className={`p-1 rounded-lg transition-colors ${active ? 'bg-[#dee8ff]/50' : ''}`}>
               {renderIcon(link.icon)}
             </div>
             <span className="text-[8px] mt-0.5 tracking-tight select-none">
