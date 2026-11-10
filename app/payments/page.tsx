@@ -19,7 +19,10 @@ import {
   CheckCircle2,
   Check,
   Users,
-  ChevronRight
+  ChevronRight,
+  X,
+  Phone,
+  MessageCircle
 } from 'lucide-react'
 
 type Customer = {
@@ -74,8 +77,8 @@ export default function PaymentsPage() {
   const [debtors, setDebtors] = useState<Debtor[]>([])
   const [loadingDebtors, setLoadingDebtors] = useState(false)
 
-  // Cliente seleccionado: solo se muestra su tarjeta breve con el botón
-  // a su ficha; el registro de abonos ya no vive en esta página.
+  // Cliente seleccionado: su estado de cuenta se muestra en el modal;
+  // el registro de abonos vive en su ficha (pestaña Cobranza).
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [selectedSummary, setSelectedSummary] = useState<SelectedSummary | null>(null)
   const [loadingSummary, setLoadingSummary] = useState(false)
@@ -179,7 +182,19 @@ export default function PaymentsPage() {
 
   // Resumen breve del cliente seleccionado (saldo + próximo vencimiento).
   const handleSelectCustomer = async (customer: Customer) => {
-    setSelectedCustomer(customer)
+    // Las filas de deudores se construyen desde las ventas y llegan sin
+    // correo ni teléfono; el directorio ya cargado en la página sí los
+    // trae. Se completan SOLO los datos de despliegue del modal (el
+    // cálculo del saldo, las cuotas y los vencimientos no se tocan).
+    const full = customers.find(c => c.id === customer.id)
+    const enrichedCustomer: Customer = full
+      ? {
+          ...customer,
+          email: customer.email || full.email,
+          customer_profiles: customer.customer_profiles ?? full.customer_profiles
+        }
+      : customer
+    setSelectedCustomer(enrichedCustomer)
     setSelectedSummary(null)
     setLoadingSummary(true)
     try {
@@ -219,11 +234,50 @@ export default function PaymentsPage() {
     }
   }
 
+  // Cerrar el modal limpia la selección, con la misma semántica que
+  // volver a la lista: sin cliente seleccionado no hay resumen abierto.
+  const closeModal = useCallback(() => {
+    setSelectedCustomer(null)
+    setSelectedSummary(null)
+    setLoadingSummary(false)
+  }, [])
+
+  // Escape cierra el modal y el fondo no se desplaza mientras está abierto.
+  useEffect(() => {
+    if (!selectedCustomer) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeModal()
+    }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [selectedCustomer, closeModal])
+
   const formatPrice = (price: number) =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(price)
 
   const formatDate = (dateStr: string) =>
     parseLocalDate(dateStr).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
+
+  // Teléfono del cliente seleccionado, listo para tel:/wa.me con código
+  // de país (mismo formato que la ficha del cliente).
+  const cleanPhone = (selectedCustomer?.customer_profiles?.phone || '').replace(/[^\d]/g, '')
+  const phoneWithCode = cleanPhone ? (cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone) : ''
+
+  // Semáforo del modal: la banda superior lleva el color del estado del
+  // cliente (rojo si hay cuota vencida, ámbar si debe sin vencer, verde
+  // si está al corriente y azul neutro mientras carga el resumen).
+  const semaphore = loadingSummary || !selectedSummary
+    ? { band: 'bg-[#dee8ff]', text: 'text-[#00357f]', label: 'Cargando estado de cuenta', Icon: Clock }
+    : selectedSummary.isOverdue
+      ? { band: 'bg-[#ffdad6]', text: 'text-[#ba1a1a]', label: 'Saldo vencido', Icon: AlertTriangle }
+      : selectedSummary.totalDebt > 0
+        ? { band: 'bg-[#fef3c7]', text: 'text-[#92400e]', label: 'Con adeudo', Icon: Clock }
+        : { band: 'bg-[#e2f9ee]', text: 'text-[#00422b]', label: 'Al corriente', Icon: CheckCircle2 }
 
   // Con búsqueda: resultados del directorio. Sin búsqueda: deudores primero.
   const directoryResults = useMemo(() => {
@@ -237,27 +291,29 @@ export default function PaymentsPage() {
       <button
         key={c.id}
         onClick={() => handleSelectCustomer(c)}
-        className={`w-full flex items-center justify-between p-3 text-left transition-colors cursor-pointer ${
+        className={`w-full flex items-center justify-between px-3 py-3 min-h-[48px] text-left transition-colors cursor-pointer ${
           isSelected
             ? 'bg-[#dee8ff]/60 border-l-4 border-l-[#00357f]'
             : 'bg-white hover:bg-[#f0f3ff] border-l-4 border-l-transparent'
         }`}
       >
         <div className="min-w-0">
-          <p className="font-bold text-xs text-[#111c2d] truncate">{c.full_name}</p>
+          <p className="font-semibold text-sm text-[#111c2d] truncate">{c.full_name}</p>
           {extra?.nextDue ? (
-            <p className={`text-[10px] font-bold truncate ${extra.isOverdue ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
+            <p className={`text-xs font-semibold truncate ${extra.isOverdue ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
               Próximo vencimiento: {formatDate(extra.nextDue)}{extra.isOverdue ? ' (vencido)' : ''}
             </p>
           ) : (
-            <p className="text-[10px] text-[#737784] truncate">
+            <p className="text-xs text-[#737784] truncate">
               @{c.email?.replace('@opticarayo.com', '')}
             </p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {extra?.totalDebt !== undefined && (
-            <span className="text-xs font-black text-[#ba1a1a] font-mono">{formatPrice(extra.totalDebt)}</span>
+            <span className={`shrink-0 px-2 py-0.5 rounded-full font-mono text-xs font-black ${extra.isOverdue ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#fef3c7] text-[#92400e]'}`}>
+              {formatPrice(extra.totalDebt)}
+            </span>
           )}
           <ChevronRight className={`w-4 h-4 ${isSelected ? 'text-[#00357f]' : 'text-[#cbd5e1]'}`} />
         </div>
@@ -266,7 +322,7 @@ export default function PaymentsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] pt-4 pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] pt-4 pb-24 md:pb-8 text-left">
       <div className="max-w-[1440px] mx-auto px-4 md:px-8">
 
         {/* Header */}
@@ -276,17 +332,21 @@ export default function PaymentsPage() {
               <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors md:hidden">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Registrar Pagos</h1>
+              <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Registrar Pagos</h1>
             </div>
             <p className="text-sm text-[#434653] mt-1 font-medium">Control de abonos de lentes a plazos y actualización de saldos.</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-          {/* LEFT: buscador + deudores / resultados */}
-          <div className="lg:col-span-4 bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4 flex flex-col gap-4 lg:max-h-[650px]">
-            <span className="text-[10px] font-black uppercase text-[#00357f] tracking-wider">Buscar Cliente</span>
+        {/* Directorio: tocar un deudor o un cliente buscado abre su
+            estado de cuenta en el modal; ya no hay columna de resumen. */}
+        <div className="max-w-2xl mx-auto w-full bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4 flex flex-col gap-4 lg:max-h-[650px]">
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+                <Search className="w-5 h-5" />
+              </span>
+              <h2 className="text-base font-semibold text-[#111c2d]">Buscar cliente</h2>
+            </div>
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#737784]" />
               <input
@@ -305,7 +365,17 @@ export default function PaymentsPage() {
 
             {query.trim() ? (
               <>
-                <span className="text-[10px] font-black uppercase text-[#737784] tracking-wider">Resultados</span>
+                <div className="flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+                    <Users className="w-5 h-5" />
+                  </span>
+                  <h3 className="text-base font-semibold text-[#111c2d]">Resultados</h3>
+                  {directoryResults.length > 0 && (
+                    <span className="ml-auto shrink-0 bg-[#dee8ff] text-[#00357f] text-xs font-bold px-2.5 py-1 rounded-full">
+                      {directoryResults.length}
+                    </span>
+                  )}
+                </div>
                 <div className="flex-1 overflow-y-auto rounded-lg border border-[#cbd5e1]/40 divide-y divide-[#cbd5e1]/30 min-h-[200px]">
                   {directoryResults.length === 0 && !loadingCustomers ? (
                     <div className="py-12 text-center text-xs text-[#737784] font-semibold space-y-2">
@@ -319,12 +389,18 @@ export default function PaymentsPage() {
               </>
             ) : (
               <>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase text-[#ba1a1a] tracking-wider">
-                    Deudores{debtors.length > 0 ? ` (${debtors.length})` : ''}
+                <div className="flex items-center gap-3">
+                  <span className="w-10 h-10 rounded-xl bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
                   </span>
+                  <h3 className="text-base font-semibold text-[#111c2d]">Deudores</h3>
+                  {debtors.length > 0 && (
+                    <span className="shrink-0 bg-[#ffdad6] text-[#ba1a1a] text-xs font-bold px-2.5 py-1 rounded-full">
+                      {debtors.length}
+                    </span>
+                  )}
                   {loadingDebtors && (
-                    <span className="w-3.5 h-3.5 border-2 border-[#ba1a1a] border-t-transparent rounded-full animate-spin" />
+                    <span className="ml-auto w-3.5 h-3.5 border-2 border-[#ba1a1a] border-t-transparent rounded-full animate-spin" />
                   )}
                 </div>
                 <div className="flex-1 overflow-y-auto rounded-lg border border-[#cbd5e1]/40 divide-y divide-[#cbd5e1]/30 min-h-[200px]">
@@ -341,97 +417,158 @@ export default function PaymentsPage() {
                   )}
                 </div>
                 <p className="text-[10px] text-[#737784] font-medium">
-                  Toca un deudor para ver su saldo y abrir su ficha de cobranza.
+                  Toca un deudor para ver su saldo y registrar su abono.
                 </p>
               </>
             )}
           </div>
 
-          {/* RIGHT: tarjeta breve del cliente seleccionado */}
-          <div className="lg:col-span-8 space-y-6">
-            {!selectedCustomer ? (
-              <div className="bg-white border border-[#cbd5e1] rounded-2xl p-10 flex flex-col items-center justify-center text-center space-y-3 h-[250px] shadow-sm">
-                <div className="w-12 h-12 bg-[#f0f3ff] rounded-full flex items-center justify-center text-[#00357f]/40">
-                  <Wallet className="w-6 h-6" />
-                </div>
-                <p className="text-xs text-[#737784] font-bold">Selecciona un cliente para ver su saldo y abrir su ficha.</p>
+      </div>
+      {/* MODAL: estado de cuenta del cliente seleccionado. Todo lo que
+          antes vivía en la columna de resumen vive ahora aquí dentro;
+          la página detrás conserva la lista tal cual. */}
+      {selectedCustomer && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Estado de cuenta de ${selectedCustomer.full_name}`}
+        >
+          <div className="fixed inset-0 bg-[#111c2d]/55 backdrop-blur-[2px]" />
+          <div
+            className="relative flex min-h-full items-start sm:items-center justify-center p-4"
+            onClick={closeModal}
+          >
+            <div
+              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Banda semáforo: el color del estado del cliente */}
+              <div className={`${semaphore.band} px-5 py-4 flex items-center justify-between gap-3`}>
+                <span className={`inline-flex items-center gap-2 text-sm font-black uppercase tracking-wider ${semaphore.text}`}>
+                  <semaphore.Icon className="w-5 h-5 shrink-0" />
+                  {semaphore.label}
+                </span>
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  aria-label="Cerrar"
+                  className={`p-2 rounded-full hover:bg-white/60 transition-colors cursor-pointer ${semaphore.text}`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-            ) : loadingSummary || !selectedSummary ? (
-              <div className="bg-white border border-[#cbd5e1] rounded-2xl p-10 flex flex-col items-center justify-center h-[250px] shadow-sm">
-                <div className="w-8 h-8 border-4 border-[#00357f] border-t-transparent rounded-full animate-spin" />
-                <p className="text-xs text-[#737784] font-medium mt-2">Cargando estado de cuenta...</p>
-              </div>
-            ) : (
-              <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-5 sm:p-6 space-y-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-black uppercase text-[#737784] tracking-wider block">Cliente seleccionado</span>
-                    <h2 className="text-lg font-black text-[#111c2d] truncate mt-1">{selectedCustomer.full_name}</h2>
-                    <p className="text-[11px] text-[#737784] font-medium truncate">
-                      @{selectedCustomer.email?.replace('@opticarayo.com', '')}
-                    </p>
-                  </div>
-                  {selectedSummary.totalDebt > 0 ? (
-                    <span className="shrink-0 inline-flex items-center gap-1 bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full">
-                      <AlertTriangle className="w-3.5 h-3.5" /> Con adeudo
-                    </span>
-                  ) : (
-                    <span className="shrink-0 inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full">
-                      <Check className="w-3.5 h-3.5" /> Al corriente
-                    </span>
+
+              <div className="p-5 sm:p-6 space-y-5">
+                <div className="min-w-0">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#00357f] block">Cliente seleccionado</span>
+                  <h2 className="text-xl font-bold text-[#111c2d] truncate mt-1">{selectedCustomer.full_name}</h2>
+                  <p className="text-[11px] text-[#737784] font-medium truncate">
+                    @{selectedCustomer.email?.replace('@opticarayo.com', '')}
+                  </p>
+                  {selectedCustomer.customer_profiles?.phone && (
+                    <p className="text-xs text-[#434653] font-semibold mt-0.5">{selectedCustomer.customer_profiles.phone}</p>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-4">
-                    <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Saldo pendiente total</span>
-                    <span className={`text-xl font-black font-mono block mt-1 ${selectedSummary.totalDebt > 0 ? 'text-[#ba1a1a]' : 'text-emerald-700'}`}>
-                      {formatPrice(selectedSummary.totalDebt)}
-                    </span>
+                {loadingSummary || !selectedSummary ? (
+                  <div className="py-10 flex flex-col items-center justify-center">
+                    <div className="w-8 h-8 border-4 border-[#00357f] border-t-transparent rounded-full animate-spin" />
+                    <p className="text-xs text-[#737784] font-medium mt-2">Cargando estado de cuenta...</p>
                   </div>
-                  <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-4">
-                    <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Cuotas pendientes</span>
-                    <span className="text-xl font-black text-[#111c2d] block mt-1">
-                      {selectedSummary.pendingCount}
-                    </span>
-                  </div>
-                  <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-4">
-                    <span className="text-[9px] font-black uppercase text-[#737784] tracking-wider block">Próximo vencimiento</span>
-                    {selectedSummary.nextDue ? (
-                      <span className={`text-sm font-bold block mt-1 ${selectedSummary.isOverdue ? 'text-[#ba1a1a]' : 'text-[#00357f]'}`}>
-                        {formatDate(selectedSummary.nextDue)}
-                        {selectedSummary.isOverdue && ' (vencido)'}
-                      </span>
-                    ) : (
-                      <span className="text-sm font-bold text-emerald-700 block mt-1">Sin vencimientos</span>
-                    )}
-                  </div>
-                </div>
-
-                {selectedSummary.totalDebt > 0 ? (
-                  <p className="text-[11px] text-[#737784] font-medium flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 shrink-0" />
-                    En su ficha verás el detalle por venta y cuota, y podrás registrar el abono ahí mismo.
-                  </p>
                 ) : (
-                  <p className="text-[11px] text-emerald-700 font-bold flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    Este cliente no tiene adeudos pendientes en este momento.
-                  </p>
-                )}
+                  <>
+                    <div className={`border rounded-xl p-4 ${selectedSummary.totalDebt > 0 ? 'bg-[#ffdad6]/60 border-[#ba1a1a]/15' : 'bg-[#e2f9ee] border-[#00422b]/10'}`}>
+                      <span className="text-xs font-semibold text-[#434653] block">Saldo pendiente total</span>
+                      <span className={`text-3xl font-black font-mono block mt-1 ${selectedSummary.totalDebt > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>
+                        {formatPrice(selectedSummary.totalDebt)}
+                      </span>
+                    </div>
 
-                <Link
-                  href={`/customers/${selectedCustomer.id}#cobranza`}
-                  className="w-full py-3 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
-                >
-                  Abrir ficha y registrar pago
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-[#f0f3ff]/70 border border-[#cbd5e1]/40 rounded-xl p-4">
+                        <span className="text-xs font-semibold text-[#434653] block">Cuotas pendientes</span>
+                        <span className="text-xl font-bold text-[#111c2d] block mt-1">
+                          {selectedSummary.pendingCount}
+                        </span>
+                      </div>
+                      <div className="bg-[#f0f3ff]/70 border border-[#cbd5e1]/40 rounded-xl p-4">
+                        <span className="text-xs font-semibold text-[#434653] block">Próximo vencimiento</span>
+                        {selectedSummary.nextDue ? (
+                          <span className={`text-sm font-bold block mt-1 ${selectedSummary.isOverdue ? 'text-[#ba1a1a]' : 'text-[#00357f]'}`}>
+                            {formatDate(selectedSummary.nextDue)}
+                            {selectedSummary.isOverdue && ' (vencido)'}
+                          </span>
+                        ) : (
+                          <span className="text-sm font-bold text-[#00422b] block mt-1">Sin vencimientos</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedSummary.totalDebt > 0 ? (
+                      <p className="text-[11px] text-[#737784] font-medium flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        En su ficha verás el detalle por venta y cuota, y podrás registrar el abono ahí mismo.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-[#00422b] font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        Este cliente no tiene adeudos pendientes en este momento.
+                      </p>
+                    )}
+
+                    {phoneWithCode && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <a
+                          href={`tel:+${phoneWithCode}`}
+                          className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl border border-[#00357f]/30 text-[#00357f] text-sm font-bold transition-all active:scale-[0.98]"
+                        >
+                          <Phone className="w-4 h-4" /> Llamar
+                        </a>
+                        <a
+                          href={`https://wa.me/${phoneWithCode}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl border border-[#00422b]/30 text-[#00422b] text-sm font-bold transition-all active:scale-[0.98]"
+                        >
+                          <MessageCircle className="w-4 h-4" /> WhatsApp
+                        </a>
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      {selectedSummary.totalDebt > 0 && (
+                        <Link
+                          href={`/customers/${selectedCustomer.id}#cobranza`}
+                          className="w-full py-3 bg-[#15803d] hover:bg-[#166534] text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
+                        >
+                          <Wallet className="w-4 h-4" />
+                          Registrar abono
+                        </Link>
+                      )}
+                      <Link
+                        href={`/customers/${selectedCustomer.id}`}
+                        className="w-full py-3 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
+                      >
+                        Ir a perfil
+                        <ArrowRight className="w-4 h-4" />
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={closeModal}
+                        className="w-full py-3 bg-[#ffdad6] hover:bg-[#ffc9c4] text-[#ba1a1a] rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                        Cerrar
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </main>
   )
 }

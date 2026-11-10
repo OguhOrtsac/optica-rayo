@@ -5,34 +5,32 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   CalendarDays,
-  CreditCard,
+  CalendarPlus,
   Glasses,
-  LayoutDashboard,
   LogIn,
   Menu,
+  Package,
   ShieldCheck,
-  ShoppingBag,
-  Sparkles,
+  TicketPercent,
   UserRound,
-  Users,
   X,
 } from 'lucide-react'
 
 export interface MainMenuLink {
   label: string
   href: string
-  icon: 'catalog' | 'discounts' | 'patients' | 'payment' | 'pos' | 'admin' | 'users' | 'agenda'
+  icon: 'catalog' | 'agenda' | 'agendar' | 'products' | 'users' | 'promotions'
 }
 
+// Iconos por destino — «Agenda» (la del staff) y «Agendar examen gratis»
+// (la pública) son destinos distintos y llevan iconos distintos.
 const ICONS = {
   catalog: Glasses,
-  discounts: Sparkles,
-  patients: Users,
-  payment: CreditCard,
-  pos: ShoppingBag,
-  admin: LayoutDashboard,
-  users: ShieldCheck,
   agenda: CalendarDays,
+  agendar: CalendarPlus,
+  products: Package,
+  users: ShieldCheck,
+  promotions: TicketPercent,
 }
 
 interface MainMenuProps {

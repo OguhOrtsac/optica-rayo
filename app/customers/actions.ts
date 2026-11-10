@@ -1091,7 +1091,9 @@ export async function getMySalesAction(): Promise<any[]> {
 
     if (data) {
       return data.map((sale: any) => {
-        const isVisible = sale.is_prescription_visible === true
+        // Owner's rule (2026-11-09): the customer NEVER receives their
+        // prescription values, whatever the per-sale flag says.
+        const isVisible = false
         const censoredSaleItems = sale.sale_items?.map((item: any) => {
           if (!isVisible) {
             return {
@@ -1141,7 +1143,9 @@ export async function getMySalesAction(): Promise<any[]> {
           }
         })
         
-        const isVisible = sale.is_prescription_visible === true
+        // Owner's rule (2026-11-09): the customer NEVER receives their
+        // prescription values, whatever the per-sale flag says.
+        const isVisible = false
 
         return {
           id: si.id,
