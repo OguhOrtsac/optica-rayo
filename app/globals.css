@@ -50,6 +50,30 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* ==========================================
+   Escala global de fuente (dictado del dueño, 2026-11-18):
+   «bájale la fuente unos dos puntos a todo, se ve muy grotesco».
+   La raíz pasa de 16px a 14px: todo lo medido en rem (textos,
+   espaciados, radios, alturas) baja ~12.5% en toda la app de una
+   sola vez. Va en la capa base para que las utilidades de Tailwind
+   sigan mandando donde un componente define su propio tamaño.
+   Excepción deliberada: los campos de formulario conservan 16px
+   SOLO cuando no definen su tamaño con clases (las utilidades
+   tienen prioridad sobre esta regla de elemento), para que iOS
+   no haga zoom al enfocarlos.
+   ========================================== */
+@layer base {
+  html {
+    font-size: 14px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 body {
   /* Fondo v3 (2026-11-18, el dueño rechazó el v2 por «muy opaco» y pidió algo
      más llamativo y novedoso): malla de marca en capas fijas — una franja
@@ -127,16 +151,6 @@ body {
   }
 }
 
-@keyframes fx-hero-gradient {
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-}
-
 @keyframes fx-pulse-soft {
   0%,
   100% {
@@ -159,22 +173,6 @@ body {
 .anim-stagger-item {
   animation: fx-fade-up 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
   animation-delay: var(--enter-delay, 0ms);
-}
-
-/* Botón héroe del panel (referencia del dueño, 2026-11-18): degradado
-   azul primario → celeste de marca con el color EN MOVIMIENTO — la
-   posición del degradado respira en un ciclo suave de 7s. El degradado
-   lleva el primario repetido al final para que el ciclo no salte. */
-.or-hero-gradient {
-  background-image: linear-gradient(
-    100deg,
-    var(--or-primary) 0%,
-    var(--or-primary-support) 35%,
-    var(--or-accent) 70%,
-    var(--or-primary-support) 100%
-  );
-  background-size: 220% 100%;
-  animation: fx-hero-gradient 7s ease-in-out infinite;
 }
 
 /* Gentle attention pulse for badges (softer than animate-pulse). */
@@ -204,8 +202,7 @@ html[data-nav-scrolled='true'] .site-nav {
   .anim-fade-up,
   .anim-stagger-item,
   .anim-pulse-soft,
-  .skeleton-shimmer,
-  .or-hero-gradient {
+  .skeleton-shimmer {
     animation: none !important;
   }
   .site-nav {

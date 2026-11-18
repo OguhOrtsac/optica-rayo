@@ -1,105 +1,86 @@
 /**
- * Mini gráfica de línea para la vista previa «Ventas de la semana»
- * del panel — estilo de la referencia del dueño (2026-11-18): línea
- * VIOLETA viva con puntos huecos de borde grueso, el monto compacto
- * sobre cada punto con venta y las iniciales de los días debajo.
+ * Mini gráfica de línea para la tarjeta «Ventas del mes» del panel:
+ * una vista previa CHIQUITA, sin ejes ni etiquetas, de las ventas del
+ * mes en curso — línea fina VIOLETA con puntitos en los días con
+ * venta, colocados según su día del mes (corrección del dueño,
+ * 2026-11-18: la previa va DENTRO de la misma tarjeta, a un ladito,
+ * sin hacerla más grande). La serie es la de `getMonthSales` (solo
+ * días CON ventas, como la gráfica completa de Finanzas → Ventas del
+ * mes, que es a donde lleva la tarjeta).
  *
- * SVG propio, sin interacción: es una previa; el detalle completo
- * vive en Finanzas → Ventas del mes. A diferencia de la gráfica del
- * mes (que salta los días sin actividad), la semana se dibuja
- * COMPLETA: los días sin ventas bajan a cero, como en la foto.
+ * Sin ventas todavía (serie vacía) dibuja solo la línea en cero:
+ * un estado vacío discreto, jamás datos inventados.
  */
 
-export interface SparklineDay {
+export interface MonthSparklineDay {
   /** YYYY-MM-DD local. */
   date: string
   total: number
 }
 
 const VIOLET = '#7c3aed'
-const WEEKDAY_INITIALS = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 
-/** $749 · $1.8k · $12k — compacto para que quepa sobre el punto. */
-function formatCompactAmount(n: number): string {
-  if (n >= 1000) {
-    const k = n / 1000
-    const label = Number.isInteger(k) ? String(k) : k.toFixed(1).replace(/\.0$/, '')
-    return `$${label}k`
+export default function MonthSparkline({ days }: { days: MonthSparklineDay[] }) {
+  const W = 96
+  const H = 28
+  const PAD_X = 4
+  const TOP = 4
+  const BOTTOM = 24
+
+  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date))
+  const max = Math.max(0, ...sorted.map(d => d.total))
+
+  // El eje x es el mes completo: cada punto cae en su día del mes.
+  const [firstYear = 1970, firstMonth = 1] = (sorted[0]?.date ?? '').split('-').map(Number)
+  const daysInMonth = new Date(firstYear, firstMonth, 0).getDate() || 30
+  const xFor = (date: string) => {
+    const day = Number(date.slice(8, 10)) || 1
+    return daysInMonth <= 1
+      ? W / 2
+      : PAD_X + ((day - 1) * (W - PAD_X * 2)) / (daysInMonth - 1)
   }
-  return `$${Math.round(n)}`
-}
-
-function weekdayInitial(dateKey: string): string {
-  const [y, m, d] = dateKey.split('-').map(Number)
-  const wd = new Date(y || 1970, (m || 1) - 1, d || 1).getDay()
-  return WEEKDAY_INITIALS[wd] ?? ''
-}
-
-export default function SalesSparkline({ days }: { days: SparklineDay[] }) {
-  const W = 320
-  const H = 96
-  const PAD_X = 18
-  const CHART_TOP = 24
-  const CHART_BOTTOM = 64
-  const LABELS_Y = 88
-
-  const n = days.length
-  const max = Math.max(0, ...days.map(d => d.total))
-  const xFor = (i: number) => (n <= 1 ? W / 2 : PAD_X + (i * (W - PAD_X * 2)) / (n - 1))
   const yFor = (total: number) =>
-    max > 0 ? CHART_BOTTOM - (total / max) * (CHART_BOTTOM - CHART_TOP) : CHART_BOTTOM
+    max > 0 ? BOTTOM - (total / max) * (BOTTOM - TOP) : BOTTOM
 
-  const points = days.map((d, i) => ({ ...d, x: xFor(i), y: yFor(d.total) }))
+  const points = sorted.map(d => ({ ...d, x: xFor(d.date), y: yFor(d.total) }))
   const polyline = points.map(p => `${p.x},${p.y}`).join(' ')
 
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
-      className="block w-full h-auto"
+      className="block h-full w-full"
       role="img"
-      aria-label={`Ventas de los últimos ${n} días: total ${formatCompactAmount(
-        days.reduce((sum, d) => sum + d.total, 0)
-      )}`}
+      aria-label="Vista previa de las ventas del mes"
     >
-      {/* Línea base tenue sobre las iniciales, como en la referencia */}
-      <line x1={PAD_X - 6} x2={W - PAD_X + 6} y1={74} y2={74} stroke="#e3e9f4" strokeWidth="1" />
-      {points.length > 1 && (
-        <polyline
-          points={polyline}
-          fill="none"
+      {points.length === 0 ? (
+        /* Mes sin ventas aún: la línea en cero, discreta. */
+        <line
+          x1={PAD_X}
+          x2={W - PAD_X}
+          y1={BOTTOM}
+          y2={BOTTOM}
           stroke={VIOLET}
-          strokeWidth="2.5"
+          strokeWidth="1.5"
           strokeLinecap="round"
-          strokeLinejoin="round"
+          opacity="0.45"
         />
-      )}
-      {points.map(p => (
-        <g key={p.date}>
-          {p.total > 0 && (
-            <text
-              x={p.x}
-              y={Math.max(11, p.y - 10)}
-              textAnchor="middle"
-              fontSize="10"
-              fontWeight="700"
-              fill={VIOLET}
-            >
-              {formatCompactAmount(p.total)}
-            </text>
+      ) : (
+        <>
+          {points.length > 1 && (
+            <polyline
+              points={polyline}
+              fill="none"
+              stroke={VIOLET}
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           )}
-          <circle cx={p.x} cy={p.y} r="4.5" fill="#ffffff" stroke={VIOLET} strokeWidth="2.5" />
-          <text
-            x={p.x}
-            y={LABELS_Y}
-            textAnchor="middle"
-            fontSize="10"
-            fontWeight="600"
-            fill="#737784"
-          >
-            {weekdayInitial(p.date)}
-          </text>
-        </g>
-      ))}
+          {points.map(p => (
+            <circle key={p.date} cx={p.x} cy={p.y} r="2" fill={VIOLET} />
+          ))}
+        </>
+      )}
     </svg>
   )
 }

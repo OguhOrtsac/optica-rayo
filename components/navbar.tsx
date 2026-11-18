@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import MobileBottomNav from './mobile-bottom-nav'
 import ScrollNavEffect from './scroll-nav'
-import MainMenu, { type MainMenuLink } from './main-menu'
+import MainMenu, { type MainMenuItem, type MainMenuLink } from './main-menu'
 import NotificationBell from './notification-bell'
 import { dashboardHrefForRole, normalizeRole, roleLabel } from '@/lib/roles'
 
@@ -35,13 +35,18 @@ export default async function Navbar() {
   }
 
   // Setup navigation items based on the canonical role model.
-  // La hamburguesa lleva los destinos secundarios (Catálogo, Productos,
-  // Gastos, Reportes, Usuarios…). La barra inferior móvil lleva el trabajo
-  // diario: Inicio · Realizar Venta · Registrar Pago · Agenda · Perfil
-  // (orden del dueño, 2026-11-18: «Clientes» sale de la barra inferior y
-  // «Agenda» entra en ella). «Agenda» (staff) y «Agendar examen gratis»
-  // (pública) son destinos distintos, con etiqueta e icono distintos.
-  const getNavLinks = (): MainMenuLink[] => {
+  // La hamburguesa se ordena por CATEGORÍAS (orden del dueño, 2026-11-18):
+  // los grupos Ventas, Finanzas y Configuración son desplegables y el
+  // resto de destinos quedan como entradas directas. La visibilidad se
+  // aplica por entrada, como siempre: un grupo solo se construye si trae
+  // al menos una entrada visible para el rol (Ventas es de staff;
+  // Finanzas, de administrador; en Configuración, Productos y Clientes
+  // son de staff y Usuarios y Mensajes solo del administrador).
+  // La barra inferior móvil lleva el trabajo diario: Inicio · Realizar
+  // Venta · Registrar Pago · Agenda · Perfil. «Agenda» (staff) y
+  // «Agendar examen gratis» (pública) son destinos distintos, con
+  // etiqueta e icono distintos.
+  const getNavItems = (): MainMenuItem[] => {
     if (!isAuthenticated) {
       return [
         { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
@@ -59,23 +64,49 @@ export default async function Navbar() {
       ]
     }
     if (role === 'seller' || role === 'owner' || role === 'super_admin') {
-      const links: MainMenuLink[] = [
+      const isAdmin = role === 'owner' || role === 'super_admin'
+      const items: MainMenuItem[] = [
         { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
         { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' },
-        { label: 'Productos', href: '/dashboard/admin/products', icon: 'products' },
+        {
+          label: 'Ventas',
+          icon: 'store',
+          links: [
+            { label: 'Realizar venta', href: '/dashboard/seller', icon: 'pos' },
+            { label: 'Historial de ventas', href: '/dashboard/seller/historial', icon: 'history' },
+          ],
+        },
       ]
-      if (role === 'owner' || role === 'super_admin') {
-        links.push({ label: 'Promociones', href: '/dashboard/admin/promotions', icon: 'promotions' })
-        links.push({ label: 'Gastos', href: '/dashboard/admin/expenses', icon: 'expenses' })
-        links.push({ label: 'Reportes', href: '/dashboard/admin/reports', icon: 'reports' })
-        links.push({ label: 'Usuarios', href: '/dashboard/admin/users', icon: 'users' })
+      if (isAdmin) {
+        items.push({
+          label: 'Finanzas',
+          icon: 'wallet',
+          links: [
+            { label: 'Ventas de hoy', href: '/dashboard/admin/finanzas/hoy', icon: 'coins' },
+            { label: 'Ventas del mes', href: '/dashboard/admin/finanzas/mes', icon: 'calendarRange' },
+            { label: 'Pagos', href: '/dashboard/admin/finanzas/pagos', icon: 'calendarClock' },
+            { label: 'Utilidad del mes', href: '/dashboard/admin/finanzas/utilidad', icon: 'trendingUp' },
+          ],
+        })
       }
-      return links
+      const configLinks: MainMenuLink[] = [
+        { label: 'Productos', href: '/dashboard/admin/products', icon: 'products' },
+        ...(isAdmin ? [{ label: 'Usuarios', href: '/dashboard/admin/users', icon: 'users' } as MainMenuLink] : []),
+        { label: 'Clientes', href: '/customers', icon: 'clients' },
+        ...(isAdmin ? [{ label: 'Mensajes', href: '/dashboard/admin/mensajes', icon: 'messages' } as MainMenuLink] : []),
+      ]
+      items.push({ label: 'Configuración', icon: 'settings', links: configLinks })
+      if (isAdmin) {
+        items.push({ label: 'Promociones', href: '/dashboard/admin/promotions', icon: 'promotions' })
+        items.push({ label: 'Gastos', href: '/dashboard/admin/expenses', icon: 'expenses' })
+        items.push({ label: 'Reportes', href: '/dashboard/admin/reports', icon: 'reports' })
+      }
+      return items
     }
     return []
   }
 
-  const navLinks = getNavLinks()
+  const navItems = getNavItems()
 
   // The DESKTOP bar has no bottom navigation to lean on, so it shows the
   // full set (primary + secondary). The hamburger keeps only the
@@ -245,7 +276,7 @@ export default async function Navbar() {
       <header className="site-nav relative w-full bg-[#f9f9ff]/95 backdrop-blur border-b border-[#c3c6d5] sticky top-0 z-50 px-4 py-2.5 grid grid-cols-[1fr_auto_1fr] items-center md:hidden shadow-sm">
         <div className="flex items-center justify-start">
           <MainMenu
-            links={navLinks}
+            items={navItems}
             isAuthenticated={isAuthenticated}
             displayName={displayName}
             initials={initials}

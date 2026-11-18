@@ -12,10 +12,9 @@ import {
   getBirthdayDismissals,
   dismissBirthday,
   getMessageTemplates,
-  getWeekSalesSeries,
+  getMonthSales,
   type DueReminder,
-  type MessageTemplates,
-  type WeekSalesSeries
+  type MessageTemplates
 } from '@/lib/services'
 import { toWhatsAppNumber } from '@/lib/reminder-config'
 import {
@@ -30,7 +29,7 @@ import { ensureFixedPaymentNotifications } from '@/lib/expenses'
 import { Database } from '@/types/database.types'
 import ReminderTray from '@/components/reminder-tray'
 import RecentActivity from '@/components/recent-activity'
-import SalesSparkline from '@/components/sales-sparkline'
+import MonthSparkline from '@/components/sales-sparkline'
 import {
   TrendingUp,
   Wallet,
@@ -49,8 +48,7 @@ import {
   Settings,
   Landmark,
   Receipt,
-  PiggyBank,
-  ShoppingCart
+  PiggyBank
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -80,10 +78,12 @@ export default function AdminDashboard() {
   // y la respuesta a solicitudes leen su texto de aquí, con el texto de
   // siempre como respaldo mientras cargan o si la lectura falla.
   const [msgTemplates, setMsgTemplates] = useState<MessageTemplates | null>(null)
-  // Vista previa «Ventas de la semana» (estilo de la foto del dueño):
-  // serie de los últimos 7 días para la mini gráfica; se carga aparte,
-  // sin bloquear el panel, y si falla la tarjeta muestra su esqueleto.
-  const [weekSeries, setWeekSeries] = useState<WeekSalesSeries | null>(null)
+  // Serie del mes en curso (días CON ventas, la misma de la pantalla
+  // Finanzas → Ventas del mes) para la mini gráfica que vive DENTRO de
+  // la mini tarjeta «Ventas del mes». Se carga aparte, sin bloquear el
+  // panel; mientras carga o si falla, la mini gráfica muestra su línea
+  // en cero.
+  const [monthDays, setMonthDays] = useState<{ date: string; total: number }[]>([])
   const [birthdayDismissals, setBirthdayDismissals] = useState<Set<string>>(new Set())
   const [dismissingId, setDismissingId] = useState<string | null>(null)
   const [birthdayError, setBirthdayError] = useState<string | null>(null)
@@ -120,10 +120,11 @@ export default function AdminDashboard() {
       .then(setMsgTemplates)
       .catch(() => {})
 
-    // Serie de la semana para la mini gráfica de la previa: aparte y
+    // Serie del mes para la mini gráfica de «Ventas del mes»: aparte y
     // sin bloquear el panel.
-    getWeekSalesSeries()
-      .then(setWeekSeries)
+    const nowForMonth = new Date()
+    getMonthSales(nowForMonth.getFullYear(), nowForMonth.getMonth() + 1)
+      .then(detail => setMonthDays(detail.days))
       .catch(() => {})
 
     try {
@@ -350,27 +351,6 @@ export default function AdminDashboard() {
       ) : (
         <div className="space-y-6">
 
-          {/* BOTÓN HÉROE «Realizar Venta» — lenguaje de la foto del dueño
-              (2026-11-18) adaptado al tema claro: degradado azul primario
-              → celeste ANIMADO (.or-hero-gradient), icono en cuadro
-              translúcido, título grande en blanco, subtítulo en
-              mayúsculas y chevron en círculo translúcido. */}
-          <Link
-            href="/dashboard/seller"
-            className="anim-stagger-item or-hero-gradient or-shadow-raised flex items-center gap-4 rounded-[24px] p-5 text-white transition-transform active:scale-[0.99]"
-          >
-            <span className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
-              <ShoppingCart className="w-7 h-7" />
-            </span>
-            <span className="flex-1 min-w-0">
-              <span className="block text-[22px] leading-tight font-extrabold">Realizar Venta</span>
-              <span className="block text-[11px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">Punto de venta</span>
-            </span>
-            <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-              <ChevronRight className="w-5 h-5" />
-            </span>
-          </Link>
-
           {/* FINANZAS: una sola tarjeta contenedora con mini tarjetas.
               Primera fila: Ventas hoy · Ventas del mes · Por cobrar.
               Segunda fila: Pagos · Utilidad del mes. */}
@@ -390,7 +370,7 @@ export default function AdminDashboard() {
               {/* Ventas hoy — abre el detalle del día */}
               <Link
                 href="/dashboard/admin/finanzas/hoy"
-                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:block"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-[20px] p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:block"
               >
                 <span className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-[#00357f] text-white flex items-center justify-center shrink-0">
                   <TrendingUp className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
@@ -408,13 +388,25 @@ export default function AdminDashboard() {
                 </span>
               </Link>
 
-              {/* Ventas del mes — abre la gráfica y la tabla del mes */}
+              {/* Ventas del mes — abre la gráfica y la tabla del mes.
+                  Mini gráfica de línea a un ladito, DENTRO de la misma
+                  tarjeta y sin hacerla más grande (corrección del dueño,
+                  2026-11-18): en móvil va al final de la fila; en sm+ va
+                  arriba a la derecha, junto al icono, en el espacio que
+                  ya existía. Es solo la previa: la serie es la del mes
+                  en curso (getMonthSales) y la tarjeta entera sigue
+                  siendo el enlace al detalle del mes. */}
               <Link
                 href="/dashboard/admin/finanzas/mes"
-                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:block"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-[20px] p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:flex sm:flex-col sm:items-stretch sm:gap-0"
               >
-                <span className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-[#0899c9] text-white flex items-center justify-center shrink-0">
-                  <CalendarDays className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                <span className="flex items-center justify-between shrink-0 sm:w-full">
+                  <span className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-[#0899c9] text-white flex items-center justify-center shrink-0">
+                    <CalendarDays className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                  </span>
+                  <span className="hidden sm:block w-20 h-6 shrink-0" aria-hidden="true">
+                    <MonthSparkline days={monthDays} />
+                  </span>
                 </span>
                 <span className="flex-1 min-w-0 sm:contents">
                   <p className="block text-[11px] font-bold text-[#434653] sm:mt-2">Ventas del mes</p>
@@ -427,12 +419,15 @@ export default function AdminDashboard() {
                     )}
                   </p>
                 </span>
+                <span className="sm:hidden w-14 h-6 shrink-0" aria-hidden="true">
+                  <MonthSparkline days={monthDays} />
+                </span>
               </Link>
 
               {/* Por cobrar — enlace a Pagos; semáforo: rojo suave si hay adeudo, verde si no */}
               <Link
                 href="/payments"
-                className={`rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:block ${pendingTotal > 0 ? 'bg-[#ffdad6]/60 hover:bg-[#ffdad6]/80' : 'bg-[#e2f9ee] hover:bg-[#d3f5e3]'}`}
+                className={`rounded-[20px] p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:block ${pendingTotal > 0 ? 'bg-[#ffdad6]/60 hover:bg-[#ffdad6]/80' : 'bg-[#e2f9ee] hover:bg-[#d3f5e3]'}`}
               >
                 <span className={`w-9 h-9 sm:w-7 sm:h-7 rounded-lg text-white flex items-center justify-center shrink-0 ${pendingTotal > 0 ? 'bg-[#ba1a1a]' : 'bg-[#00422b]'}`}>
                   <Wallet className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
@@ -451,7 +446,7 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-2 gap-2 sm:gap-3 mt-2 sm:mt-3">
               <Link
                 href="/dashboard/admin/finanzas/pagos"
-                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-2.5 sm:p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px] min-w-0"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-[20px] p-2.5 sm:p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px] min-w-0"
               >
                 <span className="w-7 h-7 rounded-lg bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
                   <Receipt className="w-3.5 h-3.5" />
@@ -461,7 +456,7 @@ export default function AdminDashboard() {
               </Link>
               <Link
                 href="/dashboard/admin/finanzas/utilidad"
-                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-2.5 sm:p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px] min-w-0"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-[20px] p-2.5 sm:p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px] min-w-0"
               >
                 <span className="w-7 h-7 rounded-lg bg-[#e2f9ee] text-[#00422b] flex items-center justify-center shrink-0">
                   <PiggyBank className="w-3.5 h-3.5" />
@@ -472,36 +467,6 @@ export default function AdminDashboard() {
             </div>
           </section>
 
-          {/* VISTA PREVIA «Ventas de la semana» — tarjeta estilo la foto
-              del dueño: título en negrita, pastilla con el total de la
-              semana y la mini gráfica de línea violeta de los últimos 7
-              días (semana completa, con ceros). La tarjeta entera lleva
-              al detalle del mes; el pie repite el «Ver detalles…» de la
-              referencia. */}
-          <section
-            className="anim-stagger-item bg-white rounded-[24px] or-shadow-card p-4 sm:p-5"
-            style={{ '--enter-delay': '60ms' } as React.CSSProperties}
-          >
-            <div className="flex items-start justify-between gap-3 mb-1">
-              <h3 className="text-base font-extrabold text-[#111c2d]">Ventas de la semana</h3>
-              <span className="shrink-0 bg-[#ede9fe] text-[#7c3aed] text-sm font-extrabold px-3 py-1 rounded-full tabular-nums">
-                {weekSeries ? formatPrice(weekSeries.total) : '—'}
-              </span>
-            </div>
-            {weekSeries ? (
-              <SalesSparkline days={weekSeries.days} />
-            ) : (
-              <div className="h-24 skeleton-shimmer rounded-xl" aria-hidden="true" />
-            )}
-            <Link
-              href="/dashboard/admin/finanzas/mes"
-              className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-bold text-[#7c3aed] transition-all active:scale-95"
-            >
-              <TrendingUp className="w-4 h-4" />
-              Ver detalles…
-            </Link>
-          </section>
-
           {/* Configuración: Productos, Usuarios, Mensajes y Clientes.
               La sección completa vive dentro de una tarjeta blanca para
               que su contorno se vea sobre el fondo; los mosaicos internos
@@ -510,7 +475,7 @@ export default function AdminDashboard() {
               solo renglón también en móvil — rejilla de 4 columnas en
               todos los anchos, con chip y etiqueta achicados para que
               ninguna palabra se corte a 360px. */}
-          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '120ms' } as React.CSSProperties}>
+          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '60ms' } as React.CSSProperties}>
             <div className="flex items-center gap-3 mb-4">
               <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
                 <Settings className="w-5 h-5" />
@@ -540,39 +505,34 @@ export default function AdminDashboard() {
               y avisar a los 6 meses «ya es tiempo de tu nuevo examen».
               Va inmediatamente después de Configuración, con el contador de
               vencidos en rojo sobre la cabecera; la sección nace minimizada. */}
-          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
+          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4" style={{ '--enter-delay': '120ms' } as React.CSSProperties}>
             <button
               type="button"
               onClick={() => toggleSection('reminders')}
               aria-expanded={openSections.reminders}
-              className="w-full flex items-center gap-3 cursor-pointer text-left"
+              className="w-full h-[44px] flex items-center gap-2.5 cursor-pointer text-left"
             >
-              <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${overdueCount > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#dee8ff] text-[#00357f]'}`}>
-                <BellRing className="w-5 h-5" />
+              <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${overdueCount > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#dee8ff] text-[#00357f]'}`}>
+                <BellRing className="w-4 h-4" />
               </span>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-base font-semibold text-[#111c2d]">Recordatorios de revisión</h3>
-                <p className={`text-xs font-semibold ${remindersError ? 'text-[#92400e]' : overdueCount > 0 ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
-                  {remindersError
-                    ? 'No se pudieron cargar los vencidos'
-                    : overdueCount > 0
-                      ? `${overdueCount} vencido${overdueCount !== 1 ? 's' : ''} · ${dueReminders.length} por atender`
-                      : dueReminders.length > 0
-                        ? `${dueReminders.length} por atender en los próximos 7 días`
-                        : 'Sin vencimientos próximos'}
-                </p>
-              </div>
-              {!remindersError && overdueCount > 0 && (
-                <span className="shrink-0 bg-[#ba1a1a] text-white text-xs font-bold px-2.5 py-1 rounded-full">
-                  {overdueCount} vencidos
-                </span>
+              <h3 className="flex-1 min-w-0 truncate whitespace-nowrap text-sm font-semibold text-[#111c2d]">Recordatorios de revisión</h3>
+              {remindersError ? (
+                <span className="min-w-0 truncate text-[11px] font-semibold text-[#92400e]">No se pudieron cargar los vencidos</span>
+              ) : (
+                <>
+                  {overdueCount > 0 && (
+                    <span className="shrink-0 whitespace-nowrap bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {overdueCount} vencido{overdueCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {dueReminders.length > 0 && (
+                    <span className="shrink-0 whitespace-nowrap bg-[#fef3c7] text-[#92400e] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {dueReminders.length} por atender
+                    </span>
+                  )}
+                </>
               )}
-              {!remindersError && overdueCount === 0 && dueReminders.length > 0 && (
-                <span className="shrink-0 bg-[#dee8ff] text-[#00357f] text-xs font-bold px-2.5 py-1 rounded-full">
-                  {dueReminders.length}
-                </span>
-              )}
-              <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.reminders ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.reminders ? 'rotate-180' : ''}`} />
             </button>
             {openSections.reminders && (
               <div className={`mt-4 ${overdueCount > 0 ? 'rounded-2xl ring-1 ring-[#ba1a1a]/25' : ''}`}>
@@ -582,23 +542,23 @@ export default function AdminDashboard() {
           </section>
 
           {/* Solicitudes de lentes armados — colapsable, nace minimizada */}
-          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '240ms' } as React.CSSProperties}>
+          <div className="anim-stagger-item bg-white p-4 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
             <button
               type="button"
               onClick={() => toggleSection('requests')}
               aria-expanded={openSections.requests}
-              className="w-full flex items-center gap-3 cursor-pointer text-left"
+              className="w-full h-[44px] flex items-center gap-2.5 cursor-pointer text-left"
             >
-              <span className="w-10 h-10 rounded-xl bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
-                <MessageSquare className="w-5 h-5" />
+              <span className="w-8 h-8 rounded-lg bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
+                <MessageSquare className="w-4 h-4" />
               </span>
-              <h3 className="text-base font-semibold text-[#111c2d]">Solicitudes de lentes armados</h3>
+              <h3 className="flex-1 min-w-0 truncate whitespace-nowrap text-sm font-semibold text-[#111c2d]">Solicitudes de lentes armados</h3>
               {lensRequests.filter(r => r.status === 'pending').length > 0 && (
-                <span className="ml-auto shrink-0 bg-[#fef3c7] text-[#92400e] text-xs font-bold px-2.5 py-1 rounded-full">
+                <span className="shrink-0 whitespace-nowrap bg-[#dee8ff] text-[#00357f] text-[10px] font-bold px-2 py-0.5 rounded-full">
                   {lensRequests.filter(r => r.status === 'pending').length} pendientes
                 </span>
               )}
-              <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.requests ? 'rotate-180' : ''} ${lensRequests.filter(r => r.status === 'pending').length > 0 ? '' : 'ml-auto'}`} />
+              <ChevronDown className={`w-4 h-4 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.requests ? 'rotate-180' : ''}`} />
             </button>
 
             {openSections.requests && (lensRequests.length === 0 ? (
@@ -678,23 +638,23 @@ export default function AdminDashboard() {
           </div>
 
           {/* Cumpleaños próximos (7 días): felicitar también es vender */}
-          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
+          <div className="anim-stagger-item bg-white p-4 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '240ms' } as React.CSSProperties}>
             <button
               type="button"
               onClick={() => toggleSection('birthdays')}
               aria-expanded={openSections.birthdays}
-              className="w-full flex items-center gap-3 cursor-pointer text-left"
+              className="w-full h-[44px] flex items-center gap-2.5 cursor-pointer text-left"
             >
-              <span className="w-10 h-10 rounded-xl bg-[#e6f5fb] text-[#0899c9] flex items-center justify-center shrink-0">
-                <Cake className="w-5 h-5" />
+              <span className="w-8 h-8 rounded-lg bg-[#e6f5fb] text-[#0899c9] flex items-center justify-center shrink-0">
+                <Cake className="w-4 h-4" />
               </span>
-              <h3 className="text-base font-semibold text-[#111c2d]">Cumpleaños próximos</h3>
+              <h3 className="flex-1 min-w-0 truncate whitespace-nowrap text-sm font-semibold text-[#111c2d]">Cumpleaños próximos</h3>
               {upcomingBirthdays.length > 0 && (
-                <span className="ml-auto shrink-0 bg-[#e6f5fb] text-[#0899c9] text-xs font-bold px-2.5 py-1 rounded-full">
+                <span className="shrink-0 whitespace-nowrap bg-[#dee8ff] text-[#00357f] text-[10px] font-bold px-2 py-0.5 rounded-full">
                   {upcomingBirthdays.length}
                 </span>
               )}
-              <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.birthdays ? 'rotate-180' : ''} ${upcomingBirthdays.length > 0 ? '' : 'ml-auto'}`} />
+              <ChevronDown className={`w-4 h-4 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.birthdays ? 'rotate-180' : ''}`} />
             </button>
 
             {openSections.birthdays && (

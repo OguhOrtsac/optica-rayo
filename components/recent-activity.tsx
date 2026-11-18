@@ -39,23 +39,23 @@ export default function RecentActivity({ sales }: { sales: RecentActivitySale[] 
   const recent = sales.slice(0, 5)
 
   return (
-    <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
+    <div className="anim-stagger-item bg-white p-4 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="w-full flex items-center gap-3 cursor-pointer text-left"
+        className="w-full h-[44px] flex items-center gap-2.5 cursor-pointer text-left"
       >
-        <span className="w-10 h-10 rounded-xl bg-[#0899c9]/15 text-[#0899c9] flex items-center justify-center shrink-0">
-          <Activity className="w-5 h-5" />
+        <span className="w-8 h-8 rounded-lg bg-[#0899c9]/15 text-[#0899c9] flex items-center justify-center shrink-0">
+          <Activity className="w-4 h-4" />
         </span>
-        <h3 className="text-base font-semibold text-[#111c2d]">Actividad reciente</h3>
+        <h3 className="flex-1 min-w-0 truncate whitespace-nowrap text-sm font-semibold text-[#111c2d]">Actividad reciente</h3>
         {recent.length > 0 && (
-          <span className="ml-auto shrink-0 bg-[#dee8ff] text-[#00357f] text-xs font-bold px-2.5 py-1 rounded-full">
+          <span className="shrink-0 whitespace-nowrap bg-[#dee8ff] text-[#00357f] text-[10px] font-bold px-2 py-0.5 rounded-full">
             {recent.length}
           </span>
         )}
-        <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${open ? 'rotate-180' : ''} ${recent.length > 0 ? '' : 'ml-auto'}`} />
+        <ChevronDown className={`w-4 h-4 shrink-0 text-[#737784] transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (recent.length === 0 ? (

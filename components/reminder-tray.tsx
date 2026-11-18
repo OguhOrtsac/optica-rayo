@@ -9,7 +9,7 @@ import {
   type DueReminder,
 } from '@/lib/services'
 import { buildReminderMessage, toWhatsAppNumber } from '@/lib/reminder-config'
-import { BellRing, CheckCheck, Eye, MessageSquare, Save } from 'lucide-react'
+import { CheckCheck, Eye, MessageSquare, Save } from 'lucide-react'
 
 /**
  * Exam Review Reminders tray for the administrator.
@@ -100,21 +100,11 @@ export default function ReminderTray() {
     iso ? new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
   return (
-    // Sin tarjeta propia: en el panel la sección ya vive dentro de una
-    // tarjeta blanca del sistema; anidar otra tarjeta se veía doble.
+    // Sin tarjeta propia ni encabezado propio: en el panel la sección ya
+    // vive dentro de una tarjeta blanca del sistema y su barra de sección
+    // (un solo renglón) lleva el título y los conteos — vencidos en rojo
+    // y por atender en naranja —; repetirlos aquí se veía doble y gordo.
     <div className="text-left">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-bold text-[#111c2d] flex items-center gap-2">
-          <span className="w-8 h-8 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
-            <BellRing className="w-4 h-4" />
-          </span>
-          Recordatorios de Revisión
-        </h3>
-        <span className="px-2.5 py-0.5 rounded-full bg-[#dee8ff] text-[#00357f] font-bold text-[10px]">
-          {due.length} por atender
-        </span>
-      </div>
-
       {/* Editable configuration: cadencia compacta en un renglón +
           plantilla como texto legible con modal para verla y editarla */}
       <div className="bg-[#f9f9ff] border border-[#cbd5e1]/50 rounded-xl p-4 space-y-3 mb-5">
