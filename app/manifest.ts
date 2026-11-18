@@ -12,7 +12,7 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     display: 'standalone',
     background_color: '#ffffff', // blanco: el logo oficial va sobre fondo blanco
-    theme_color: '#06b6d4', // cyan-500
+    theme_color: '#00357f', // azul de marca Óptica Rayo (antes un cyan genérico)
     orientation: 'portrait',
     icons: [
       {

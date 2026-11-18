@@ -39,8 +39,30 @@ export const metadata: Metadata = {
   description: "Sistema inteligente de óptica, inventario y fidelización de clientes.",
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    // 'default' (barra blanca, glifos negros), NO 'black-translucent':
+    // con translucent los glifos del sistema se pintan BLANCOS sobre una
+    // barra transparente y el contenido se cuela bajo el notch — sobre
+    // nuestra cabecera casi blanca (#f9f9ff) y el fondo claro serían
+    // ilegibles. Con 'default' la barra combina con la cabecera clara y
+    // el contenido nace debajo; las áreas seguras (env()) quedan
+    // aplicadas igual en barra superior e inferior por si esto cambia.
+    statusBarStyle: 'default',
     title: 'Óptica Rayo',
+    // Pantallas de arranque de iOS (public/splash/): el logo oficial
+    // centrado sobre el fondo claro de marca. Sin estas imágenes, un
+    // iPhone abre la app instalada con un flash blanco.
+    startupImage: [
+      { url: '/splash/apple-splash-1170x2532.png', media: '(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-1179x2556.png', media: '(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-1290x2796.png', media: '(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-1125x2436.png', media: '(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-1080x2340.png', media: '(device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-1242x2688.png', media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-828x1792.png', media: '(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-750x1334.png', media: '(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-1536x2048.png', media: '(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+      { url: '/splash/apple-splash-1668x2388.png', media: '(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)' },
+    ],
   },
 };
 
@@ -73,7 +95,7 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col bg-[#edf1fa] text-[#111c2d]">
         <PWARegister />
         <Navbar />
-        <div className={`flex-1 ${isAuthenticated ? 'pb-20 md:pb-0' : 'pb-0'}`}>
+        <div className={`flex-1 ${isAuthenticated ? 'pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0' : 'pb-0'}`}>
           {children}
         </div>
       </body>

@@ -17,6 +17,7 @@ import {
   type MessageTemplateKey,
 } from './message-templates'
 import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT, effectiveClientPrice } from './pricing'
+import { isAdminRole } from './roles'
 import { getAgendaScheduleSummary } from './appointments'
 import { getPeriodPayments } from './expenses'
 import {
@@ -61,18 +62,37 @@ function withTimeout(promise: Promise<any> | any, ms = 2500): Promise<any> {
 
 /**
  * Service to fetch all products in the catalog.
+ *
+ * Order: the admin-arranged display order first (products.display_order,
+ * NULLs last — a product nobody has placed yet goes to the end), with
+ * the name order the catalog always had as the tiebreak/fallback.
  */
 export async function getProducts(): Promise<Product[]> {
   if (!isSupabaseConfigured()) {
     // Demo mode (no database configured): the mock catalog is the dataset.
     return mockDb.MOCK_PRODUCTS
   }
+  const supabase = createBrowserClient()
+  // Older rows (before the media migration) may not carry every new
+  // structured field yet; normalize them for the UI instead of leaking
+  // undefined values into forms and the catalog.
+  const normalize = (rows: Product[]): Product[] => rows.map((product: Product) => ({
+    ...product,
+    brand: product.brand ?? null,
+    material: product.material ?? null,
+    sku: product.sku ?? null,
+    frame_shape: product.frame_shape ?? null,
+    color: product.color ?? null,
+    gallery_urls: Array.isArray(product.gallery_urls) ? product.gallery_urls : [],
+    image_alt: product.image_alt ?? null,
+    display_order: product.display_order ?? null,
+  }))
   try {
-    const supabase = createBrowserClient()
     const { data, error } = await withTimeout(
       supabase
         .from('products')
         .select('*')
+        .order('display_order', { ascending: true, nullsFirst: false })
         .order('name', { ascending: true })
     )
 
@@ -82,25 +102,91 @@ export async function getProducts(): Promise<Product[]> {
     if (!data) {
       return []
     }
-    // Older rows (before the media migration) may not carry every new
-    // structured field yet; normalize them for the UI instead of leaking
-    // undefined values into forms and the catalog.
-    return data.map((product: Product) => ({
-      ...product,
-      brand: product.brand ?? null,
-      material: product.material ?? null,
-      sku: product.sku ?? null,
-      frame_shape: product.frame_shape ?? null,
-      color: product.color ?? null,
-      gallery_urls: Array.isArray(product.gallery_urls) ? product.gallery_urls : [],
-      image_alt: product.image_alt ?? null,
-    }))
+    return normalize(data as Product[])
   } catch (e) {
+    // Degradación silenciosa: si la columna display_order aún no existe
+    // (migración 20261118_products_display_order sin aplicar), se
+    // reintenta con el orden de nombre de siempre en vez de romper el
+    // catálogo — mismo criterio que activity_events. Cualquier otro
+    // error SÍ se propaga, como hasta hoy.
+    if (e instanceof Error && e.message.includes('display_order')) {
+      try {
+        const { data, error } = await withTimeout(
+          supabase
+            .from('products')
+            .select('*')
+            .order('name', { ascending: true })
+        )
+        if (error) {
+          throw new Error(error.message)
+        }
+        return normalize((data ?? []) as Product[])
+      } catch (retryError) {
+        console.error('Error fetching products from Supabase:', retryError)
+        throw retryError instanceof Error ? retryError : new Error('No se pudo leer el catálogo de la base de datos.')
+      }
+    }
     // Database configured but the read failed (or timed out): propagate
     // the real error so screens show a connection problem instead of
     // demo products presented as if they were the real catalog.
     console.error('Error fetching products from Supabase:', e)
     throw e instanceof Error ? e : new Error('No se pudo leer el catálogo de la base de datos.')
+  }
+}
+
+/**
+ * Guarda el orden de exhibición del catálogo (el arrastre del
+ * administrador en /catalog): display_order = posición (1, 2, 3…)
+ * de cada producto según la secuencia recibida.
+ *
+ * Solo administrador: el rol se verifica AQUÍ contra la base — se lee
+ * la fila de profiles del propio solicitante (la misma fuente que usa
+ * getProfileData en el servidor) — y si no es super_admin/owner se
+ * devuelve el error real SIN escribir nada. La política RLS de
+ * products («Allow catalog managers to manage products») es la
+ * segunda barrera sobre el UPDATE.
+ *
+ * Cualquier fallo LANZA: la pantalla revierte al orden anterior y
+ * avisa el error — nunca se muestra «guardado» sin haber guardado.
+ */
+export async function saveProductsOrder(orderedIds: string[]): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    // Demo mode: el orden vive en el arreglo mock de la sesión.
+    mockDb.reorderMockProducts(orderedIds)
+    return
+  }
+  const supabase = createBrowserClient()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) {
+    throw new Error('Inicia sesión como administrador para reordenar el catálogo.')
+  }
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  if (profileError || !profile) {
+    throw new Error('No se pudo verificar tu rol para reordenar el catálogo.')
+  }
+  if (!isAdminRole(profile.role)) {
+    throw new Error('Solo un administrador puede reordenar el catálogo.')
+  }
+  const results = await Promise.all(
+    orderedIds.map((id, index) =>
+      supabase
+        .from('products')
+        .update({ display_order: index + 1 })
+        .eq('id', id)
+        .select('id')
+    )
+  )
+  for (const { data, error } of results) {
+    if (error) {
+      throw new Error(error.message)
+    }
+    if (!data || data.length === 0) {
+      throw new Error('No se pudo guardar el orden: un producto no se actualizó.')
+    }
   }
 }
 

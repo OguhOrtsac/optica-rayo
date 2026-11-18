@@ -175,6 +175,7 @@ export interface Database {
           image_alt: string | null
           is_promo: boolean
           is_featured: boolean
+          display_order: number | null
           created_at: string
         }
         Insert: {
@@ -195,6 +196,7 @@ export interface Database {
           image_alt?: string | null
           is_promo?: boolean
           is_featured?: boolean
+          display_order?: number | null
           created_at?: string
         }
         Update: {
@@ -215,6 +217,7 @@ export interface Database {
           image_alt?: string | null
           is_promo?: boolean
           is_featured?: boolean
+          display_order?: number | null
           created_at?: string
         }
       }

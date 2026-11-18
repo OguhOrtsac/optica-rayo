@@ -533,29 +533,38 @@ export default function AdminDashboard() {
               type="button"
               onClick={() => toggleSection('reminders')}
               aria-expanded={openSections.reminders}
-              className="w-full h-[44px] flex items-center gap-2.5 cursor-pointer text-left"
+              className="w-full flex flex-wrap items-center gap-x-2.5 gap-y-1 py-1.5 sm:h-[44px] sm:flex-nowrap sm:py-0 cursor-pointer text-left"
             >
-              <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${overdueCount > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#dee8ff] text-[#00357f]'}`}>
+              <span className={`max-sm:order-1 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${overdueCount > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#dee8ff] text-[#00357f]'}`}>
                 <BellRing className="w-4 h-4" />
               </span>
-              <h3 className="flex-1 min-w-0 truncate whitespace-nowrap text-sm font-semibold text-[#111c2d]">Recordatorios de revisión</h3>
-              {remindersError ? (
-                <span className="min-w-0 truncate text-[11px] font-semibold text-[#92400e]">No se pudieron cargar los vencidos</span>
-              ) : (
-                <>
-                  {overdueCount > 0 && (
-                    <span className="shrink-0 whitespace-nowrap bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      {overdueCount} vencido{overdueCount !== 1 ? 's' : ''}
-                    </span>
+              <h3 className="max-sm:order-2 flex-1 min-w-0 truncate whitespace-nowrap text-sm font-semibold text-[#111c2d]">Recordatorios de revisión</h3>
+              {/* Dictado del dueño (2026-11-18): en el celular el título se
+                  cortaba («Recordat…») por compartir renglón con los dos
+                  conteos; los conteos bajan a su propio renglón en móvil
+                  (indentados bajo el título) y el título se ve completo.
+                  En escritorio sobra ancho: todo en un renglón, como antes. */}
+              {(remindersError || overdueCount > 0 || dueReminders.length > 0) && (
+                <span className="flex items-center gap-1.5 max-sm:order-4 max-sm:w-full max-sm:pl-[42px]">
+                  {remindersError ? (
+                    <span className="min-w-0 truncate text-[11px] font-semibold text-[#92400e]">No se pudieron cargar los vencidos</span>
+                  ) : (
+                    <>
+                      {overdueCount > 0 && (
+                        <span className="shrink-0 whitespace-nowrap bg-[#ffdad6] text-[#ba1a1a] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          {overdueCount} vencido{overdueCount !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {dueReminders.length > 0 && (
+                        <span className="shrink-0 whitespace-nowrap bg-[#fef3c7] text-[#92400e] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          {dueReminders.length} por atender
+                        </span>
+                      )}
+                    </>
                   )}
-                  {dueReminders.length > 0 && (
-                    <span className="shrink-0 whitespace-nowrap bg-[#fef3c7] text-[#92400e] text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      {dueReminders.length} por atender
-                    </span>
-                  )}
-                </>
+                </span>
               )}
-              <ChevronDown className={`w-4 h-4 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.reminders ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`max-sm:order-3 w-4 h-4 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.reminders ? 'rotate-180' : ''}`} />
             </button>
             {openSections.reminders && (
               <div className={`mt-4 ${overdueCount > 0 ? 'rounded-2xl ring-1 ring-[#ba1a1a]/25' : ''}`}>
@@ -735,9 +744,9 @@ export default function AdminDashboard() {
                                   description: `Felicitación de cumpleaños a ${b.name}`,
                                 })
                               }}
-                              className="shrink-0 flex items-center gap-1 min-h-[44px] px-2.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-95 cursor-pointer"
+                              className="shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-95 cursor-pointer"
                             >
-                              <MessageSquare className="w-3.5 h-3.5" />
+                              <MessageSquare className="w-3 h-3" />
                               Felicitar
                             </a>
                           ) : (
@@ -745,9 +754,9 @@ export default function AdminDashboard() {
                               type="button"
                               disabled
                               title="Este cliente no tiene teléfono registrado"
-                              className="shrink-0 flex items-center gap-1 min-h-[44px] px-2.5 rounded-lg text-xs font-bold text-white bg-emerald-600/50 cursor-not-allowed"
+                              className="shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600/50 cursor-not-allowed"
                             >
-                              <MessageSquare className="w-3.5 h-3.5" />
+                              <MessageSquare className="w-3 h-3" />
                               Felicitar
                             </button>
                           )}

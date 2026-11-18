@@ -200,6 +200,44 @@ body {
   animation: fx-blink-soft 2.8s ease-in-out infinite;
 }
 
+/* Parpadeo de la pastilla del héroe del catálogo (dictado del dueño,
+   2026-11-18): la pastilla «Óptica Rayo · Catálogo en línea» prende y
+   apaga sobre la banda azul — a mitad del ciclo baja la opacidad y
+   sube el brillo, sin llegar a desaparecer. Es la variante para la
+   pastilla ENTERA del fx-blink-soft de las etiquetas. */
+@keyframes fx-blink-pill {
+  0%,
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.55;
+    filter: brightness(1.3);
+  }
+}
+
+.anim-blink-pill {
+  animation: fx-blink-pill 2.2s ease-in-out infinite;
+}
+
+/* Pulsing frame for the expanded customer preview in Clientes
+   (dictado del dueño, 2026-11-18): the deployed card must READ as an
+   open card — a visible frame whose ring breathes softly. */
+@keyframes fx-frame-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(8, 153, 201, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(8, 153, 201, 0.18);
+  }
+}
+
+.anim-frame-pulse {
+  animation: fx-frame-pulse 2.4s ease-in-out infinite;
+}
+
 /* Shimmering placeholder surface for skeleton loading states. */
 .skeleton-shimmer {
   background: linear-gradient(100deg, #e6edfc 40%, #f7faff 50%, #e6edfc 60%);
@@ -223,10 +261,49 @@ html[data-nav-scrolled='true'] .site-nav {
   .anim-stagger-item,
   .anim-pulse-soft,
   .anim-blink-soft,
+  .anim-blink-pill,
+  .anim-frame-pulse,
   .skeleton-shimmer {
     animation: none !important;
   }
   .site-nav {
     transition: none;
   }
+}
+
+/* ==========================================
+   Áreas seguras y pulido nativo (paquete iPhone, 2026-11-18)
+   Tailwind v4 NO trae utilidades *-safe de serie: la barra inferior
+   ya usaba la clase `pb-safe`, que hasta ahora no resolvía a nada
+   (la clase simplemente no se generaba). Estas dos utilidades la
+   hacen real y dan su par superior. En Android y escritorio los
+   env() valen 0 y nada cambia visualmente.
+   ========================================== */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Sin flash gris al tocar (iOS pinta un rectángulo gris translúcido
+   sobre cada toque si no se apaga) y sin rebote de la página al
+   llegar a los extremos: en la app instalada se siente nativa. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Sin retardo de doble toque en lo tocable: el navegador no espera
+   a ver si viene un segundo toque para hacer zoom. No bloquea el
+   gesto de arrastre del catálogo: su asa usa su propia clase
+   (touch-none), que manda sobre esta regla de elemento. */
+button,
+a,
+[role='button'] {
+  touch-action: manipulation;
 }

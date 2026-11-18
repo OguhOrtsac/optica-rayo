@@ -115,7 +115,7 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#f9f9ff] border-t border-[#c3c6d5] flex md:hidden justify-around items-center h-20 pb-safe px-2 shadow-[0_-6px_20px_rgba(0,53,127,0.10)] rounded-t-2xl">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#f9f9ff] border-t border-[#c3c6d5] flex md:hidden justify-around items-center h-[calc(5rem+env(safe-area-inset-bottom))] pb-safe px-2 shadow-[0_-6px_20px_rgba(0,53,127,0.10)] rounded-t-2xl">
       {links.map(link => {
         const active = isActive(link.href)
         return (
