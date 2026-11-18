@@ -190,7 +190,6 @@ export default function ProfilePage() {
     fullWidth?: boolean
   }[] = [
     { key: 'name', label: 'Nombre de la óptica', type: 'text', placeholder: 'Óptica Rayo' },
-    { key: 'schedule', label: 'Horario de atención', type: 'text', placeholder: 'Lun - Sáb, 10:00 - 19:00' },
     { key: 'address', label: 'Dirección', type: 'text', placeholder: 'Calle, número y colonia', fullWidth: true },
     { key: 'city', label: 'Ciudad', type: 'text', placeholder: 'Ciudad' },
     { key: 'state', label: 'Estado', type: 'text', placeholder: 'Estado' },
@@ -498,6 +497,22 @@ export default function ProfilePage() {
                     <div className="w-full bg-[#f0f3ff] rounded-xl px-4 py-3 min-h-[44px] flex items-center text-[13px] font-semibold text-[#434653]">
                       Peso Mexicano (MXN)
                     </div>
+                  </div>
+
+                  {/* Opening hours are READ-ONLY here: the summary is
+                      generated from «Configurar horario» (per-day
+                      schedule), never typed by hand. */}
+                  <div className="sm:col-span-2">
+                    <span className={labelClasses}>Horario de atención</span>
+                    <div className="w-full bg-[#f0f3ff] rounded-xl px-4 py-3 min-h-[44px] flex items-center text-[13px] font-semibold text-[#434653]">
+                      {business.schedule || '—'}
+                    </div>
+                    <p className="text-[11px] text-[#737784] font-medium mt-1.5">
+                      Este horario se genera desde la configuración de días y horas.{' '}
+                      <Link href="/dashboard/admin/horario" className="font-bold text-[#00357f] underline underline-offset-2">
+                        Se configura en Configurar horario
+                      </Link>
+                    </p>
                   </div>
                 </div>
 

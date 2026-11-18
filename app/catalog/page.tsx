@@ -878,7 +878,7 @@ function CatalogContent() {
       {/* Sticky filter deck: categories + brand chips travel together
           under the site nav while scrolling — one deck, no extra
           floating bar competing with the search field. */}
-      <div className="anim-fade-up sticky top-[57px] md:top-16 z-30 -mx-4 px-4 py-2 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 bg-[#e9f0fd]/90 backdrop-blur-md space-y-2">
+      <div className="anim-fade-up sticky top-[61px] md:top-16 z-30 -mx-4 px-4 py-2 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 bg-[#e9f0fd]/90 backdrop-blur-md space-y-2">
       {/* Quick category pills: icon + count, same multi-select filter as the panel */}
       <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible" role="group" aria-label="Categorías del catálogo">
         {categories.map(cat => {

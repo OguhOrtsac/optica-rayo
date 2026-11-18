@@ -1,18 +1,22 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   Phone,
   PlusCircle,
   Search,
+  Trash2,
   User,
+  UserPlus,
   X,
 } from 'lucide-react'
+import { registerCustomerAction } from '@/app/customers/actions'
 import {
   agendaDayNumber,
   cancelAppointment,
@@ -59,6 +63,24 @@ export default function StaffAppointmentsPage() {
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerResults, setCustomerResults] = useState<any[]>([])
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null)
+  // Customer dropdown visibility: it closes when the staff taps/clicks
+  // OUTSIDE the picker without choosing anyone (owner's order).
+  const [resultsOpen, setResultsOpen] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
+  // Quick-add customer (same mini form and same creation path as the POS)
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [quickName, setQuickName] = useState('')
+  const [quickPhone, setQuickPhone] = useState('')
+  const [quickEmail, setQuickEmail] = useState('')
+  const [quickError, setQuickError] = useState('')
+  const [quickCreating, setQuickCreating] = useState(false)
+  // Month calendar for picking the appointment day beyond the strip
+  const [calendarOpen, setCalendarOpen] = useState(false)
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date())
+  const calendarRef = useRef<HTMLDivElement>(null)
+  // Time combo (dropdown list instead of the old button grid)
+  const [timeOpen, setTimeOpen] = useState(false)
+  const timeRef = useRef<HTMLDivElement>(null)
   const [formDate, setFormDate] = useState(todayISO)
   const [formSlots, setFormSlots] = useState<DaySlot[]>([])
   const [loadingFormSlots, setLoadingFormSlots] = useState(false)
@@ -95,7 +117,10 @@ export default function StaffAppointmentsPage() {
     const t = setTimeout(async () => {
       try {
         const results = await searchCustomers(customerQuery)
-        if (!cancelled) setCustomerResults(results)
+        if (!cancelled) {
+          setCustomerResults(results)
+          setResultsOpen(true)
+        }
       } catch {
         if (!cancelled) setCustomerResults([])
       }
@@ -109,6 +134,7 @@ export default function StaffAppointmentsPage() {
     async function load() {
       setLoadingFormSlots(true)
       setFormTime('')
+      setTimeOpen(false)
       try {
         const daySlots = await getDaySlots(formDate)
         if (!cancelled) setFormSlots(daySlots)
@@ -122,6 +148,98 @@ export default function StaffAppointmentsPage() {
     return () => { cancelled = true }
   }, [formDate])
 
+  // Click/tap OUTSIDE closes the floating pieces (customer dropdown,
+  // month calendar, time combo) without touching the rest of the form.
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (pickerRef.current && !pickerRef.current.contains(target)) {
+        setResultsOpen(false)
+        setShowQuickAdd(false)
+      }
+      if (calendarRef.current && !calendarRef.current.contains(target)) setCalendarOpen(false)
+      if (timeRef.current && !timeRef.current.contains(target)) setTimeOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [])
+
+  const clearSelectedCustomer = () => {
+    setSelectedCustomer(null)
+    setCustomerQuery('')
+    setShowQuickAdd(false)
+  }
+
+  // Username suggestion with the EXACT convention of /customers/new and
+  // the POS (lowercase, accents stripped, first two words joined '_').
+  const suggestUsername = (name: string) =>
+    name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '_')
+      .split('_')
+      .filter(Boolean)
+      .slice(0, 2)
+      .join('_')
+
+  // Creates a customer through the SAME path as /customers/new and the
+  // POS quick-add (registerCustomerAction: Auth account + profile role
+  // 'customer' + customer_profile). No duplicated creation logic.
+  const createCustomerViaOfficialPath = async (fullName: string, phone?: string, email?: string) => {
+    const formData = new FormData()
+    formData.set('fullName', fullName)
+    formData.set('username', email?.trim() ? email.trim() : suggestUsername(fullName))
+    if (phone?.trim()) formData.set('phone', phone.trim())
+    return registerCustomerAction({ error: null, success: null, customerId: null }, formData)
+  }
+
+  const openQuickAdd = () => {
+    setQuickName(customerQuery.trim())
+    setQuickPhone('')
+    setQuickEmail('')
+    setQuickError('')
+    setShowQuickAdd(true)
+    setResultsOpen(true)
+  }
+
+  // Quick-add from the picker: create, select the new customer for the
+  // appointment and close the panel. Errors stay inside the panel.
+  const handleQuickCreateCustomer = async () => {
+    const name = quickName.trim()
+    if (!name) {
+      setQuickError('Escribe el nombre del cliente.')
+      return
+    }
+    setQuickCreating(true)
+    setQuickError('')
+    try {
+      const result = await createCustomerViaOfficialPath(name, quickPhone, quickEmail)
+      if (result.error || !result.customerId) {
+        setQuickError(result.error || 'No se pudo crear el cliente.')
+        return
+      }
+      const fresh = await searchCustomers(name)
+      const created = fresh.find((c: any) => c.id === result.customerId)
+      setSelectedCustomer(
+        created ?? {
+          id: result.customerId,
+          full_name: name,
+          email: quickEmail.trim() || `${suggestUsername(name)}@opticarayo.com`,
+          role: 'customer',
+          customer_profiles: { phone: quickPhone.trim() || null },
+        }
+      )
+      setCustomerQuery('')
+      setShowQuickAdd(false)
+      setResultsOpen(false)
+    } catch {
+      setQuickError('No se pudo crear el cliente. Inténtalo de nuevo.')
+    } finally {
+      setQuickCreating(false)
+    }
+  }
+
   const formDays = useMemo(() => {
     const result: { iso: string; date: Date; open: boolean }[] = []
     const today = new Date()
@@ -131,6 +249,30 @@ export default function StaffAppointmentsPage() {
     }
     return result
   }, [openDays])
+
+  // Month calendar cells (lunes-first). A cell is null for the blanks
+  // before the 1st; worked/past follow the same «Configurar horario»
+  // days the strip uses, and past days cannot be picked.
+  const calendarCells = useMemo(() => {
+    const year = calendarMonth.getFullYear()
+    const month = calendarMonth.getMonth()
+    const lead = (new Date(year, month, 1).getDay() + 6) % 7
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const cells: ({ iso: string; date: Date; open: boolean; past: boolean } | null)[] = []
+    for (let i = 0; i < lead; i++) cells.push(null)
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d)
+      const iso = toLocalDateISO(date)
+      cells.push({ iso, date, open: openDays.includes(agendaDayNumber(date)), past: iso < todayISO })
+    }
+    return cells
+  }, [calendarMonth, openDays, todayISO])
+
+  const monthIndexOf = (d: Date) => d.getFullYear() * 12 + d.getMonth()
+  const canPrevCalendarMonth = monthIndexOf(calendarMonth) > monthIndexOf(new Date())
+  const canNextCalendarMonth = monthIndexOf(calendarMonth) < monthIndexOf(new Date()) + 3
+  const shiftCalendarMonth = (delta: number) =>
+    setCalendarMonth(m => new Date(m.getFullYear(), m.getMonth() + delta, 1))
 
   const shiftViewDate = (delta: number) => {
     const d = parseLocalDate(viewDate)
@@ -373,50 +515,167 @@ export default function StaffAppointmentsPage() {
                   <User className="w-4 h-4 text-[#00357f] shrink-0" />
                   <span className="truncate">{selectedCustomer.full_name}</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => { setSelectedCustomer(null); setCustomerQuery('') }}
-                  className="text-xs font-black text-[#00357f] underline underline-offset-2 cursor-pointer shrink-0"
-                >
-                  Cambiar
-                </button>
+                <span className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={clearSelectedCustomer}
+                    aria-label="Quitar cliente"
+                    title="Quitar cliente (si lo seleccionaste mal)"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-[#ba1a1a] hover:bg-[#ffdad6]/70 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearSelectedCustomer}
+                    className="text-xs font-black text-[#00357f] underline underline-offset-2 cursor-pointer"
+                  >
+                    Cambiar
+                  </button>
+                </span>
               </div>
             ) : (
-              <div className="relative mt-1">
-                <Search className="w-4 h-4 text-[#737784] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <div className="relative mt-1" ref={pickerRef}>
+                <Search className="w-4 h-4 text-[#737784] absolute left-3.5 top-[13px]" />
                 <input
                   type="text"
                   value={customerQuery}
                   onChange={e => setCustomerQuery(e.target.value)}
+                  onFocus={() => setResultsOpen(true)}
                   placeholder="Busca por nombre…"
                   className="w-full border border-[#cbd5e1] rounded-xl pl-10 pr-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#00357f]/40 focus:border-[#00357f] bg-white"
                 />
-                {customerResults.length > 0 && (
-                  <ul className="absolute z-10 left-0 right-0 mt-1.5 bg-white border border-[#cbd5e1] rounded-xl shadow-lg max-h-52 overflow-y-auto">
-                    {customerResults.map((c: any) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedCustomer(c)}
-                          className="w-full text-left px-3.5 py-2.5 hover:bg-[#f0f3ff] text-sm font-semibold text-[#111c2d] cursor-pointer"
-                        >
-                          {c.full_name}
-                          <span className="block text-[11px] text-[#737784] font-medium">
-                            {c.customer_profiles?.phone || c.email}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                {/* Quick-add entry: visible before any customer shows up */}
+                <button
+                  type="button"
+                  onClick={openQuickAdd}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-black text-[#00357f] hover:bg-[#dee8ff]/60 px-1.5 py-1 rounded-md transition-colors cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" /> Agregar cliente nuevo
+                </button>
+
+                {resultsOpen && (showQuickAdd || customerResults.length > 0) && (
+                  <div className="absolute z-10 left-0 right-0 top-full mt-1.5 bg-white border border-[#cbd5e1] rounded-xl shadow-lg max-h-80 overflow-y-auto">
+                    {showQuickAdd ? (
+                      <div className="p-4 space-y-3 text-left">
+                        <p className="text-sm font-bold text-[#00357f]">Agregar cliente nuevo</p>
+                        <p className="text-[11px] text-[#737784] font-medium -mt-1.5">
+                          Perfil básico, como en el punto de venta; lo demás se completa después en Clientes.
+                        </p>
+                        <div>
+                          <label className="block text-[13px] font-semibold text-[#434653] mb-1">Nombre *</label>
+                          <input
+                            type="text"
+                            value={quickName}
+                            onChange={e => setQuickName(e.target.value)}
+                            placeholder="Nombre completo del cliente"
+                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[13px] font-semibold text-[#434653] mb-1">Teléfono (opcional)</label>
+                          <input
+                            type="tel"
+                            value={quickPhone}
+                            onChange={e => setQuickPhone(e.target.value)}
+                            placeholder="Ej. (555) 123-4567"
+                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[13px] font-semibold text-[#434653] mb-1">Correo (opcional)</label>
+                          <input
+                            type="email"
+                            value={quickEmail}
+                            onChange={e => setQuickEmail(e.target.value)}
+                            placeholder="cliente@correo.com"
+                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                          />
+                        </div>
+                        {quickError && (
+                          <p className="bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]/25 rounded-xl px-3 py-2 text-[13px] font-semibold">
+                            {quickError}
+                          </p>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleQuickCreateCustomer}
+                            disabled={quickCreating}
+                            className="flex-1 min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white text-sm font-bold rounded-xl px-3 flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            {quickCreating ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Creando...
+                              </>
+                            ) : (
+                              'Crear y seleccionar'
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setShowQuickAdd(false); setQuickError('') }}
+                            disabled={quickCreating}
+                            className="min-h-[44px] bg-white border border-[#dee8ff] text-[#737784] text-sm font-bold rounded-xl px-4 hover:bg-[#dee8ff]/30 cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <ul>
+                        <li>
+                          <button
+                            type="button"
+                            onClick={openQuickAdd}
+                            className="w-full text-left px-3.5 py-2.5 hover:bg-[#f0f3ff] text-sm font-bold text-[#00357f] flex items-center gap-2 cursor-pointer border-b border-[#f0f3ff]"
+                          >
+                            <UserPlus className="w-4 h-4" /> Agregar cliente nuevo
+                          </button>
+                        </li>
+                        {customerResults.map((c: any) => (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              onClick={() => { setSelectedCustomer(c); setResultsOpen(false); setShowQuickAdd(false) }}
+                              className="w-full text-left px-3.5 py-2.5 hover:bg-[#f0f3ff] text-sm font-semibold text-[#111c2d] cursor-pointer"
+                            >
+                              {c.full_name}
+                              <span className="block text-[11px] text-[#737784] font-medium">
+                                {c.customer_profiles?.phone || c.email}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Day chips */}
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-[#737784]">Día</span>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mt-1.5">
+          {/* Day chips (compact) + month calendar */}
+          <div className="relative" ref={calendarRef}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#737784]">Día</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const d = parseLocalDate(formDate)
+                  setCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1))
+                  setCalendarOpen(v => !v)
+                }}
+                aria-expanded={calendarOpen}
+                className="inline-flex items-center gap-1.5 text-[11px] font-black text-[#00357f] bg-[#dee8ff]/70 hover:bg-[#dee8ff] px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer capitalize"
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                {new Intl.DateTimeFormat('es-MX', { weekday: 'short', day: 'numeric', month: 'short' }).format(parseLocalDate(formDate)).replace(/\./g, '')}
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${calendarOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 mt-1.5">
               {formDays.map(day => {
                 const isSelected = day.iso === formDate
                 return (
@@ -425,7 +684,7 @@ export default function StaffAppointmentsPage() {
                     type="button"
                     disabled={!day.open}
                     onClick={() => setFormDate(day.iso)}
-                    className={`rounded-xl border px-1 py-2 text-center transition-all ${
+                    className={`rounded-lg border px-0.5 py-1.5 text-center transition-all ${
                       !day.open
                         ? 'border-[#cbd5e1]/40 bg-[#f0f3ff]/50 text-[#737784]/50 cursor-not-allowed'
                         : isSelected
@@ -433,46 +692,146 @@ export default function StaffAppointmentsPage() {
                           : 'border-[#cbd5e1] bg-white hover:bg-[#f0f3ff] text-[#111c2d] active:scale-[0.97] cursor-pointer'
                     }`}
                   >
-                    <span className={`block text-[9px] font-black uppercase tracking-wider ${isSelected ? 'text-white/80' : 'text-[#737784]'}`}>
+                    <span className={`block text-[8px] font-black uppercase tracking-wider ${isSelected ? 'text-white/80' : 'text-[#737784]'}`}>
                       {new Intl.DateTimeFormat('es-MX', { weekday: 'short' }).format(day.date).replace('.', '')}
                     </span>
-                    <span className="block text-base font-black leading-tight">{day.date.getDate()}</span>
-                    <span className={`block text-[9px] font-bold ${isSelected ? 'text-white/80' : 'text-[#737784]'}`}>
+                    <span className="block text-sm font-black leading-tight">{day.date.getDate()}</span>
+                    <span className={`block text-[8px] font-bold ${isSelected ? 'text-white/80' : 'text-[#737784]'}`}>
                       {day.open ? new Intl.DateTimeFormat('es-MX', { month: 'short' }).format(day.date).replace('.', '') : 'Cerrado'}
                     </span>
                   </button>
                 )
               })}
             </div>
+
+            {calendarOpen && (
+              <div className="absolute z-20 right-0 top-full mt-2 w-[300px] max-w-[calc(100vw-3rem)] bg-white border border-[#cbd5e1] rounded-2xl shadow-xl p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    disabled={!canPrevCalendarMonth}
+                    onClick={() => shiftCalendarMonth(-1)}
+                    aria-label="Mes anterior"
+                    className="w-8 h-8 rounded-lg border border-[#cbd5e1] flex items-center justify-center hover:bg-[#f0f3ff] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-[#00357f]" />
+                  </button>
+                  <p className="text-sm font-extrabold text-[#00357f] capitalize">
+                    {new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(calendarMonth)}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={!canNextCalendarMonth}
+                    onClick={() => shiftCalendarMonth(1)}
+                    aria-label="Mes siguiente"
+                    className="w-8 h-8 rounded-lg border border-[#cbd5e1] flex items-center justify-center hover:bg-[#f0f3ff] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4 text-[#00357f]" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 mt-2.5">
+                  {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
+                    <span key={i} className="text-center text-[9px] font-black uppercase tracking-wider text-[#737784] py-0.5">{d}</span>
+                  ))}
+                  {calendarCells.map((cell, i) =>
+                    cell === null ? (
+                      <span key={`blank-${i}`} />
+                    ) : (
+                      <button
+                        key={cell.iso}
+                        type="button"
+                        disabled={!cell.open || cell.past}
+                        onClick={() => { setFormDate(cell.iso); setCalendarOpen(false) }}
+                        className={`h-9 rounded-lg text-[13px] font-bold transition-all ${
+                          !cell.open || cell.past
+                            ? 'text-[#737784]/40 cursor-not-allowed'
+                            : cell.iso === formDate
+                              ? 'bg-[#00357f] text-white shadow-md shadow-[#00357f]/25 active:scale-95'
+                              : cell.iso === todayISO
+                                ? 'border border-[#00357f] text-[#00357f] hover:bg-[#f0f3ff] active:scale-95 cursor-pointer'
+                                : 'text-[#111c2d] hover:bg-[#f0f3ff] active:scale-95 cursor-pointer'
+                        }`}
+                      >
+                        {cell.date.getDate()}
+                      </button>
+                    )
+                  )}
+                </div>
+                <p className="text-[10px] text-[#737784] font-semibold mt-2">
+                  Los días en gris no se trabajan (según «Configurar horario») o ya pasaron.
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* Free slots */}
+          {/* Time combo: every slot of the day in one dropdown list;
+              occupied ones are shown disabled, only free ones pick. */}
           <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-[#737784]">Hora (solo libres)</span>
-            {loadingFormSlots ? (
-              <p className="text-sm text-[#737784] font-medium mt-2">Cargando horarios…</p>
-            ) : formSlots.filter(s => s.available).length === 0 ? (
+            <span className="text-[11px] font-black uppercase tracking-wider text-[#737784]">Hora</span>
+            <div className="relative mt-1.5" ref={timeRef}>
+              <button
+                type="button"
+                disabled={loadingFormSlots}
+                onClick={() => setTimeOpen(v => !v)}
+                aria-expanded={timeOpen}
+                aria-haspopup="listbox"
+                className="w-full flex items-center justify-between gap-2 border border-[#cbd5e1] rounded-xl px-3.5 py-2.5 text-sm font-bold text-[#111c2d] bg-white hover:bg-[#f0f3ff] focus:outline-none focus:ring-2 focus:ring-[#00357f]/40 focus:border-[#00357f] transition-colors cursor-pointer disabled:opacity-60"
+              >
+                <span className={formTime ? '' : 'text-[#737784] font-medium'}>
+                  {loadingFormSlots
+                    ? 'Cargando horarios…'
+                    : formTime
+                      ? formatAppointmentTime(formTime)
+                      : 'Elige una hora'}
+                </span>
+                <ChevronDown className={`w-4 h-4 text-[#737784] transition-transform ${timeOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {timeOpen && !loadingFormSlots && (
+                <ul
+                  role="listbox"
+                  className="absolute z-20 left-0 right-0 top-full mt-1.5 bg-white border border-[#cbd5e1] rounded-xl shadow-xl max-h-64 overflow-y-auto py-1"
+                >
+                  {formSlots.length === 0 ? (
+                    <li className="px-3.5 py-2.5 text-sm text-[#737784] font-medium">
+                      Este día no se trabaja.
+                    </li>
+                  ) : (
+                    formSlots.map(slot => {
+                      const isSelected = slot.time === formTime
+                      return (
+                        <li key={slot.time}>
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={isSelected}
+                            disabled={!slot.available}
+                            onClick={() => { setFormTime(slot.time); setTimeOpen(false) }}
+                            className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-sm transition-colors ${
+                              !slot.available
+                                ? 'text-[#737784]/60 cursor-not-allowed'
+                                : isSelected
+                                  ? 'bg-[#dee8ff] text-[#00357f] font-extrabold cursor-pointer'
+                                  : 'text-[#111c2d] font-semibold hover:bg-[#f0f3ff] cursor-pointer'
+                            }`}
+                          >
+                            <span>{formatAppointmentTime(slot.time)}</span>
+                            {!slot.available ? (
+                              <span className="text-[9px] font-black uppercase tracking-wider text-[#ba1a1a] bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+                                Ocupada
+                              </span>
+                            ) : isSelected ? (
+                              <Check className="w-4 h-4 text-[#00357f]" />
+                            ) : null}
+                          </button>
+                        </li>
+                      )
+                    })
+                  )}
+                </ul>
+              )}
+            </div>
+            {!loadingFormSlots && formSlots.filter(s => s.available).length === 0 && (
               <p className="text-sm text-[#737784] font-medium mt-2">No quedan horarios libres este día.</p>
-            ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-2">
-                {formSlots.filter(s => s.available).map(slot => {
-                  const isSelected = slot.time === formTime
-                  return (
-                    <button
-                      key={slot.time}
-                      type="button"
-                      onClick={() => setFormTime(slot.time)}
-                      className={`rounded-xl border px-2 py-2.5 text-sm font-bold transition-all ${
-                        isSelected
-                          ? 'border-[#00357f] bg-[#00357f] text-white shadow-md shadow-[#00357f]/25 active:scale-[0.97]'
-                          : 'border-[#cbd5e1] bg-white hover:bg-[#f0f3ff] text-[#111c2d] active:scale-[0.97] cursor-pointer'
-                      }`}
-                    >
-                      {formatAppointmentTime(slot.time)}
-                    </button>
-                  )
-                })}
-              </div>
             )}
           </div>
 

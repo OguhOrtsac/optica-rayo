@@ -130,7 +130,10 @@ export default function ReminderTray() {
           </button>
         </div>
         <div>
-          <p className="text-sm text-[#434653] leading-relaxed whitespace-pre-line line-clamp-3">
+          {/* Previa en dos renglones (regla del dueño: «si no cupo en
+              uno, a los dos, pero que se vea bien»); el mensaje completo
+              se lee y se edita en el modal de «Ver más». */}
+          <p className="text-sm text-[#434653] leading-relaxed whitespace-pre-line line-clamp-2">
             {template || 'Mensaje de WhatsApp para el recordatorio…'}
           </p>
           <button
@@ -172,9 +175,15 @@ export default function ReminderTray() {
                 className="flex flex-col sm:flex-row sm:items-center gap-3 p-3.5 rounded-xl border border-[#cbd5e1]/60 bg-[#f0f3ff]/60"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-xs text-[#111c2d]">{r.customer_name}</p>
-                  <p className="text-[10px] text-[#737784] font-medium">
-                    Tel: {r.phone || 'Sin teléfono'} · Último examen: {formatDate(r.last_visit_date)} ·{' '}
+                  {/* Sin tres puntos (regla del dueño): el nombre fluye
+                      completo y los datos del aviso van en dos renglones
+                      ordenados — contacto/examen y vencimiento/aviso —
+                      para que todo se alcance a leer. */}
+                  <p className="font-bold text-xs leading-snug text-[#111c2d]">{r.customer_name}</p>
+                  <p className="text-[10px] leading-relaxed text-[#737784] font-medium mt-0.5">
+                    Tel: {r.phone || 'Sin teléfono'} · Último examen: {formatDate(r.last_visit_date)}
+                  </p>
+                  <p className="text-[10px] leading-relaxed text-[#737784] font-medium">
                     <span className="text-[#ba1a1a] font-bold">Vence: {formatDate(r.next_suggested_visit)}</span>
                     {r.last_reminded_at && <> · Último aviso: {formatDate(r.last_reminded_at)}</>}
                   </p>
