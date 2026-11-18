@@ -146,6 +146,15 @@ export interface FaceScannerProps {
   onPickProduct: (p: Product) => void
   /** «Ver todos los armazones» cuando ningún producto coincide. */
   onShowAllFrames?: () => void
+  /**
+   * Forma a la que VOLVER: si el escáner se abre con una forma
+   * recordada, entra directo al paso de resultado con ella, sin
+   * repetir escaneo ni esperas (la página la pasa cuando el cliente
+   * cierra el detalle de un armazón sugerido).
+   */
+  resumeShape?: FaceShape | null
+  /** Avisa a la página cada vez que un resultado se muestra. */
+  onShapeResolved?: (shape: FaceShape) => void
 }
 
 const formatPrice = (price: number) =>
@@ -184,6 +193,8 @@ export default function FaceScanner({
   priceOf,
   onPickProduct,
   onShowAllFrames,
+  resumeShape,
+  onShapeResolved,
 }: FaceScannerProps) {
   const [mounted, setMounted] = useState(false)
   const [step, setStep] = useState<Step>('intro')
@@ -302,8 +313,31 @@ export default function FaceScanner({
       setProgress(0)
       statusRef.current = 'searching'
       setLiveStatus('searching')
+    } else if (resumeShape) {
+      // Reapertura con forma recordada (el cliente cerró el detalle
+      // de un sugerido): directo al resultado, sin escaneo ni
+      // esperas. La cámara ya venía detenida.
+      setResultShape(resumeShape)
+      setStep('result')
     }
-  }, [open, stopCamera])
+  }, [open, stopCamera, resumeShape])
+
+  // Avisa a la página cada vez que un resultado se muestra, para que
+  // recuerde la forma (vía ref: la identidad del callback no debe
+  // disparar el efecto).
+  const shapeResolvedRef = useRef(onShapeResolved)
+  shapeResolvedRef.current = onShapeResolved
+  const lastNotifiedShapeRef = useRef<FaceShape | null>(null)
+  useEffect(() => {
+    if (step === 'result' && resultShape) {
+      if (lastNotifiedShapeRef.current !== resultShape) {
+        lastNotifiedShapeRef.current = resultShape
+        shapeResolvedRef.current?.(resultShape)
+      }
+    } else if (step === 'intro') {
+      lastNotifiedShapeRef.current = null
+    }
+  }, [step, resultShape])
 
   useEffect(() => stopCamera, [stopCamera])
 
