@@ -6,6 +6,7 @@ import { ArrowLeft, Lock, RefreshCw, Scale } from 'lucide-react'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { normalizeRole } from '@/lib/roles'
 import { getCashUtility, type CashUtility } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 import DateRangePicker from '@/components/date-range-picker'
 
 // Utilidad (Finanzas): la utilidad de CAJA del dueño para un rango
@@ -155,20 +156,29 @@ export default function FinanzasUtilidadPage() {
   }
 
   const header = (
-    <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
-      <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
-        <ArrowLeft className="w-4.5 h-4.5" />
-      </Link>
-      <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-        <Scale className="w-5 h-5" />
-      </span>
-      <div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Utilidad</h1>
-        <p className="text-sm text-[#434653] mt-1 font-medium">
-          Lo que entró a caja menos lo que se pagó, en el periodo que elijas.
-        </p>
+    <PageHeader
+      title="Utilidad"
+      mobileActions={
+        <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </Link>
+      }
+    >
+      <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
+        <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </Link>
+        <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+          <Scale className="w-5 h-5" />
+        </span>
+        <div>
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Utilidad</h1>
+          <p className="text-sm text-[#434653] mt-1 font-medium">
+            Lo que entró a caja menos lo que se pagó, en el periodo que elijas.
+          </p>
+        </div>
       </div>
-    </div>
+    </PageHeader>
   )
 
   if (gateLoading) {

@@ -17,6 +17,7 @@ import {
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { normalizeRole } from '@/lib/roles'
 import { getMessageTemplates, saveMessageTemplate } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 import {
   REMINDER_TEMPLATE_KEY,
   BIRTHDAY_TEMPLATE_KEY,
@@ -289,24 +290,37 @@ export default function MensajesPage() {
   }, [])
 
   const header = (
-    <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
-      <Link
-        href="/dashboard/admin"
-        aria-label="Volver al panel"
-        className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0"
-      >
-        <ArrowLeft className="w-4.5 h-4.5" />
-      </Link>
-      <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-        <MessagesSquare className="w-4.5 h-4.5" />
-      </span>
-      <div>
-        <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Mensajes</h1>
-        <p className="text-xs text-[#434653] font-medium">
-          Todos los mensajes de WhatsApp de la app, en un solo lugar.
-        </p>
+    <PageHeader
+      title="Mensajes"
+      mobileActions={
+        <Link
+          href="/dashboard/admin"
+          aria-label="Volver al panel"
+          className="flex items-center justify-center w-9 h-9 -ml-1 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0"
+        >
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </Link>
+      }
+    >
+      <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
+        <Link
+          href="/dashboard/admin"
+          aria-label="Volver al panel"
+          className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0"
+        >
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </Link>
+        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+          <MessagesSquare className="w-4.5 h-4.5" />
+        </span>
+        <div>
+          <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Mensajes</h1>
+          <p className="text-xs text-[#434653] font-medium">
+            Todos los mensajes de WhatsApp de la app, en un solo lugar.
+          </p>
+        </div>
       </div>
-    </div>
+    </PageHeader>
   )
 
   if (loading) {

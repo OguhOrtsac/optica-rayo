@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { searchCustomers, getCustomerExams, getCustomerSales } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 import {
   Search,
   PlusCircle,
@@ -351,19 +352,34 @@ export default function CustomersPage() {
     <main className="min-h-screen text-[#111c2d] pt-4 pb-24 md:pb-0">
       <div className="max-w-[1440px] mx-auto px-4 md:px-8 h-[calc(100dvh-2rem)]">
 
-        {/* Header */}
-        <div className="flex items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Clientes</h1>
-            <p className="text-sm text-[#434653] mt-1 font-medium">Directorio clínico y expedientes de clientes.</p>
+        {/* Header: en móvil solo la etiqueta + el botón de nuevo (PageHeader) */}
+        <PageHeader
+          title="Clientes"
+          mobileClassName="mb-6"
+          mobileExtra={
+            <div className="mt-3">
+              <Link href="/customers/new"
+                className="flex items-center justify-center gap-2 bg-[#00357f] hover:bg-[#00509e] text-white font-bold text-sm px-5 min-h-[44px] rounded-xl shadow-sm transition-colors w-fit cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2">
+                <PlusCircle className="w-4 h-4" />
+                <span className="hidden sm:inline">Nuevo Cliente</span>
+                <span className="sm:hidden">Nuevo</span>
+              </Link>
+            </div>
+          }
+        >
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Clientes</h1>
+              <p className="text-sm text-[#434653] mt-1 font-medium">Directorio clínico y expedientes de clientes.</p>
+            </div>
+            <Link href="/customers/new"
+              className="flex items-center justify-center gap-2 bg-[#00357f] hover:bg-[#00509e] text-white font-bold text-sm px-5 min-h-[44px] rounded-xl shadow-sm transition-colors w-fit cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2">
+              <PlusCircle className="w-4 h-4" />
+              <span className="hidden sm:inline">Nuevo Cliente</span>
+              <span className="sm:hidden">Nuevo</span>
+            </Link>
           </div>
-          <Link href="/customers/new"
-            className="flex items-center justify-center gap-2 bg-[#00357f] hover:bg-[#00509e] text-white font-bold text-sm px-5 min-h-[44px] rounded-xl shadow-sm transition-colors w-fit cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2">
-            <PlusCircle className="w-4 h-4" />
-            <span className="hidden sm:inline">Nuevo Cliente</span>
-            <span className="sm:hidden">Nuevo</span>
-          </Link>
-        </div>
+        </PageHeader>
 
         {/* Two-column master-detail layout */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 h-full">

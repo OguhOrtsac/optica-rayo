@@ -2302,3 +2302,204 @@ export async function dismissBirthday(customerId: string, occurrenceYear: number
   MOCK_BIRTHDAY_DISMISSALS.add(birthdayDismissalKey(customerId, occurrenceYear))
   return true
 }
+
+// ---------------------------------------------------------------------------
+// Actividad reciente del panel (decisión del dueño, 2026-11-18): la
+// sección ya no muestra solo ventas — mezcla TODA la actividad de la
+// óptica, más reciente primero:
+//   · Ventas            → de `sales` (getSales, como siempre).
+//   · Exámenes nuevos   → de `clinical_exams` (getRecentExams, aquí).
+//   · Clientes nuevos   → de `profiles` (el panel ya los carga).
+//   · Recordatorios enviados y felicitaciones de cumpleaños → de
+//     `activity_events` (getRecentActivityEvents, aquí): se envían por
+//     WhatsApp con un toque y no vivían en ninguna tabla, así que
+//     logActivityEvent() deja el rastro al tocar el botón.
+//
+// Degradación: si la migración de `activity_events` aún no se aplica,
+// la lectura devuelve «sin eventos» y el registro devuelve false, sin
+// lanzar — la sección sigue con las demás fuentes y el envío por
+// WhatsApp NUNCA se bloquea por el registro.
+// ---------------------------------------------------------------------------
+
+export type ActivityEventType = 'reminder_sent' | 'birthday_greeting'
+
+export interface RecentExamActivity {
+  id: string
+  customer_id: string
+  customer_name: string | null
+  created_at: string
+}
+
+export interface ActivityEventItem {
+  id: string
+  type: string
+  customer_id: string | null
+  customer_name: string | null
+  description: string
+  created_at: string
+}
+
+// Demo mode (no Supabase): los envíos registrados viven en memoria,
+// solo durante la sesión, igual que los descartes de cumpleaños.
+const MOCK_ACTIVITY_EVENTS: ActivityEventItem[] = []
+
+/**
+ * Resuelve nombres de perfiles por id en una sola consulta (sin joins:
+ * así la lectura no depende del nombre exacto de las llaves foráneas).
+ * Cualquier fallo deja el mapa vacío y la UI usa su texto de respaldo.
+ */
+async function resolveProfileNames(supabase: any, ids: (string | null)[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((x): x is string => !!x))]
+  const names = new Map<string, string>()
+  if (unique.length === 0) return names
+  try {
+    const { data, error } = await supabase.from('profiles').select('id, full_name').in('id', unique)
+    if (!error && data) {
+      for (const p of data as any[]) {
+        if (p?.id && p?.full_name) names.set(p.id, p.full_name)
+      }
+    }
+  } catch (e) {
+    console.error('resolveProfileNames failed:', e)
+  }
+  return names
+}
+
+/**
+ * Exámenes más recientes (de `clinical_exams`, por su created_at), con
+ * el nombre del cliente listo para la lista de actividad. Ante
+ * cualquier fallo de lectura devuelve []: la sección se queda con las
+ * demás fuentes en vez de romperse.
+ */
+export async function getRecentExams(limit = 15): Promise<RecentExamActivity[]> {
+  if (!isSupabaseConfigured()) {
+    // Demo mode: los exámenes mock traen exam_date pero no created_at;
+    // se usa la fecha del examen como fecha de la actividad.
+    return [...mockDb.MOCK_CLINICAL_EXAMS]
+      .map((e: any) => ({
+        id: e.id,
+        customer_id: e.customer_id,
+        customer_name: mockDb.MOCK_PROFILES.find(p => p.id === e.customer_id)?.full_name ?? null,
+        created_at: e.created_at ?? e.exam_date,
+      }))
+      .filter(e => !!e.created_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, limit)
+  }
+  try {
+    const supabase = createBrowserClient()
+    const { data, error } = await withTimeout(
+      supabase
+        .from('clinical_exams')
+        .select('id, customer_id, created_at')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+    )
+    if (error) {
+      console.error('Error fetching recent exams:', error.message)
+      return []
+    }
+    if (!data) return []
+    const names = await resolveProfileNames(supabase, (data as any[]).map(e => e.customer_id))
+    return (data as any[]).map(e => ({
+      id: e.id,
+      customer_id: e.customer_id,
+      customer_name: names.get(e.customer_id) ?? null,
+      created_at: e.created_at,
+    }))
+  } catch (e) {
+    console.error('Error fetching recent exams:', e)
+    return []
+  }
+}
+
+/**
+ * Envíos registrados en `activity_events` (recordatorios y
+ * felicitaciones), más recientes primero, con el nombre del cliente.
+ * Si la tabla aún no existe (migración sin aplicar) o la lectura
+ * falla, devuelve [] en silencio: la actividad sigue con ventas,
+ * exámenes y clientes nuevos.
+ */
+export async function getRecentActivityEvents(limit = 15): Promise<ActivityEventItem[]> {
+  if (!isSupabaseConfigured()) {
+    return [...MOCK_ACTIVITY_EVENTS]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, limit)
+  }
+  try {
+    const supabase = createBrowserClient()
+    const { data, error } = await withTimeout(
+      supabase
+        .from('activity_events')
+        .select('id, type, customer_id, description, created_at')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+    )
+    if (error) {
+      console.error('Supabase activity events fetch failed (¿migración 20261118 aplicada?):', error.message)
+      return []
+    }
+    if (!data) return []
+    const names = await resolveProfileNames(supabase, (data as any[]).map(e => e.customer_id))
+    return (data as any[]).map(e => ({
+      id: e.id,
+      type: e.type,
+      customer_id: e.customer_id ?? null,
+      customer_name: e.customer_id ? (names.get(e.customer_id) ?? null) : null,
+      description: e.description,
+      created_at: e.created_at,
+    }))
+  } catch (e) {
+    console.error('Supabase activity events fetch failed:', e)
+    return []
+  }
+}
+
+/**
+ * Registra un envío en `activity_events` (lo llaman el botón WhatsApp
+ * de cada recordatorio y el «Felicitar» de cumpleaños, al tocarse).
+ * NUNCA lanza ni bloquea: devuelve true si el evento quedó guardado y
+ * false si no — el envío por WhatsApp sigue su curso en ambos casos.
+ */
+export async function logActivityEvent(
+  type: ActivityEventType,
+  opts: { customerId?: string | null; description: string }
+): Promise<boolean> {
+  if (!isSupabaseConfigured()) {
+    MOCK_ACTIVITY_EVENTS.unshift({
+      id: `mock-event-${Date.now()}`,
+      type,
+      customer_id: opts.customerId ?? null,
+      customer_name: opts.customerId
+        ? (mockDb.MOCK_PROFILES.find(p => p.id === opts.customerId)?.full_name ?? null)
+        : null,
+      description: opts.description,
+      created_at: new Date().toISOString(),
+    })
+    return true
+  }
+  try {
+    const supabase = createBrowserClient()
+    let actorId: string | null = null
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      actorId = user?.id ?? null
+    } catch {
+      // Sin sesión legible el evento se guarda igual, sin actor.
+    }
+    const { error } = await supabase.from('activity_events').insert([{
+      type,
+      customer_id: opts.customerId ?? null,
+      description: opts.description,
+      actor_id: actorId,
+    }])
+    if (error) {
+      console.error('logActivityEvent insert failed (¿migración 20261118 aplicada?):', error.message)
+      return false
+    }
+    return true
+  } catch (e) {
+    console.error('logActivityEvent failed:', e)
+    return false
+  }
+}

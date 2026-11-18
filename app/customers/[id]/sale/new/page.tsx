@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { getCustomerById, getCustomerExams, getProducts, getLensMaterials, getLensTreatments, getCoupons, getMemberDiscountPercent } from '@/lib/services'
 import { createLinkedSaleAction, CreateSaleState } from '@/app/customers/actions'
 import { effectiveClientPrice } from '@/lib/pricing'
+import PageHeader from '@/components/page-header'
 import {
   ArrowLeft,
   ShoppingCart,
@@ -339,27 +340,51 @@ export default function NewLinkedSalePage({ params }: PageProps) {
     <main className="min-h-screen text-[#111c2d] pt-4 pb-24 md:pb-8">
       <div className="max-w-[1440px] mx-auto px-4 md:px-8 space-y-6">
 
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-5">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Link href={`/customers/${customerId}`} className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
-                <ArrowLeft className="w-4 h-4" />
-              </Link>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Cierre de Venta</h1>
+        {/* Header: en móvil solo la etiqueta + volver, con el cliente
+            como línea compacta y el botón de imprimir debajo (PageHeader) */}
+        <PageHeader
+          title="Cierre de venta"
+          mobileActions={
+            <Link href={`/customers/${customerId}`} aria-label="Volver a la ficha del cliente" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+          }
+          mobileExtra={
+            <div className="mt-2.5 space-y-2.5">
+              <p className="text-xs text-[#434653] font-medium">
+                Cliente: <strong className="text-[#111c2d]">{customer.full_name}</strong> • Ref: #{customerId.slice(0, 8).toUpperCase()}
+              </p>
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-2 bg-white border border-[#cbd5e1] hover:bg-[#f0f3ff] text-[#111c2d] px-4 py-2 rounded-xl font-bold text-xs transition-colors shadow-sm w-full justify-center"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir Presupuesto
+              </button>
             </div>
-            <p className="text-sm text-[#434653] font-medium pl-8">
-              Cliente: <strong className="text-[#111c2d]">{customer.full_name}</strong> • Ref: #{customerId.slice(0, 8).toUpperCase()}
-            </p>
+          }
+        >
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-5">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Link href={`/customers/${customerId}`} className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
+                  <ArrowLeft className="w-4 h-4" />
+                </Link>
+                <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Cierre de Venta</h1>
+              </div>
+              <p className="text-sm text-[#434653] font-medium pl-8">
+                Cliente: <strong className="text-[#111c2d]">{customer.full_name}</strong> • Ref: #{customerId.slice(0, 8).toUpperCase()}
+              </p>
+            </div>
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-2 bg-white border border-[#cbd5e1] hover:bg-[#f0f3ff] text-[#111c2d] px-4 py-2 rounded-xl font-bold text-xs transition-colors shadow-sm w-full md:w-auto justify-center"
+            >
+              <Printer className="w-4 h-4" />
+              Imprimir Presupuesto
+            </button>
           </div>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 bg-white border border-[#cbd5e1] hover:bg-[#f0f3ff] text-[#111c2d] px-4 py-2 rounded-xl font-bold text-xs transition-colors shadow-sm w-full md:w-auto justify-center"
-          >
-            <Printer className="w-4 h-4" />
-            Imprimir Presupuesto
-          </button>
-        </div>
+        </PageHeader>
 
         {/* Feedback Messages */}
         {state?.success && (

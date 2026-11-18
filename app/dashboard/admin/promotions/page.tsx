@@ -27,6 +27,7 @@ import {
   updatePromotion,
   type Promotion,
 } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 
 // Promotions are created and managed ONLY by the administrator
 // (owner / super_admin) — the owner's rule: sellers do NOT create
@@ -274,17 +275,26 @@ export default function AdminPromotionsPage() {
   if (!canManage) {
     return (
       <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
-        <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
-          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
-            <ArrowLeft className="w-4.5 h-4.5" />
-          </Link>
-          <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-            <Megaphone className="w-5 h-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Promociones</h1>
+        <PageHeader
+          title="Promociones"
+          mobileActions={
+            <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+              <ArrowLeft className="w-4.5 h-4.5" />
+            </Link>
+          }
+        >
+          <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
+            <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+              <ArrowLeft className="w-4.5 h-4.5" />
+            </Link>
+            <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+              <Megaphone className="w-5 h-5" />
+            </span>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Promociones</h1>
+            </div>
           </div>
-        </div>
+        </PageHeader>
         <div className="mt-6 bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm flex items-start gap-4">
           <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#ffdad6] text-[#ba1a1a] shrink-0" aria-hidden="true">
             <Lock className="w-5 h-5" />
@@ -306,30 +316,51 @@ export default function AdminPromotionsPage() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1100px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
 
-      {/* Page Header & Actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+      {/* Page Header & Actions: en móvil solo la etiqueta + volver +
+          el botón de nueva, compacto bajo la etiqueta (PageHeader) */}
+      <PageHeader
+        title="Promociones"
+        mobileActions={
+          <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
             <ArrowLeft className="w-4.5 h-4.5" />
           </Link>
-          <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-            <Megaphone className="w-5 h-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Promociones</h1>
-            <p className="text-sm text-[#434653] mt-1 font-medium">
-              Solo el administrador crea promociones. El cliente ve las vigentes ({inForceCount}) en su panel al iniciar sesión.
-            </p>
+        }
+        mobileExtra={
+          <div className="mt-3">
+            <button
+              onClick={openCreate}
+              className="bg-[#00357f] hover:bg-[#004aad] text-white px-5 py-2.5 rounded-xl flex items-center gap-1.5 font-bold text-xs shadow-sm transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Nueva Promoción
+            </button>
           </div>
+        }
+      >
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+              <ArrowLeft className="w-4.5 h-4.5" />
+            </Link>
+            <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+              <Megaphone className="w-5 h-5" />
+            </span>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Promociones</h1>
+              <p className="text-sm text-[#434653] mt-1 font-medium">
+                Solo el administrador crea promociones. El cliente ve las vigentes ({inForceCount}) en su panel al iniciar sesión.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={openCreate}
+            className="bg-[#00357f] hover:bg-[#004aad] text-white px-5 py-2.5 rounded-xl flex items-center gap-1.5 font-bold text-xs shadow-sm transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Nueva Promoción
+          </button>
         </div>
-        <button
-          onClick={openCreate}
-          className="bg-[#00357f] hover:bg-[#004aad] text-white px-5 py-2.5 rounded-xl flex items-center gap-1.5 font-bold text-xs shadow-sm transition-colors cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Nueva Promoción
-        </button>
-      </div>
+      </PageHeader>
 
       {/* Feedback Messages */}
       {feedbackMsg && (

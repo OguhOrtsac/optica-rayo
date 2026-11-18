@@ -87,6 +87,9 @@ export default function LoginPage() {
         
         {/* Brand header */}
         <div className="flex flex-col items-center text-center pb-4 md:pb-6">
+          {/* Logo oficial completo; la tarjeta es blanca y el JPG trae fondo
+              blanco, así que se funde sin cuadro visible. */}
+          <img src="/logo-original.jpg" alt="Óptica Rayo" className="h-24 w-auto mb-3" />
           <h1 className="text-3xl font-extrabold tracking-tight text-[#00357f]">
             Óptica Rayo
           </h1>

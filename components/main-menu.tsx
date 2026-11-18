@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -81,6 +82,43 @@ const ICONS = {
   settings: Settings,
 }
 
+// Color por tipo de destino (dictado del dueño, 2026-11-18: el menú «se
+// veía muy sin vida»): cada grupo y cada entrada directa lleva su tono
+// en el chip del icono — fondo suave (~12% del tono) e icono en el tono
+// medio, paleta sobria. Las SUBENTRADAS heredan el color de su grupo
+// (chip más chico), por eso el mapa solo manda en grupos y directas;
+// los tonos de iconos que hoy solo viven como subentrada quedan como
+// referencia de su familia por si algún día suben a entrada directa.
+interface MenuColor {
+  bg: string
+  fg: string
+}
+
+const ICON_COLORS: Record<MainMenuIcon, MenuColor> = {
+  catalog: { bg: '#e0f2fe', fg: '#0284c7' }, // Catálogo: celeste
+  agenda: { bg: '#e6f7fb', fg: '#0899c9' }, // Agenda: cian de acento
+  agendar: { bg: '#e6f7fb', fg: '#0899c9' }, // Agendar: cian de acento
+  store: { bg: '#d1fae5', fg: '#047857' }, // Grupo Ventas: verde esmeralda
+  wallet: { bg: '#ede9fe', fg: '#6d28d9' }, // Grupo Finanzas: violeta
+  settings: { bg: '#dee8ff', fg: '#00357f' }, // Grupo Configuración: azul de marca
+  promotions: { bg: '#fef3c7', fg: '#b45309' }, // Promociones: ámbar
+  expenses: { bg: '#ffe4e6', fg: '#be123c' }, // Gastos: rosa/rojo suave
+  reports: { bg: '#e0e7ff', fg: '#4338ca' }, // Reportes: índigo
+  pos: { bg: '#d1fae5', fg: '#047857' },
+  history: { bg: '#d1fae5', fg: '#047857' },
+  coins: { bg: '#ede9fe', fg: '#6d28d9' },
+  calendarRange: { bg: '#ede9fe', fg: '#6d28d9' },
+  calendarClock: { bg: '#ede9fe', fg: '#6d28d9' },
+  trendingUp: { bg: '#ede9fe', fg: '#6d28d9' },
+  products: { bg: '#dee8ff', fg: '#00357f' },
+  users: { bg: '#dee8ff', fg: '#00357f' },
+  clients: { bg: '#dee8ff', fg: '#00357f' },
+  messages: { bg: '#dee8ff', fg: '#00357f' },
+}
+
+// «Mi perfil»: neutro cálido, distinto de los tonos de trabajo.
+const PROFILE_COLOR: MenuColor = { bg: '#efe7da', fg: '#6f6152' }
+
 interface MainMenuProps {
   items: MainMenuItem[]
   isAuthenticated: boolean
@@ -94,7 +132,10 @@ interface MainMenuProps {
  * Desde el 2026-11-18 el cajón se ordena por CATEGORÍAS (orden del dueño):
  * Ventas, Finanzas y Configuración son grupos desplegables en acordeón
  * (uno abierto a la vez; el que contiene la ruta activa nace abierto) y
- * el resto de destinos quedan como entradas directas.
+ * el resto de destinos quedan como entradas directas. El mismo día el
+ * dueño pidió COLOR por tipo en los chips y un cajón MÁS PEQUEÑO: el
+ * menú es un cajón lateral de `min(84vw, 320px)` sobre fondo oscurecido
+ * que se cierra al tocar fuera (además de la X, Escape y al navegar).
  */
 export default function MainMenu({ items, isAuthenticated, displayName, initials }: MainMenuProps) {
   const [open, setOpen] = useState(false)
@@ -131,7 +172,21 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open ])
 
-  const renderLink = (link: MainMenuLink, nested = false) => {
+  // Con el cajón abierto, la página de atrás no se mueve.
+  useEffect(() => {
+    if (!open) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [open ])
+
+  // `color` es el tono del chip: en entradas directas, el de su propio
+  // icono; en subentradas, el heredado de su grupo. En la entrada activa
+  // la pastilla de marca manda en el renglón y el chip pasa a blanco,
+  // conservando su icono en su color para no perder el código de color.
+  const renderLink = (link: MainMenuLink, color: MenuColor, nested = false) => {
     const Icon = ICONS[link.icon]
     const active = pathname === link.href
     if (nested) {
@@ -140,13 +195,18 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
           key={`${link.label}-${link.href}`}
           href={link.href}
           aria-current={active ? 'page' : undefined}
-          className={`flex min-h-11 items-center gap-2.5 py-2 pl-[52px] pr-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
+          className={`flex min-h-11 items-center gap-2.5 py-2 pl-6 pr-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
             active
               ? 'bg-[#dee8ff] text-[#00357f]'
               : 'text-[#434653] hover:bg-[#f0f3ff] active:bg-[#dee8ff]/70 hover:text-[#00357f]'
           }`}
         >
-          <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-[#00357f]' : 'text-[#00509e]'}`} />
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+            style={{ backgroundColor: active ? '#ffffff' : color.bg, color: color.fg }}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+          </span>
           <span>{link.label}</span>
         </Link>
       )
@@ -162,7 +222,10 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
             : 'text-[#434653] hover:bg-[#f0f3ff] active:bg-[#dee8ff]/70 hover:text-[#00357f]'
         }`}
       >
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${active ? 'bg-white text-[#00357f]' : 'bg-[#eef3ff] text-[#00509e]'}`}>
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+          style={{ backgroundColor: active ? '#ffffff' : color.bg, color: color.fg }}
+        >
           <Icon className="h-5 w-5 shrink-0" />
         </span>
         <span>{link.label}</span>
@@ -172,6 +235,7 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
 
   const renderGroup = (group: MainMenuGroup) => {
     const Icon = ICONS[group.icon]
+    const color = ICON_COLORS[group.icon]
     const expanded = openGroup === group.label
     const containsActive = group.links.some(link => link.href === pathname)
     return (
@@ -186,7 +250,10 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
               : 'text-[#434653] hover:bg-[#f0f3ff] hover:text-[#00357f]'
           }`}
         >
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${containsActive ? 'bg-[#dee8ff] text-[#00357f]' : 'bg-[#eef3ff] text-[#00509e]'}`}>
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+            style={{ backgroundColor: color.bg, color: color.fg }}
+          >
             <Icon className="h-5 w-5 shrink-0" />
           </span>
           <span className="flex-1">{group.label}</span>
@@ -194,7 +261,7 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
         </button>
         {expanded && (
           <div className="pb-1.5">
-            {group.links.map(link => renderLink(link, true))}
+            {group.links.map(link => renderLink(link, color, true))}
           </div>
         )}
       </div>
@@ -214,45 +281,73 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
         {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </button>
 
-      {open && (
-        <div
-          id="menu-principal-movil"
-          className="absolute inset-x-3 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-[#c3c6d5] bg-white shadow-[0_16px_40px_rgba(0,53,127,0.16)] animate-in fade-in slide-in-from-top-2 duration-200"
-        >
-          <div className="border-b border-[#e7eeff] bg-[#f9f9ff] px-4 py-3">
-            <p className="text-[10px] font-black uppercase tracking-wider text-[#5d606f]">Menú principal</p>
-            <p className="mt-0.5 text-sm font-bold text-[#111c2d]">
-              {isAuthenticated ? `Hola, ${displayName}` : 'Explora Óptica Rayo'}
-            </p>
-          </div>
-
-          <nav aria-label="Navegación principal móvil" className="p-2">
-            {items.map(item => (isMenuGroup(item) ? renderGroup(item) : renderLink(item)))}
-
-            {isAuthenticated ? (
-              <Link
-                href="/profile"
-                className="mt-1 flex min-h-12 items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-[#434653] transition hover:bg-[#f0f3ff] hover:text-[#00357f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#d9e2ff] text-[10px] font-black text-[#00357f]">
-                  {initials || 'OR'}
-                </span>
-                <span>Mi perfil</span>
-                <UserRound className="ml-auto h-4 w-4 text-[#5d606f]" />
-              </Link>
-            ) : (
-              <div className="mt-2 p-1 pt-3">
-                <Link
-                  href="/login"
-                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#00357f] px-3 text-sm font-bold text-white transition hover:bg-[#00509e] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
+      {open &&
+        createPortal(
+          <div className="fixed inset-0 z-[80] md:hidden">
+            {/* Fondo oscurecido: tocarlo cierra el cajón. El panel va en
+                un portal para que el oscurecido cubra también la barra
+                inferior, que vive fuera del encabezado. */}
+            <div
+              aria-hidden="true"
+              onClick={() => setOpen(false)}
+              className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
+            />
+            <div
+              id="menu-principal-movil"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Menú principal"
+              className="absolute inset-y-0 left-0 flex w-[min(84vw,320px)] flex-col overflow-hidden rounded-r-3xl bg-white shadow-[16px_0_40px_rgba(0,20,50,0.28)] animate-in slide-in-from-left duration-200"
+            >
+              <div className="flex items-start justify-between gap-2 border-b border-[#e7eeff] bg-[#f9f9ff] px-4 py-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-[#5d606f]">Menú principal</p>
+                  <p className="mt-0.5 text-sm font-bold text-[#111c2d]">
+                    {isAuthenticated ? `Hola, ${displayName}` : 'Explora Óptica Rayo'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Cerrar menú principal"
+                  className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-[#00357f] transition hover:bg-[#dee8ff]/60 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                 >
-                  <LogIn className="h-4 w-4" /> Entrar o crear cuenta
-                </Link>
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-            )}
-          </nav>
-        </div>
-      )}
+
+              <nav aria-label="Navegación principal móvil" className="flex-1 overflow-y-auto p-2">
+                {items.map(item => (isMenuGroup(item) ? renderGroup(item) : renderLink(item, ICON_COLORS[item.icon])))}
+
+                {isAuthenticated ? (
+                  <Link
+                    href="/profile"
+                    className="mt-1 flex min-h-12 items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-[#434653] transition hover:bg-[#f0f3ff] hover:text-[#00357f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                  >
+                    <span
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-black"
+                      style={{ backgroundColor: PROFILE_COLOR.bg, color: PROFILE_COLOR.fg }}
+                    >
+                      {initials || 'OR'}
+                    </span>
+                    <span>Mi perfil</span>
+                    <UserRound className="ml-auto h-4 w-4 text-[#5d606f]" />
+                  </Link>
+                ) : (
+                  <div className="mt-2 p-1 pt-3">
+                    <Link
+                      href="/login"
+                      className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#00357f] px-3 text-sm font-bold text-white transition hover:bg-[#00509e] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
+                    >
+                      <LogIn className="h-4 w-4" /> Entrar o crear cuenta
+                    </Link>
+                  </div>
+                )}
+              </nav>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

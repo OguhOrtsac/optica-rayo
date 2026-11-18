@@ -44,7 +44,8 @@ export default async function Navbar() {
   // son de staff y Usuarios, Mensajes y Configurar horario solo del
   // administrador).
   // La barra inferior móvil lleva el trabajo diario: Inicio · Realizar
-  // Venta · Registrar Pago · Agenda · Perfil. «Agenda» (staff) y
+  // Venta · Registrar Pago · Realizar examen · Agenda (el Perfil vive
+  // aquí en la hamburguesa, como «Mi perfil»). «Agenda» (staff) y
   // «Agendar examen gratis» (pública) son destinos distintos, con
   // etiqueta e icono distintos.
   const getNavItems = (): MainMenuItem[] => {
@@ -216,6 +217,9 @@ export default async function Navbar() {
             <div className="w-8 h-8 rounded-full bg-[#d9e2ff] flex items-center justify-center text-[#00357f] font-bold overflow-hidden">
               {initials || "OR"}
             </div>
+            {/* Logo oficial (ojo) a la altura de la letra del nombre: h-6 no
+                crece el alto de la barra ni el tamaño del texto. */}
+            <img src="/logo-eye.png" alt="" aria-hidden className="h-6 w-auto shrink-0" />
             <span className="text-xl font-extrabold tracking-tight text-[#00357f] transition-colors">
               Óptica <span className="text-[#0899c9]">Rayo</span>
             </span>
@@ -271,8 +275,8 @@ export default async function Navbar() {
       {/* Mobile Top Header (Minimalist for PWA view) — orden del dueño
           2026-11-18: hamburguesa a la izquierda, marca centrada y
           campanita hasta la derecha. El botón de iniciales que llevaba
-          al perfil salió de la barra: el Perfil vive en la barra
-          inferior. La rejilla 1fr/auto/1fr mantiene la marca centrada
+          al perfil salió de la barra: el Perfil vive en este menú
+          hamburguesa («Mi perfil»). La rejilla 1fr/auto/1fr mantiene la marca centrada
           aunque un lado vaya vacío (la campanita no se pinta para
           invitados ni clientes). */}
       <header className="site-nav relative w-full bg-[#f9f9ff]/95 backdrop-blur border-b border-[#c3c6d5] sticky top-0 z-50 px-4 py-2.5 grid grid-cols-[1fr_auto_1fr] items-center md:hidden shadow-sm">
@@ -285,7 +289,10 @@ export default async function Navbar() {
           />
         </div>
 
-        <Link href="/" className="flex min-h-11 items-center justify-center justify-self-center rounded-xl px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
+        <Link href="/" className="flex min-h-11 items-center justify-center gap-2 justify-self-center rounded-xl px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
+          {/* Logo oficial (ojo) a la altura de la letra del nombre: h-6 no
+              crece el alto de la barra ni el tamaño del texto. */}
+          <img src="/logo-eye.png" alt="" aria-hidden className="h-6 w-auto shrink-0" />
           <span className="text-xl font-extrabold tracking-tight text-[#00357f]">
             Óptica <span className="text-[#0899c9]">Rayo</span>
           </span>

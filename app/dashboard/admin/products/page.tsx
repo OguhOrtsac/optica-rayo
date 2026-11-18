@@ -16,6 +16,7 @@ import {
 } from '@/lib/services'
 import { Database } from '@/types/database.types'
 import LensOptionsEditor from './lens-options-editor'
+import PageHeader from '@/components/page-header'
 import {
   getLensOptionTemplates,
   getActiveLensOptionTemplates,
@@ -650,28 +651,49 @@ export default function AdminProductsPage() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
       
-      {/* Page Header & Actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+      {/* Page Header & Actions: en móvil solo la etiqueta + volver +
+          el botón de subir, compacto bajo la etiqueta (PageHeader) */}
+      <PageHeader
+        title="Productos"
+        mobileActions={
+          <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
             <ArrowLeft className="w-4.5 h-4.5" />
           </Link>
-          <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-            <Package className="w-5 h-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Inventario y Productos</h1>
-            <p className="text-sm text-[#434653] mt-1 font-medium">Gestione su catálogo de armazones, lentes y accesorios.</p>
+        }
+        mobileExtra={
+          <div className="mt-3">
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="bg-[#00357f] hover:bg-[#004aad] text-white px-5 py-2.5 rounded-xl flex items-center gap-1.5 font-bold text-xs shadow-sm transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Subir Producto
+            </button>
           </div>
+        }
+      >
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+              <ArrowLeft className="w-4.5 h-4.5" />
+            </Link>
+            <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+              <Package className="w-5 h-5" />
+            </span>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Inventario y Productos</h1>
+              <p className="text-sm text-[#434653] mt-1 font-medium">Gestione su catálogo de armazones, lentes y accesorios.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="bg-[#00357f] hover:bg-[#004aad] text-white px-5 py-2.5 rounded-xl flex items-center gap-1.5 font-bold text-xs shadow-sm transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            Subir Producto
+          </button>
         </div>
-        <button 
-          onClick={() => setIsCreateModalOpen(true)}
-          className="bg-[#00357f] hover:bg-[#004aad] text-white px-5 py-2.5 rounded-xl flex items-center gap-1.5 font-bold text-xs shadow-sm transition-colors cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          Subir Producto
-        </button>
-      </div>
+      </PageHeader>
 
       {/* Feedback Messages */}
       {feedbackMsg && (

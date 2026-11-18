@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { getAllProfiles, getBusinessSettings, type BusinessSettings } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 import {
   createUserAction,
   adminUpdateUserAction,
@@ -331,18 +332,27 @@ export default function RegisterUsersPage() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-7xl mx-auto pb-24 md:pb-8 text-left">
       
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
-              <ArrowLeft className="w-4 h-4" />
-            </Link>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Configuración y Perfil</h1>
+      {/* Header: en móvil solo la etiqueta «Usuarios» + volver (PageHeader) */}
+      <PageHeader
+        title="Usuarios"
+        mobileActions={
+          <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+        }
+      >
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
+                <ArrowLeft className="w-4 h-4" />
+              </Link>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Configuración y Perfil</h1>
+            </div>
+            <p className="text-sm text-[#434653] mt-1 font-medium pl-8">Gestiona el personal del staff, accesos y opciones de la óptica.</p>
           </div>
-          <p className="text-sm text-[#434653] mt-1 font-medium pl-8">Gestiona el personal del staff, accesos y opciones de la óptica.</p>
         </div>
-      </div>
+      </PageHeader>
 
       {feedbackMsg && (
         <div className={`p-4 rounded-xl text-xs font-bold border ${

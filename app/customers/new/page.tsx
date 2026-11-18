@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { registerCustomerAction, RegisterCustomerState } from '@/app/customers/actions'
 import { checkPhoneDuplicate } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 import { ArrowLeft, User, FileText, CheckCircle, ShieldAlert, PlusCircle, Sparkles } from 'lucide-react'
 
 const initialState: RegisterCustomerState = { error: null, success: null, customerId: null }
@@ -116,16 +117,25 @@ export default function NewCustomerPage() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
       
-      {/* Header and Back navigation */}
-      <div className="flex items-center gap-4">
-        <Link href="/customers" className="w-10 h-10 bg-white hover:bg-[#dee8ff]/30 border border-[#cbd5e1] rounded-xl flex items-center justify-center transition-colors min-h-[40px] min-w-[40px]">
-          <ArrowLeft className="w-5 h-5 text-[#737784]" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-extrabold text-[#00357f] tracking-tight">Nuevo Cliente</h1>
-          <p className="text-xs text-[#737784] mt-0.5 font-medium">Ingresa los datos personales y la receta del cliente.</p>
+      {/* Header and Back navigation: en móvil solo la etiqueta + volver (PageHeader) */}
+      <PageHeader
+        title="Nuevo Cliente"
+        mobileActions={
+          <Link href="/customers" aria-label="Volver a Clientes" className="w-10 h-10 bg-white hover:bg-[#dee8ff]/30 border border-[#cbd5e1] rounded-xl flex items-center justify-center transition-colors min-h-[40px] min-w-[40px]">
+            <ArrowLeft className="w-5 h-5 text-[#737784]" />
+          </Link>
+        }
+      >
+        <div className="flex items-center gap-4">
+          <Link href="/customers" className="w-10 h-10 bg-white hover:bg-[#dee8ff]/30 border border-[#cbd5e1] rounded-xl flex items-center justify-center transition-colors min-h-[40px] min-w-[40px]">
+            <ArrowLeft className="w-5 h-5 text-[#737784]" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-extrabold text-[#00357f] tracking-tight">Nuevo Cliente</h1>
+            <p className="text-xs text-[#737784] mt-0.5 font-medium">Ingresa los datos personales y la receta del cliente.</p>
+          </div>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Stepper Steps UI */}
       <div className="grid grid-cols-2 gap-2 bg-[#f0f3ff] p-1 rounded-xl border border-[#cbd5e1] shadow-sm">
