@@ -107,7 +107,7 @@ export default function PaymentsPage() {
     return () => clearTimeout(timer)
   }, [query, loadCustomers])
 
-  // Deudores: ventas con saldo pendiente, agrupadas por cliente, con el
+  // Pagos diferidos: ventas con saldo pendiente, agrupadas por cliente, con el
   // próximo vencimiento tomado de sus cuotas pendientes.
   const loadDebtors = useCallback(async () => {
     setLoadingDebtors(true)
@@ -182,7 +182,7 @@ export default function PaymentsPage() {
 
   // Resumen breve del cliente seleccionado (saldo + próximo vencimiento).
   const handleSelectCustomer = async (customer: Customer) => {
-    // Las filas de deudores se construyen desde las ventas y llegan sin
+    // Las filas de pagos diferidos se construyen desde las ventas y llegan sin
     // correo ni teléfono; el directorio ya cargado en la página sí los
     // trae. Se completan SOLO los datos de despliegue del modal (el
     // cálculo del saldo, las cuotas y los vencimientos no se tocan).
@@ -279,7 +279,7 @@ export default function PaymentsPage() {
         ? { band: 'bg-[#fef3c7]', text: 'text-[#92400e]', label: 'Con adeudo', Icon: Clock }
         : { band: 'bg-[#e2f9ee]', text: 'text-[#00422b]', label: 'Al corriente', Icon: CheckCircle2 }
 
-  // Con búsqueda: resultados del directorio. Sin búsqueda: deudores primero.
+  // Con búsqueda: resultados del directorio. Sin búsqueda: pagos diferidos primero.
   const directoryResults = useMemo(() => {
     if (!query.trim()) return []
     return customers
@@ -332,13 +332,13 @@ export default function PaymentsPage() {
               <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors md:hidden">
                 <ArrowLeft className="w-4 h-4" />
               </Link>
-              <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Registrar Pagos</h1>
+              <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Pagos diferidos</h1>
             </div>
             <p className="text-sm text-[#434653] mt-1 font-medium">Control de abonos de lentes a plazos y actualización de saldos.</p>
           </div>
         </div>
 
-        {/* Directorio: tocar un deudor o un cliente buscado abre su
+        {/* Directorio: tocar un cliente con pago diferido o un cliente buscado abre su
             estado de cuenta en el modal; ya no hay columna de resumen. */}
         <div className="max-w-2xl mx-auto w-full bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4 flex flex-col gap-4 lg:max-h-[650px]">
             <div className="flex items-center gap-3">
@@ -393,7 +393,7 @@ export default function PaymentsPage() {
                   <span className="w-10 h-10 rounded-xl bg-[#ffdad6] text-[#ba1a1a] flex items-center justify-center shrink-0">
                     <AlertTriangle className="w-5 h-5" />
                   </span>
-                  <h3 className="text-base font-semibold text-[#111c2d]">Deudores</h3>
+                  <h3 className="text-base font-semibold text-[#111c2d]">Clientes con pagos diferidos</h3>
                   {debtors.length > 0 && (
                     <span className="shrink-0 bg-[#ffdad6] text-[#ba1a1a] text-xs font-bold px-2.5 py-1 rounded-full">
                       {debtors.length}
@@ -417,7 +417,7 @@ export default function PaymentsPage() {
                   )}
                 </div>
                 <p className="text-[10px] text-[#737784] font-medium">
-                  Toca un deudor para ver su saldo y registrar su abono.
+                  Toca un cliente para ver su saldo y registrar su abono.
                 </p>
               </>
             )}

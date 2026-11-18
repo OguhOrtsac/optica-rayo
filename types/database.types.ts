@@ -272,6 +272,9 @@ export interface Database {
           product_id: string | null
           quantity: number
           price: number
+          is_complement: boolean
+          complement_name: string | null
+          complement_for: string | null
         }
         Insert: {
           id?: string
@@ -279,6 +282,9 @@ export interface Database {
           product_id?: string | null
           quantity: number
           price: number
+          is_complement?: boolean
+          complement_name?: string | null
+          complement_for?: string | null
         }
         Update: {
           id?: string
@@ -286,6 +292,9 @@ export interface Database {
           product_id?: string | null
           quantity?: number
           price?: number
+          is_complement?: boolean
+          complement_name?: string | null
+          complement_for?: string | null
         }
       }
       coupons: {

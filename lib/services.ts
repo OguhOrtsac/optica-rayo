@@ -9,6 +9,7 @@ import {
   addMonthsISO,
 } from './reminder-config'
 import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT, effectiveClientPrice } from './pricing'
+import { getPeriodPayments } from './expenses'
 import {
   PRODUCT_IMAGE_BUCKET,
   productImageExtension,
@@ -298,7 +299,7 @@ export interface CreateSaleOptions {
 
 export async function createSale(
   customerName: string,
-  items: { productId: string; quantity: number }[],
+  items: { productId: string; quantity: number; complements?: { name: string; price: number }[] }[],
   paidAmount?: number,
   paymentMethod?: 'cash' | 'card' | 'transfer',
   options?: CreateSaleOptions
@@ -338,8 +339,12 @@ export async function createSale(
           : product.price
       }
 
+      // Complements (free-text add-ons per product, price 0 = «Gratis»)
+      // are charged per unit of their parent product, like lens options.
+      const complementsTotalOf = (item: { complements?: { name: string; price: number }[] }) =>
+        (item.complements || []).reduce((a, c) => a + Math.max(0, c.price || 0), 0)
       const grossTotal = items.reduce((acc, item) => {
-        return acc + priceOf(item.productId) * item.quantity
+        return acc + (priceOf(item.productId) + complementsTotalOf(item)) * item.quantity
       }, 0)
       // Coupon discount captured at the POS is part of the stored sale:
       // the recorded total is what the customer actually owes/pays.
@@ -383,7 +388,7 @@ export async function createSale(
         .single()
       
       if (!saleError && saleData) {
-        const saleItemsToInsert = items.map(item => {
+        const saleItemsToInsert: any[] = items.map(item => {
           return {
             sale_id: saleData.id,
             product_id: item.productId,
@@ -391,6 +396,24 @@ export async function createSale(
             price: priceOf(item.productId)
           }
         })
+        // Each complement persists as its own sale_items row (product_id
+        // NULL, is_complement) so it shows in the POS history, the
+        // customer's purchases and the customer file.
+        for (const item of items) {
+          const parentName = catalog.find(p => p.id === item.productId)?.name || 'Producto'
+          for (const c of item.complements || []) {
+            if (!c.name?.trim()) continue
+            saleItemsToInsert.push({
+              sale_id: saleData.id,
+              product_id: null,
+              quantity: item.quantity,
+              price: Math.max(0, c.price || 0),
+              is_complement: true,
+              complement_name: c.name.trim(),
+              complement_for: parentName
+            })
+          }
+        }
 
         const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsToInsert)
         if (itemsError) {
@@ -676,6 +699,9 @@ export async function getCustomerSales(customerId: string): Promise<any[]> {
               id,
               quantity,
               price,
+              is_complement,
+              complement_name,
+              complement_for,
               lens_material_price,
               lens_material:lens_materials(name),
               sale_item_treatments(
@@ -763,6 +789,9 @@ export async function getMySales(): Promise<any[]> {
           sale_items(
             quantity,
             price,
+            is_complement,
+            complement_name,
+            complement_for,
             product:products(name, category)
           )
         `)
@@ -900,13 +929,22 @@ export async function updateSaleStatus(
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('sales')
         .update({ status: newStatus })
         .eq('id', saleId)
-      
-      if (!error) return true
-      console.error('Error updating sale status in Supabase:', error.message)
+        .select('id')
+
+      // An UPDATE blocked by RLS returns NO error but touches 0 rows: the
+      // sale keeps its old status while the UI used to report success (the
+      // owner caught this: «Listo para entrega» never became «Entregado»).
+      // Success now requires proof that the row actually changed.
+      if (!error && data && data.length > 0) return true
+      if (!error) {
+        console.error('Error updating sale status: 0 rows updated (possible RLS block) for sale', saleId)
+      } else {
+        console.error('Error updating sale status in Supabase:', error.message)
+      }
     } catch (e) {
       console.error('Failed to update sale status in Supabase:', e)
     }
@@ -1718,6 +1756,376 @@ export async function deletePromotion(id: string): Promise<boolean> {
     } catch (e) {
       console.error('Supabase promotion delete failed:', e)
     }
+  }
+  return false
+}
+
+
+// ----------------------------------------------------
+// Finanzas — cifras del dueño (definiciones del 2026-11-18)
+// ----------------------------------------------------
+//
+// Pantallas /dashboard/admin/finanzas/*. Las cifras salen SIEMPRE
+// de la base real: si la base no está configurada o falla, el error
+// sube a la pantalla (nada de números inventados). Las ventas se
+// agrupan por su created_at en hora LOCAL del navegador, igual que
+// las tarjetas del panel (Ventas hoy / Ventas del mes).
+//
+// Definiciones aplicadas al pie:
+//  DÍA:  vendido = Σ total · cobrado = Σ paid_amount ·
+//        por cobrar = Σ pending_balance (cobrado + por cobrar =
+//        vendido por construcción de la venta).
+//  MES:  adeudo = Σ pending_balance ACTUAL de las ventas del mes;
+//        cobrado de ventas del mes = venta total − adeudo (la
+//        ecuación cuadra siempre); abonos de meses anteriores =
+//        cuotas con payment_date en el mes cuya venta nació antes
+//        del mes; total caja = cobrado de ventas del mes + TODAS
+//        las cuotas recibidas en el mes.
+//  UTILIDAD (caja): ingresos = Σ paid_amount de ventas creadas en
+//        el rango + Σ cuotas con payment_date en el rango; pagos =
+//        gastos del día del rango + fijos prorrateados (regla de
+//        Reportes, vía getPeriodPayments); adeudos generados =
+//        Σ pending_balance de ventas creadas en el rango;
+//        utilidad = ingresos − pagos.
+
+function finRound2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+/** Postgres NUMERIC can arrive as string through PostgREST. */
+function finAmount(value: number | string | null | undefined): number {
+  const n = typeof value === 'number' ? value : parseFloat(String(value ?? ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Local YYYY-MM-DD key of a Date (never UTC). */
+function finLocalDateKey(d: Date): string {
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
+}
+
+/** ISO instant of a local day's 00:00. dateISO is YYYY-MM-DD local. */
+function finDayStartISO(dateISO: string): string {
+  const [y, m, d] = dateISO.split('-').map(Number)
+  return new Date(y || 1970, (m || 1) - 1, d || 1).toISOString()
+}
+
+/** ISO instant of the local 00:00 of the day AFTER dateISO. */
+function finNextDayStartISO(dateISO: string): string {
+  const [y, m, d] = dateISO.split('-').map(Number)
+  return new Date(y || 1970, (m || 1) - 1, (d || 1) + 1).toISOString()
+}
+
+export interface FinanceSaleRow {
+  id: string
+  created_at: string
+  /** HH:MM en hora local. */
+  time_label: string
+  /** YYYY-MM-DD en hora local. */
+  date_label: string
+  customer_name: string
+  /** Descripción de los artículos («2 × Armazón …, 1 × …»). */
+  description: string
+  total: number
+  paid_amount: number
+  pending_balance: number
+  status: Sale['status']
+}
+
+/**
+ * Sales created inside [startISO, endISO) with customer name and an
+ * item description, newest first. Throws on any database failure.
+ */
+async function fetchFinanceSales(startISO: string, endISO: string): Promise<FinanceSaleRow[]> {
+  const supabase = createBrowserClient()
+  const { data, error } = await supabase
+    .from('sales')
+    .select(`
+      id, created_at, total, paid_amount, pending_balance, status,
+      customer:profiles!sales_customer_id_fkey(full_name)
+    `)
+    .gte('created_at', startISO)
+    .lt('created_at', endISO)
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(error.message)
+  const sales = (data ?? []) as any[]
+  if (sales.length === 0) return []
+
+  // Item descriptions for the whole batch in one read.
+  const { data: itemsData, error: itemsError } = await supabase
+    .from('sale_items')
+    .select(`
+      sale_id, quantity, is_complement, complement_name,
+      product:products(name),
+      lens_material:lens_materials(name),
+      sale_item_treatments(treatment:lens_treatments(name))
+    `)
+    .in('sale_id', sales.map(s => s.id))
+
+  if (itemsError) throw new Error(itemsError.message)
+
+  const descriptionBySale = new Map<string, string[]>()
+  for (const item of (itemsData ?? []) as any[]) {
+    if (item.is_complement) {
+      const arr = descriptionBySale.get(item.sale_id) ?? []
+      arr.push(`Complemento: ${item.complement_name ?? 'Complemento'}`)
+      descriptionBySale.set(item.sale_id, arr)
+      continue
+    }
+    const parts: string[] = [`${item.quantity ?? 1} × ${item.product?.name ?? 'Producto'}`]
+    if (item.lens_material?.name) parts.push(item.lens_material.name)
+    for (const t of item.sale_item_treatments ?? []) {
+      if (t.treatment?.name) parts.push(t.treatment.name)
+    }
+    const line = parts.join(' · ')
+    const arr = descriptionBySale.get(item.sale_id) ?? []
+    arr.push(line)
+    descriptionBySale.set(item.sale_id, arr)
+  }
+
+  return sales.map(sale => {
+    const created = new Date(sale.created_at)
+    return {
+      id: sale.id,
+      created_at: sale.created_at,
+      time_label: created.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+      date_label: finLocalDateKey(created),
+      customer_name: sale.customer?.full_name || 'Cliente sin nombre',
+      description: (descriptionBySale.get(sale.id) ?? []).join(' · ') || 'Sin artículos registrados',
+      total: finAmount(sale.total),
+      paid_amount: finAmount(sale.paid_amount),
+      pending_balance: finAmount(sale.pending_balance),
+      status: sale.status,
+    }
+  })
+}
+
+export interface DaySalesDetail {
+  /** YYYY-MM-DD local del día consultado. */
+  date: string
+  sales: FinanceSaleRow[]
+  /** Σ total de las ventas del día. */
+  soldTotal: number
+  /** Σ paid_amount de esas ventas (lo que entró a caja por ellas). */
+  collectedTotal: number
+  /** Σ pending_balance de esas ventas. */
+  pendingTotal: number
+}
+
+/**
+ * Detail of one local day: every sale created that day plus the
+ * three figures of the owner's equation (cobrado + por cobrar =
+ * vendido).
+ */
+export async function getDaySalesDetail(dateISO: string): Promise<DaySalesDetail> {
+  if (!isSupabaseConfigured()) throw new Error('Base de datos no configurada')
+  const sales = await fetchFinanceSales(finDayStartISO(dateISO), finNextDayStartISO(dateISO))
+  return {
+    date: dateISO,
+    sales,
+    soldTotal: finRound2(sales.reduce((sum, s) => sum + s.total, 0)),
+    collectedTotal: finRound2(sales.reduce((sum, s) => sum + s.paid_amount, 0)),
+    pendingTotal: finRound2(sales.reduce((sum, s) => sum + s.pending_balance, 0)),
+  }
+}
+
+export interface MonthSalesDetail {
+  year: number
+  /** 1-12 */
+  month: number
+  /** Solo los días CON ventas, en orden: la gráfica salta los días
+   *  sin actividad en vez de bajar a cero. */
+  days: { day: number; date: string; total: number }[]
+  sales: FinanceSaleRow[]
+  /** Σ total de las ventas del mes. */
+  salesTotal: number
+  /** Σ pending_balance ACTUAL de las ventas del mes. */
+  monthDebt: number
+  /** salesTotal − monthDebt (así la ecuación del mes siempre cuadra). */
+  collectedFromMonthSales: number
+  /** Cuotas recibidas en el mes por ventas de meses anteriores. */
+  priorMonthsCollected: number
+  /** Σ TODAS las cuotas (payment_installments) recibidas en el mes. */
+  monthInstallmentsTotal: number
+  /** collectedFromMonthSales + monthInstallmentsTotal. */
+  cashTotal: number
+}
+
+/**
+ * One month of sales: daily series (only days with sales), the full
+ * sale list and the owner's month figures. month is 1-12.
+ */
+export async function getMonthSales(year: number, month: number): Promise<MonthSalesDetail> {
+  if (!isSupabaseConfigured()) throw new Error('Base de datos no configurada')
+  const supabase = createBrowserClient()
+  const monthStart = new Date(year, month - 1, 1)
+  const nextMonthStart = new Date(year, month, 1)
+  const startISO = monthStart.toISOString()
+  const endISO = nextMonthStart.toISOString()
+
+  const sales = await fetchFinanceSales(startISO, endISO)
+  const salesTotal = finRound2(sales.reduce((sum, s) => sum + s.total, 0))
+  const monthDebt = finRound2(sales.reduce((sum, s) => sum + s.pending_balance, 0))
+  const collectedFromMonthSales = finRound2(salesTotal - monthDebt)
+
+  const byDay = new Map<string, { day: number; date: string; total: number }>()
+  for (const sale of sales) {
+    const entry = byDay.get(sale.date_label) ?? {
+      day: Number(sale.date_label.slice(8, 10)),
+      date: sale.date_label,
+      total: 0,
+    }
+    entry.total = finRound2(entry.total + sale.total)
+    byDay.set(sale.date_label, entry)
+  }
+  const days = Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date))
+
+  // Installments actually received inside the month (payment_date),
+  // split by whether their sale was born before this month.
+  const { data: instData, error: instError } = await supabase
+    .from('payment_installments')
+    .select(`
+      amount_paid, payment_date,
+      sale:sales!payment_installments_sale_id_fkey(created_at)
+    `)
+    .gte('payment_date', startISO)
+    .lt('payment_date', endISO)
+
+  if (instError) throw new Error(instError.message)
+
+  let monthInstallmentsTotal = 0
+  let priorMonthsCollected = 0
+  for (const inst of (instData ?? []) as any[]) {
+    const amount = finAmount(inst.amount_paid)
+    monthInstallmentsTotal = finRound2(monthInstallmentsTotal + amount)
+    const saleCreated = inst.sale?.created_at ? new Date(inst.sale.created_at) : null
+    if (saleCreated && saleCreated.getTime() < monthStart.getTime()) {
+      priorMonthsCollected = finRound2(priorMonthsCollected + amount)
+    }
+  }
+
+  return {
+    year,
+    month,
+    days,
+    sales,
+    salesTotal,
+    monthDebt,
+    collectedFromMonthSales,
+    priorMonthsCollected,
+    monthInstallmentsTotal,
+    cashTotal: finRound2(collectedFromMonthSales + monthInstallmentsTotal),
+  }
+}
+
+export interface CashUtility {
+  /** YYYY-MM-DD local, inclusivo. */
+  from: string
+  /** YYYY-MM-DD local, inclusivo. */
+  to: string
+  /** paid_amount de ventas creadas en el rango + cuotas del rango. */
+  income: number
+  incomeFromSales: number
+  incomeFromInstallments: number
+  /** Gastos del día del rango + fijos prorrateados. */
+  payments: number
+  dailyExpensesTotal: number
+  fixedProrated: number
+  fixedMonthlyTotal: number
+  /** Σ pending_balance de las ventas creadas en el rango. */
+  debtsGenerated: number
+  /** income − payments (criterio de caja del dueño). */
+  utility: number
+}
+
+/**
+ * Cash utility for a local date range [fromISO, toISO] (both
+ * YYYY-MM-DD, inclusive), with the owner's cash definitions.
+ */
+export async function getCashUtility(fromISO: string, toISO: string): Promise<CashUtility> {
+  if (!isSupabaseConfigured()) throw new Error('Base de datos no configurada')
+  const supabase = createBrowserClient()
+  const startISO = finDayStartISO(fromISO)
+  const endISO = finNextDayStartISO(toISO)
+
+  const { data: salesData, error: salesError } = await supabase
+    .from('sales')
+    .select('paid_amount, pending_balance')
+    .gte('created_at', startISO)
+    .lt('created_at', endISO)
+
+  if (salesError) throw new Error(salesError.message)
+
+  let incomeFromSales = 0
+  let debtsGenerated = 0
+  for (const sale of (salesData ?? []) as any[]) {
+    incomeFromSales = finRound2(incomeFromSales + finAmount(sale.paid_amount))
+    debtsGenerated = finRound2(debtsGenerated + finAmount(sale.pending_balance))
+  }
+
+  const { data: instData, error: instError } = await supabase
+    .from('payment_installments')
+    .select('amount_paid')
+    .gte('payment_date', startISO)
+    .lt('payment_date', endISO)
+
+  if (instError) throw new Error(instError.message)
+
+  let incomeFromInstallments = 0
+  for (const inst of (instData ?? []) as any[]) {
+    incomeFromInstallments = finRound2(incomeFromInstallments + finAmount(inst.amount_paid))
+  }
+
+  // Money out lives in lib/expenses (same proration rule as Reports).
+  const periodPayments = await getPeriodPayments(fromISO, toISO)
+
+  const income = finRound2(incomeFromSales + incomeFromInstallments)
+  return {
+    from: fromISO,
+    to: toISO,
+    income,
+    incomeFromSales,
+    incomeFromInstallments,
+    payments: periodPayments.total,
+    dailyExpensesTotal: periodPayments.dailyExpensesTotal,
+    fixedProrated: periodPayments.fixedProrated,
+    fixedMonthlyTotal: periodPayments.fixedMonthlyTotal,
+    debtsGenerated,
+    utility: finRound2(income - periodPayments.total),
+  }
+}
+
+/**
+ * Deletes one of the signed-in user's own notifications (bell «Borrar»).
+ * Success requires proof the row is gone: a DELETE blocked by RLS returns
+ * no error but removes 0 rows, so the deleted rows are selected back.
+ */
+export async function deleteMyNotification(id: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return false
+      const { data, error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .select('id')
+      if (!error && data && data.length > 0) return true
+      if (!error) console.error('deleteMyNotification: 0 rows deleted (possible RLS block) for', id)
+      return false
+    } catch (e) {
+      console.error('Supabase notification delete failed:', e)
+      return false
+    }
+  }
+  const idx = mockDb.MOCK_NOTIFICATIONS.findIndex(n => n.id === id)
+  if (idx >= 0) {
+    mockDb.MOCK_NOTIFICATIONS.splice(idx, 1)
+    return true
   }
   return false
 }

@@ -6,13 +6,19 @@ import { usePathname } from 'next/navigation'
 import {
   Bell,
   CalendarDays,
+  Check,
   CheckCheck,
   Glasses,
   Info,
   Package,
+  Trash2,
   Wallet,
 } from 'lucide-react'
-import { getMyNotifications, markNotificationRead } from '@/lib/services'
+import {
+  deleteMyNotification,
+  getMyNotifications,
+  markNotificationRead,
+} from '@/lib/services'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 
 // Notification bell for the header (design system v2): staff alerts live
@@ -21,6 +27,11 @@ import { createClient as createBrowserClient } from '@/utils/supabase/client'
 // table of the signed-in user via getMyNotifications() (fields: id,
 // user_id, title, message, type, is_read, created_at; the record carries
 // no link, so the destination is derived from `type`).
+//
+// Each item carries two explicit per-item actions under its body
+// (owner's order, 2026-11-18): «Marcar como leída» for unread items and
+// «Borrar», which deletes the row for real via deleteMyNotification so
+// the list does not grow forever.
 //
 // Renders nothing for guests and customers.
 
@@ -99,6 +110,8 @@ export default function NotificationBell({ role }: { role: string | null }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [open, setOpen] = useState(false)
   const [markingAll, setMarkingAll] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
 
   const isStaff = !!role && STAFF_ROLES.includes(role)
@@ -120,6 +133,7 @@ export default function NotificationBell({ role }: { role: string | null }) {
   // Navigating (e.g. after tapping an item) closes the panel.
   useEffect(() => {
     setOpen(false)
+    setActionError(null)
   }, [pathname])
 
   // Close on outside click / Escape while open. (No fixed overlay: the
@@ -162,6 +176,40 @@ export default function NotificationBell({ role }: { role: string | null }) {
     setOpen(false)
   }
 
+  // Explicit per-item «Marcar como leída»: same optimistic mark as
+  // tapping the body, but the panel stays open and nothing navigates.
+  const handleMarkRead = (item: NotificationItem) => {
+    if (item.is_read) return
+    setActionError(null)
+    setNotifications(prev =>
+      prev.map(n => (n.id === item.id ? { ...n, is_read: true } : n))
+    )
+    markNotificationRead(item.id).catch(() => {})
+  }
+
+  // Per-item «Borrar»: a REAL delete, not a hide. The row only leaves
+  // the list when the service confirms the row is gone (it returns true
+  // only then); on false the item stays and a brief error shows inside
+  // the panel. Removing from state also recalculates the unread badge,
+  // since unreadCount is derived from the list.
+  const handleDelete = async (item: NotificationItem) => {
+    if (deletingId) return
+    setDeletingId(item.id)
+    setActionError(null)
+    try {
+      const deleted = await deleteMyNotification(item.id)
+      if (deleted) {
+        setNotifications(prev => prev.filter(n => n.id !== item.id))
+      } else {
+        setActionError('No se pudo borrar el aviso. Inténtalo de nuevo.')
+      }
+    } catch {
+      setActionError('No se pudo borrar el aviso. Inténtalo de nuevo.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const handleMarkAllRead = async () => {
     if (unreadCount === 0 || markingAll) return
     setMarkingAll(true)
@@ -196,7 +244,10 @@ export default function NotificationBell({ role }: { role: string | null }) {
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen(prev => !prev)}
+        onClick={() => {
+          setOpen(prev => !prev)
+          setActionError(null)
+        }}
         aria-label={unreadCount > 0 ? `Avisos, ${unreadCount} sin leer` : 'Avisos'}
         aria-expanded={open}
         aria-haspopup="true"
@@ -221,6 +272,15 @@ export default function NotificationBell({ role }: { role: string | null }) {
             )}
           </div>
 
+          {actionError && (
+            <p
+              role="alert"
+              className="border-b border-[#ba1a1a]/20 bg-[#ffdad6] px-4 py-2 text-xs font-semibold text-[#ba1a1a]"
+            >
+              {actionError}
+            </p>
+          )}
+
           {visible.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm font-medium text-[#737784]">
               Sin avisos por ahora.
@@ -231,12 +291,12 @@ export default function NotificationBell({ role }: { role: string | null }) {
                 const cfg = typeConfig(n.type)
                 const Icon = cfg.Icon
                 return (
-                  <li key={n.id}>
+                  <li key={n.id} className={n.is_read ? '' : 'bg-[#f0f3ff]'}>
                     <Link
                       href={cfg.href}
                       onClick={() => handleItemClick(n)}
-                      className={`flex min-h-12 items-start gap-3 px-4 py-3 transition hover:bg-[#dee8ff]/40 ${
-                        n.is_read ? 'opacity-75' : 'bg-[#f0f3ff]'
+                      className={`flex min-h-12 items-start gap-3 px-4 pt-3 pb-1 transition hover:bg-[#dee8ff]/40 ${
+                        n.is_read ? 'opacity-75' : ''
                       }`}
                     >
                       <span
@@ -266,6 +326,29 @@ export default function NotificationBell({ role }: { role: string | null }) {
                         <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#ba1a1a]" />
                       )}
                     </Link>
+                    <div className="flex items-center justify-end gap-1 px-3 pb-2">
+                      {!n.is_read && (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkRead(n)}
+                          aria-label={`Marcar como leída: ${n.title}`}
+                          className="flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-[#00357f] transition hover:bg-[#dee8ff]/60 cursor-pointer"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          Marcar como leída
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(n)}
+                        disabled={deletingId === n.id}
+                        aria-label={`Borrar aviso: ${n.title}`}
+                        className="flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-[#ba1a1a] transition hover:bg-[#ffdad6]/60 disabled:opacity-60 cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {deletingId === n.id ? 'Borrando…' : 'Borrar'}
+                      </button>
+                    </div>
                   </li>
                 )
               })}

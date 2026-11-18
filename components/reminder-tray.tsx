@@ -9,7 +9,7 @@ import {
   type DueReminder,
 } from '@/lib/services'
 import { buildReminderMessage, toWhatsAppNumber } from '@/lib/reminder-config'
-import { BellRing, CheckCheck, MessageSquare, Save } from 'lucide-react'
+import { BellRing, CheckCheck, Eye, MessageSquare, Save } from 'lucide-react'
 
 /**
  * Exam Review Reminders tray for the administrator.
@@ -25,6 +25,9 @@ export default function ReminderTray() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [showTemplateModal, setShowTemplateModal] = useState(false)
+  const [templateDraft, setTemplateDraft] = useState('')
+  const [modalError, setModalError] = useState<string | null>(null)
 
   const loadAll = async () => {
     setLoading(true)
@@ -61,6 +64,29 @@ export default function ReminderTray() {
     }
   }
 
+  const openTemplateModal = () => {
+    setTemplateDraft(template)
+    setModalError(null)
+    setShowTemplateModal(true)
+  }
+
+  // Guardar desde el modal: mismo servicio de configuración de siempre;
+  // al guardar, la vista previa de la bandeja refleja el cambio al cerrar.
+  const handleSaveTemplate = async () => {
+    setSaving(true)
+    setModalError(null)
+    try {
+      await saveReminderConfig(months, templateDraft)
+      setTemplate(templateDraft)
+      setShowTemplateModal(false)
+      flash('Configuración de recordatorios guardada.')
+    } catch (err: any) {
+      setModalError(`No se pudo guardar: ${err?.message || 'error desconocido'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleContacted = async (reminder: DueReminder) => {
     const ok = await markReminderContacted(reminder.id, months)
     if (ok) {
@@ -87,10 +113,11 @@ export default function ReminderTray() {
         </span>
       </div>
 
-      {/* Editable configuration: period + WhatsApp message template */}
+      {/* Editable configuration: cadencia compacta en un renglón +
+          plantilla como texto legible con modal para verla y editarla */}
       <div className="bg-[#f9f9ff] border border-[#cbd5e1]/50 rounded-xl p-4 space-y-3 mb-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="text-[10px] font-black uppercase tracking-wider text-[#434653]">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs font-semibold text-[#434653]">
             Recordar cada
           </label>
           <input
@@ -99,28 +126,33 @@ export default function ReminderTray() {
             max={36}
             value={months}
             onChange={e => setMonths(Math.max(1, parseInt(e.target.value || '6', 10) || 6))}
-            className="w-20 bg-white border border-[#cbd5e1] rounded-lg px-3 py-2 text-xs font-bold text-[#111c2d] focus:border-[#00357f] outline-none"
+            className="w-16 h-9 bg-white border border-[#cbd5e1] rounded-lg px-2.5 text-sm font-bold text-center text-[#111c2d] focus:border-[#00357f] outline-none"
           />
-          <span className="text-[10px] font-black uppercase tracking-wider text-[#434653]">meses desde el último examen</span>
+          <span className="text-xs text-[#737784] font-medium">meses desde el último examen</span>
           <button
             onClick={handleSaveConfig}
             disabled={saving}
-            className="ml-auto flex items-center gap-1.5 bg-[#00357f] hover:bg-[#004aad] text-white text-[10px] font-bold px-3.5 py-2 rounded-lg transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
+            className="ml-auto flex items-center gap-1.5 h-9 bg-[#00357f] hover:bg-[#004aad] text-white text-xs font-bold px-3.5 rounded-lg transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
           >
             <Save className="w-3.5 h-3.5" /> {saving ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
-        <textarea
-          value={template}
-          onChange={e => setTemplate(e.target.value)}
-          rows={3}
-          className="w-full bg-white border border-[#cbd5e1] rounded-lg px-3 py-2 text-xs text-[#111c2d] focus:border-[#00357f] outline-none resize-y"
-          placeholder="Mensaje de WhatsApp para el recordatorio…"
-        />
-        <p className="text-[10px] text-[#737784] font-medium">
-          Puede usar <strong className="text-[#00357f]">{'{nombre}'}</strong> y{' '}
-          <strong className="text-[#00357f]">{'{meses}'}</strong>: se llenan solos con el nombre del cliente y el plazo configurado.
-        </p>
+        <div>
+          <p className="text-sm text-[#434653] leading-relaxed whitespace-pre-line line-clamp-3">
+            {template || 'Mensaje de WhatsApp para el recordatorio…'}
+          </p>
+          <button
+            type="button"
+            onClick={openTemplateModal}
+            className="mt-1.5 inline-flex items-center gap-1 text-xs font-bold text-[#00357f] hover:text-[#004aad] transition-colors cursor-pointer"
+          >
+            <Eye className="w-3.5 h-3.5" /> Ver más
+          </button>
+          <p className="text-[10px] text-[#737784] font-medium mt-2">
+            Puede usar <strong className="text-[#00357f]">{'{nombre}'}</strong> y{' '}
+            <strong className="text-[#00357f]">{'{meses}'}</strong>: se llenan solos con el nombre del cliente y el plazo configurado.
+          </p>
+        </div>
         {feedback && <p className="text-[11px] font-bold text-emerald-700">{feedback}</p>}
       </div>
 
@@ -176,6 +208,44 @@ export default function ReminderTray() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Modal: mensaje completo del recordatorio, editable */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-[#111c2d]/50" role="dialog" aria-modal="true" aria-label="Mensaje de recordatorio">
+          <div className="bg-white rounded-[20px] or-shadow-card w-full max-w-lg p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150 text-left">
+            <h4 className="text-base font-semibold text-[#111c2d]">Mensaje de recordatorio</h4>
+            <textarea
+              value={templateDraft}
+              onChange={e => setTemplateDraft(e.target.value)}
+              rows={8}
+              className="w-full bg-[#f9f9ff] border border-[#cbd5e1] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] outline-none resize-y"
+              placeholder="Mensaje de WhatsApp para el recordatorio…"
+            />
+            <p className="text-[10px] text-[#737784] font-medium">
+              Puede usar <strong className="text-[#00357f]">{'{nombre}'}</strong> y{' '}
+              <strong className="text-[#00357f]">{'{meses}'}</strong>: se llenan solos con el nombre del cliente y el plazo configurado.
+            </p>
+            {modalError && <p className="text-[11px] font-bold text-[#ba1a1a]">{modalError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowTemplateModal(false)}
+                className="min-h-[44px] px-4 rounded-xl bg-[#ffdad6] text-[#ba1a1a] text-sm font-bold transition-all active:scale-95 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveTemplate}
+                disabled={saving}
+                className="min-h-[44px] px-4 rounded-xl bg-[#00422b] text-white text-sm font-bold transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
+              >
+                {saving ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -861,6 +861,9 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
         sale_id: saleId,
         product_id: item.productId,
         quantity: item.quantity,
+        is_complement: false,
+        complement_name: null,
+        complement_for: null,
         // Product unit price only — same decomposition as the real insert
         // (material and treatments are stored as separate components).
         price: item.price,
@@ -1064,6 +1067,9 @@ export async function getMySalesAction(): Promise<any[]> {
           id,
           quantity,
           price,
+          is_complement,
+          complement_name,
+          complement_for,
           product:products(name, category),
           lens_material:lens_materials(name, price),
           lens_material_price,

@@ -33,11 +33,18 @@ const formatLongDate = (dateStr: string) =>
  */
 export default function RecentActivity({ sales }: { sales: RecentActivitySale[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  // Tarjeta minimizable del panel: nace expandida (orden del dueño).
+  const [open, setOpen] = useState(true)
   const recent = sales.slice(0, 5)
 
   return (
-    <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '420ms' } as React.CSSProperties}>
-      <div className="flex items-center gap-3 mb-4">
+    <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="w-full flex items-center gap-3 cursor-pointer text-left"
+      >
         <span className="w-10 h-10 rounded-xl bg-[#0899c9]/15 text-[#0899c9] flex items-center justify-center shrink-0">
           <Activity className="w-5 h-5" />
         </span>
@@ -47,9 +54,10 @@ export default function RecentActivity({ sales }: { sales: RecentActivitySale[] 
             {recent.length}
           </span>
         )}
-      </div>
+        <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${open ? 'rotate-180' : ''} ${recent.length > 0 ? '' : 'ml-auto'}`} />
+      </button>
 
-      {recent.length === 0 ? (
+      {open && (recent.length === 0 ? (
         <p className="py-8 text-center text-xs text-[#737784] font-bold">Sin actividad registrada.</p>
       ) : (
         <ul className="divide-y divide-[#cbd5e1]/30">
@@ -116,7 +124,7 @@ export default function RecentActivity({ sales }: { sales: RecentActivitySale[] 
             )
           })}
         </ul>
-      )}
+      ))}
     </div>
   )
 }

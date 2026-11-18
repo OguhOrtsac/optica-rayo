@@ -13,6 +13,7 @@ import {
 } from '@/lib/services'
 import { getProfileData } from '@/app/auth/actions'
 import { isAdminRole } from '@/lib/roles'
+import { ensureFixedPaymentNotifications } from '@/lib/expenses'
 import { Database } from '@/types/database.types'
 import ReminderTray from '@/components/reminder-tray'
 import RecentActivity from '@/components/recent-activity'
@@ -22,15 +23,18 @@ import {
   ArrowUp,
   TrendingDown,
   ChevronRight,
+  ChevronDown,
   MessageSquare,
   BellRing,
   CalendarDays,
   Cake,
-  Glasses,
   Package,
   Users,
   ShieldCheck,
-  LayoutGrid
+  Settings,
+  Landmark,
+  Receipt,
+  PiggyBank
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -54,6 +58,11 @@ export default function AdminDashboard() {
   const [remindersError, setRemindersError] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  // Secciones minimizables del panel: Recordatorios, Solicitudes y
+  // Cumpleaños nacen minimizadas (orden del dueño); se expanden con clic.
+  const [openSections, setOpenSections] = useState({ reminders: false, requests: false, birthdays: false })
+  const toggleSection = (key: keyof typeof openSections) =>
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
 
   const loadAllData = async () => {
     // Los recordatorios vencidos alimentan el contador en rojo de la
@@ -95,7 +104,16 @@ export default function AdminDashboard() {
   // simplemente no aparece.
   useEffect(() => {
     getProfileData()
-      .then(profile => setIsAdmin(isAdminRole(profile.role)))
+      .then(profile => {
+        const admin = isAdminRole(profile.role)
+        setIsAdmin(admin)
+        // Aviso de pagos fijos por vencer/vencidos en la campanita: se
+        // genera una sola vez al montar el panel (solo rol admin) y sin
+        // bloquear el render; cualquier fallo es silencioso.
+        if (admin) {
+          ensureFixedPaymentNotifications().catch(() => {})
+        }
+      })
       .catch(() => setIsAdmin(false))
   }, [])
 
@@ -221,24 +239,17 @@ export default function AdminDashboard() {
     return result.sort((a, b) => a.daysUntil - b.daysUntil)
   }, [customers])
 
+  // «Configuración»: solo lo que se puede configurar (orden del dueño).
   const quickAccess = [
-    { label: 'Catálogo', href: '/catalog', icon: Glasses, chip: 'bg-[#dee8ff] text-[#00357f]' },
     { label: 'Productos', href: '/dashboard/admin/products', icon: Package, chip: 'bg-[#e6f5fb] text-[#0899c9]' },
     ...(isAdmin
       ? [{ label: 'Usuarios', href: '/dashboard/admin/users', icon: ShieldCheck, chip: 'bg-[#fef3c7] text-[#92400e]' }]
       : []),
-    { label: 'Agenda', href: '/dashboard/appointments', icon: CalendarDays, chip: 'bg-[#e2f9ee] text-[#00422b]' },
-    { label: 'Pagos', href: '/payments', icon: Wallet, chip: 'bg-[#ffdad6] text-[#ba1a1a]' },
     { label: 'Clientes', href: '/customers', icon: Users, chip: 'bg-[#dee8ff] text-[#00357f]' }
   ]
 
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
-
-      {/* Header Section */}
-      <div className="border-b border-[#e7eeff] pb-5">
-        <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Resumen General</h1>
-      </div>
 
       {feedbackMsg && (
         <div className={`p-4 rounded-xl text-xs font-bold border ${
@@ -258,82 +269,113 @@ export default function AdminDashboard() {
       ) : (
         <div className="space-y-6">
 
-          {/* Tarjetas compactas: en móvil «Por cobrar» ocupa las 2 columnas; 3 en fila en escritorio */}
-          <section className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-
-            {/* Ventas hoy — azul */}
-            <div className="anim-stagger-item bg-[#dee8ff] border border-[#00357f]/10 rounded-2xl p-4 shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-[#00357f] text-white flex items-center justify-center shrink-0">
-                  <TrendingUp className="w-4 h-4" />
-                </span>
-                <p className="text-xs font-bold text-[#434653]">Ventas hoy</p>
-              </div>
-              <p className="text-2xl font-black tabular-nums text-[#111c2d] mt-2">{formatPrice(todayStats.total)}</p>
-              <p className="mt-1 text-[10px] font-semibold text-[#434653] flex items-center gap-1">
-                {todayStats.diffPct >= 0 ? (
-                  <><ArrowUp className="w-3 h-3 text-[#00422b]" /> +{todayStats.diffPct}% vs ayer</>
-                ) : (
-                  <><TrendingDown className="w-3 h-3 text-[#ba1a1a]" /> {todayStats.diffPct}% vs ayer</>
-                )}
-              </p>
+          {/* FINANZAS: una sola tarjeta contenedora con mini tarjetas.
+              Primera fila: Ventas hoy · Ventas del mes · Por cobrar.
+              Segunda fila: Pagos · Utilidad del mes. */}
+          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
+                <Landmark className="w-5 h-5" />
+              </span>
+              <h2 className="text-[17px] font-semibold text-[#111c2d]">Finanzas</h2>
             </div>
 
-            {/* Ventas mes — celeste */}
-            <div className="anim-stagger-item bg-[#e6f5fb] border border-[#0899c9]/15 rounded-2xl p-4 shadow-sm" style={{ '--enter-delay': '60ms' } as React.CSSProperties}>
-              <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-[#0899c9] text-white flex items-center justify-center shrink-0">
-                  <CalendarDays className="w-4 h-4" />
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              {/* Ventas hoy — abre el detalle del día */}
+              <Link
+                href="/dashboard/admin/finanzas/hoy"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98]"
+              >
+                <span className="w-7 h-7 rounded-lg bg-[#00357f] text-white flex items-center justify-center shrink-0">
+                  <TrendingUp className="w-3.5 h-3.5" />
                 </span>
-                <p className="text-xs font-bold text-[#434653]">Ventas mes</p>
-              </div>
-              <p className="text-2xl font-black tabular-nums text-[#111c2d] mt-2">{formatPrice(monthlyStats.total)}</p>
-              <p className="mt-1 text-[10px] font-semibold text-[#434653] flex items-center gap-1">
-                {monthlyStats.diffPct >= 0 ? (
-                  <><ArrowUp className="w-3 h-3 text-[#00422b]" /> +{monthlyStats.diffPct}% vs mes anterior</>
-                ) : (
-                  <><TrendingDown className="w-3 h-3 text-[#ba1a1a]" /> {monthlyStats.diffPct}% vs mes anterior</>
-                )}
-              </p>
+                <p className="text-[11px] font-bold text-[#434653] mt-2">Ventas hoy</p>
+                <p className="text-lg sm:text-2xl font-black tabular-nums text-[#111c2d] mt-0.5">{formatPrice(todayStats.total)}</p>
+                <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653] flex items-center gap-1">
+                  {todayStats.diffPct >= 0 ? (
+                    <><ArrowUp className="w-3 h-3 text-[#00422b] shrink-0" /> +{todayStats.diffPct}% vs ayer</>
+                  ) : (
+                    <><TrendingDown className="w-3 h-3 text-[#ba1a1a] shrink-0" /> {todayStats.diffPct}% vs ayer</>
+                  )}
+                </p>
+              </Link>
+
+              {/* Ventas del mes — abre la gráfica y la tabla del mes */}
+              <Link
+                href="/dashboard/admin/finanzas/mes"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98]"
+              >
+                <span className="w-7 h-7 rounded-lg bg-[#0899c9] text-white flex items-center justify-center shrink-0">
+                  <CalendarDays className="w-3.5 h-3.5" />
+                </span>
+                <p className="text-[11px] font-bold text-[#434653] mt-2">Ventas del mes</p>
+                <p className="text-lg sm:text-2xl font-black tabular-nums text-[#111c2d] mt-0.5">{formatPrice(monthlyStats.total)}</p>
+                <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653] flex items-center gap-1">
+                  {monthlyStats.diffPct >= 0 ? (
+                    <><ArrowUp className="w-3 h-3 text-[#00422b] shrink-0" /> +{monthlyStats.diffPct}% vs mes anterior</>
+                  ) : (
+                    <><TrendingDown className="w-3 h-3 text-[#ba1a1a] shrink-0" /> {monthlyStats.diffPct}% vs mes anterior</>
+                  )}
+                </p>
+              </Link>
+
+              {/* Por cobrar — enlace a Pagos; semáforo: rojo suave si hay adeudo, verde si no */}
+              <Link
+                href="/payments"
+                className={`rounded-2xl p-3 transition-all active:scale-[0.98] ${pendingTotal > 0 ? 'bg-[#ffdad6]/60 hover:bg-[#ffdad6]/80' : 'bg-[#e2f9ee] hover:bg-[#d3f5e3]'}`}
+              >
+                <span className={`w-7 h-7 rounded-lg text-white flex items-center justify-center shrink-0 ${pendingTotal > 0 ? 'bg-[#ba1a1a]' : 'bg-[#00422b]'}`}>
+                  <Wallet className="w-3.5 h-3.5" />
+                </span>
+                <p className="text-[11px] font-bold text-[#434653] mt-2">Por cobrar</p>
+                <p className={`text-lg sm:text-2xl font-black tabular-nums mt-0.5 ${pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>{formatPrice(pendingTotal)}</p>
+                <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653]">
+                  {pendingTotal > 0 ? `${pendingCount} venta${pendingCount !== 1 ? 's' : ''} con saldo pendiente` : 'Todo cobrado, sin adeudos'}
+                </p>
+              </Link>
             </div>
 
-            {/* Por cobrar — enlace a Pagos; rojo suave si hay adeudo, verde si no */}
-            <Link
-              href="/payments"
-              className={`anim-stagger-item col-span-2 lg:col-span-1 block border rounded-2xl p-4 shadow-sm transition-all active:scale-[0.98] ${pendingTotal > 0 ? 'bg-[#ffdad6]/70 border-[#ba1a1a]/15' : 'bg-[#e2f9ee] border-[#00422b]/10'}`}
-              style={{ '--enter-delay': '120ms' } as React.CSSProperties}
-            >
-              <div className="flex items-center gap-2">
-                <span className={`w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0 ${pendingTotal > 0 ? 'bg-[#ba1a1a]' : 'bg-emerald-600'}`}>
-                  <Wallet className="w-4 h-4" />
+            {/* Segunda fila: Pagos y Utilidad del mes */}
+            <div className="grid grid-cols-2 gap-2 sm:gap-3 mt-2 sm:mt-3">
+              <Link
+                href="/dashboard/admin/finanzas/pagos"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px]"
+              >
+                <span className="w-7 h-7 rounded-lg bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
+                  <Receipt className="w-3.5 h-3.5" />
                 </span>
-                <p className="text-xs font-bold text-[#434653]">Por cobrar</p>
+                <span className="text-xs font-bold text-[#111c2d]">Pagos</span>
                 <ChevronRight className="w-3.5 h-3.5 ml-auto text-[#737784] shrink-0" />
-              </div>
-              <p className={`text-2xl font-black tabular-nums mt-2 ${pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>{formatPrice(pendingTotal)}</p>
-              <p className="mt-1 text-[10px] font-semibold text-[#434653]">
-                {pendingTotal > 0 ? `${pendingCount} venta${pendingCount !== 1 ? 's' : ''} con saldo pendiente` : 'Todo cobrado, sin adeudos'}
-              </p>
-            </Link>
-
+              </Link>
+              <Link
+                href="/dashboard/admin/finanzas/utilidad"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px]"
+              >
+                <span className="w-7 h-7 rounded-lg bg-[#e2f9ee] text-[#00422b] flex items-center justify-center shrink-0">
+                  <PiggyBank className="w-3.5 h-3.5" />
+                </span>
+                <span className="text-xs font-bold text-[#111c2d]">Utilidad del mes</span>
+                <ChevronRight className="w-3.5 h-3.5 ml-auto text-[#737784] shrink-0" />
+              </Link>
+            </div>
           </section>
 
-          {/* Accesos rápidos en mosaico */}
-          <section className="anim-stagger-item" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
+          {/* Configuración: solo Productos, Usuarios y Clientes */}
+          <section className="anim-stagger-item" style={{ '--enter-delay': '60ms' } as React.CSSProperties}>
             <div className="flex items-center gap-3 mb-3">
               <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
-                <LayoutGrid className="w-5 h-5" />
+                <Settings className="w-5 h-5" />
               </span>
-              <h3 className="text-base font-semibold text-[#111c2d]">Accesos rápidos</h3>
+              <h3 className="text-base font-semibold text-[#111c2d]">Configuración</h3>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               {quickAccess.map(item => {
                 const Icon = item.icon
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="bg-white border border-[#cbd5e1] rounded-2xl p-3 shadow-sm flex flex-col items-center justify-center gap-2 min-h-[76px] transition-all active:scale-95"
+                    className="bg-white rounded-[20px] or-shadow-card p-3 flex flex-col items-center justify-center gap-2 min-h-[76px] transition-all active:scale-95"
                   >
                     <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.chip}`}>
                       <Icon className="w-5 h-5" />
@@ -347,14 +389,19 @@ export default function AdminDashboard() {
 
           {/* PRIORIDAD N.º 1 DEL DUEÑO: recordatorios de revisión — vender hoy
               y avisar a los 6 meses «ya es tiempo de tu nuevo examen».
-              Va inmediatamente después de los accesos rápidos, con el
-              contador de vencidos en rojo sobre la cabecera. */}
-          <section className="anim-stagger-item space-y-3" style={{ '--enter-delay': '240ms' } as React.CSSProperties}>
-            <div className="flex items-center gap-3 px-1">
+              Va inmediatamente después de Configuración, con el contador de
+              vencidos en rojo sobre la cabecera; la sección nace minimizada. */}
+          <section className="anim-stagger-item space-y-3" style={{ '--enter-delay': '120ms' } as React.CSSProperties}>
+            <button
+              type="button"
+              onClick={() => toggleSection('reminders')}
+              aria-expanded={openSections.reminders}
+              className="w-full flex items-center gap-3 px-1 cursor-pointer text-left"
+            >
               <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${overdueCount > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#dee8ff] text-[#00357f]'}`}>
                 <BellRing className="w-5 h-5" />
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-base font-semibold text-[#111c2d]">Recordatorios de revisión</h3>
                 <p className={`text-xs font-semibold ${remindersError ? 'text-[#92400e]' : overdueCount > 0 ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
                   {remindersError
@@ -367,24 +414,32 @@ export default function AdminDashboard() {
                 </p>
               </div>
               {!remindersError && overdueCount > 0 && (
-                <span className="ml-auto shrink-0 bg-[#ba1a1a] text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                <span className="shrink-0 bg-[#ba1a1a] text-white text-xs font-bold px-2.5 py-1 rounded-full">
                   {overdueCount} vencidos
                 </span>
               )}
               {!remindersError && overdueCount === 0 && dueReminders.length > 0 && (
-                <span className="ml-auto shrink-0 bg-[#dee8ff] text-[#00357f] text-xs font-bold px-2.5 py-1 rounded-full">
+                <span className="shrink-0 bg-[#dee8ff] text-[#00357f] text-xs font-bold px-2.5 py-1 rounded-full">
                   {dueReminders.length}
                 </span>
               )}
-            </div>
-            <div className={overdueCount > 0 ? 'rounded-2xl ring-1 ring-[#ba1a1a]/25' : undefined}>
-              <ReminderTray />
-            </div>
+              <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.reminders ? 'rotate-180' : ''}`} />
+            </button>
+            {openSections.reminders && (
+              <div className={overdueCount > 0 ? 'rounded-2xl ring-1 ring-[#ba1a1a]/25' : undefined}>
+                <ReminderTray />
+              </div>
+            )}
           </section>
 
-          {/* Solicitudes de lentes armados — compacta, filas en vez de tarjetas */}
-          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
-            <div className="flex items-center gap-3 mb-2">
+          {/* Solicitudes de lentes armados — colapsable, nace minimizada */}
+          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
+            <button
+              type="button"
+              onClick={() => toggleSection('requests')}
+              aria-expanded={openSections.requests}
+              className="w-full flex items-center gap-3 cursor-pointer text-left"
+            >
               <span className="w-10 h-10 rounded-xl bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
                 <MessageSquare className="w-5 h-5" />
               </span>
@@ -394,9 +449,10 @@ export default function AdminDashboard() {
                   {lensRequests.filter(r => r.status === 'pending').length} pendientes
                 </span>
               )}
-            </div>
+              <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.requests ? 'rotate-180' : ''} ${lensRequests.filter(r => r.status === 'pending').length > 0 ? '' : 'ml-auto'}`} />
+            </button>
 
-            {lensRequests.length === 0 ? (
+            {openSections.requests && (lensRequests.length === 0 ? (
               <p className="text-xs text-[#737784] font-semibold py-6 text-center">Sin solicitudes de cotización.</p>
             ) : (
               <ul className="divide-y divide-[#cbd5e1]/30">
@@ -463,12 +519,17 @@ export default function AdminDashboard() {
                   )
                 })}
               </ul>
-            )}
+            ))}
           </div>
 
           {/* Cumpleaños próximos (7 días): felicitar también es vender */}
-          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '360ms' } as React.CSSProperties}>
-            <div className="flex items-center gap-3 mb-2">
+          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '240ms' } as React.CSSProperties}>
+            <button
+              type="button"
+              onClick={() => toggleSection('birthdays')}
+              aria-expanded={openSections.birthdays}
+              className="w-full flex items-center gap-3 cursor-pointer text-left"
+            >
               <span className="w-10 h-10 rounded-xl bg-[#e6f5fb] text-[#0899c9] flex items-center justify-center shrink-0">
                 <Cake className="w-5 h-5" />
               </span>
@@ -478,9 +539,10 @@ export default function AdminDashboard() {
                   {upcomingBirthdays.length}
                 </span>
               )}
-            </div>
+              <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.birthdays ? 'rotate-180' : ''} ${upcomingBirthdays.length > 0 ? '' : 'ml-auto'}`} />
+            </button>
 
-            {upcomingBirthdays.length === 0 ? (
+            {openSections.birthdays && (upcomingBirthdays.length === 0 ? (
               <p className="text-xs text-[#737784] font-semibold py-3 text-center">Sin cumpleaños esta semana.</p>
             ) : (
               <ul className="divide-y divide-[#cbd5e1]/30">
@@ -518,10 +580,10 @@ export default function AdminDashboard() {
                   )
                 })}
               </ul>
-            )}
+            ))}
           </div>
 
-          {/* Actividad reciente — al final */}
+          {/* Actividad reciente — al final, nace expandida (colapsable en el propio componente) */}
           <RecentActivity sales={sales} />
 
         </div>

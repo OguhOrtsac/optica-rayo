@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { CalendarDays } from 'lucide-react'
 
 import { dashboardHrefForRole, normalizeRole } from '@/lib/roles'
 
@@ -40,13 +41,14 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
       ]
     }
 
-    // Staff view (owner, seller, super_admin/dev)
+    // Staff view (owner, seller, super_admin/dev) — orden del dueño
+    // 2026-11-18: sale «Clientes» y entra «Agenda».
     const homeHref = dashboardHrefForRole(normalizedRole)
     return [
       { label: 'Inicio', href: homeHref, icon: 'home' },
-      { label: 'Registrar Pago', href: '/payments', icon: 'payment' },
-      { label: 'Clientes', href: '/customers', icon: 'patients' },
       { label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' },
+      { label: 'Registrar Pago', href: '/payments', icon: 'payment' },
+      { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' },
       { label: 'Perfil', href: '/profile', icon: 'profile' }
     ]
   }
@@ -86,6 +88,8 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
           </svg>
         )
+      case 'agenda':
+        return <CalendarDays className="w-5.5 h-5.5" strokeWidth={2} />
       case 'profile':
         return (
           <div className="w-6 h-6 rounded-full bg-[#dee8ff] border border-[#c3c6d5] flex items-center justify-center shrink-0">
