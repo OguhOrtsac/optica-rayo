@@ -38,6 +38,9 @@ export default function QuickExamPage() {
   // selected customer with the trash must NOT reopen the results list;
   // «Cambiar» (or typing/tapping the field again) re-arms the auto-open.
   const suppressAutoOpenRef = useRef(false)
+  // The results list must NOT be open on page load either: it only
+  // auto-opens after the user taps or types in the field.
+  const pickerInteractedRef = useRef(false)
 
   // Customer search (debounced lightly, same as the Agenda picker).
   useEffect(() => {
@@ -48,7 +51,7 @@ export default function QuickExamPage() {
         const results = await searchCustomers(customerQuery)
         if (!cancelled) {
           setCustomerResults(results)
-          if (!suppressAutoOpenRef.current) setResultsOpen(true)
+          if (!suppressAutoOpenRef.current && pickerInteractedRef.current) setResultsOpen(true)
         }
       } catch {
         if (!cancelled) setCustomerResults([])
@@ -244,8 +247,8 @@ export default function QuickExamPage() {
                   <input
                     type="text"
                     value={customerQuery}
-                    onChange={e => { suppressAutoOpenRef.current = false; setCustomerQuery(e.target.value) }}
-                    onFocus={() => { suppressAutoOpenRef.current = false; setResultsOpen(true) }}
+                    onChange={e => { suppressAutoOpenRef.current = false; pickerInteractedRef.current = true; setCustomerQuery(e.target.value) }}
+                    onFocus={() => { suppressAutoOpenRef.current = false; pickerInteractedRef.current = true; setResultsOpen(true) }}
                     placeholder="Busca por nombre…"
                     className="w-full border border-[#cbd5e1] rounded-xl pl-10 pr-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#00357f]/40 focus:border-[#00357f] bg-white"
                   />
