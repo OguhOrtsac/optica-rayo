@@ -78,6 +78,9 @@ export default function StaffAppointmentsPage() {
   // taps the search field again. «Cambiar» clears this flag instead:
   // changing the customer DOES deploy the list.
   const suppressAutoOpenRef = useRef(false)
+  // The results list must NOT be open on page load (it covered the form):
+  // it only auto-opens after the user taps or types in the field.
+  const pickerInteractedRef = useRef(false)
   // Quick-add customer (same mini form and same creation path as the POS)
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [quickName, setQuickName] = useState('')
@@ -134,7 +137,7 @@ export default function StaffAppointmentsPage() {
           // Results are always cached, but the list only OPENS on its
           // own while the user is actively picking (see the trash /
           // «Cambiar» handlers and suppressAutoOpenRef).
-          if (!suppressAutoOpenRef.current) setResultsOpen(true)
+          if (!suppressAutoOpenRef.current && pickerInteractedRef.current) setResultsOpen(true)
         }
       } catch {
         if (!cancelled) setCustomerResults([])
@@ -554,10 +557,12 @@ export default function StaffAppointmentsPage() {
                     // Typing again re-arms the auto-open (it stays off
                     // only right after the trash button cleared a pick).
                     suppressAutoOpenRef.current = false
+                    pickerInteractedRef.current = true
                     setCustomerQuery(e.target.value)
                   }}
                   onFocus={() => {
                     suppressAutoOpenRef.current = false
+                    pickerInteractedRef.current = true
                     setResultsOpen(true)
                   }}
                   placeholder="Busca por nombre…"
