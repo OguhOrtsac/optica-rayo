@@ -51,7 +51,17 @@
 }
 
 body {
-  background: var(--background);
+  /* Fondo con presencia de marca (2026-11-17, a pedido del dueño: el color
+     plano se veía «igual de plano»): degradado fijo que nace en un azul de
+     marca más presente arriba y se desvanece al fondo base, con un resplandor
+     celeste suave en la esquina superior. Las tarjetas blancas flotan encima
+     y la legibilidad no cambia. */
+  background-color: var(--background);
+  background-image:
+    radial-gradient(640px 320px at 88% -60px, rgba(8, 153, 201, 0.16), rgba(8, 153, 201, 0) 70%),
+    linear-gradient(180deg, #d5e4fb 0%, #e4edfc 220px, var(--background) 560px);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   color: var(--foreground);
   font-family: var(--font-jakarta-sans), var(--font-geist-sans), Arial, Helvetica, sans-serif;
   /* Ajuste fino tipográfico: mismo tipo de letra, mejor render. */
