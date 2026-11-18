@@ -481,7 +481,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
     : ''
 
   // Acciones rápidas de la cabecera: botones táctiles ≥44px, icono + texto.
-  const quickActionClass = 'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl text-xs font-bold transition-all active:scale-[0.98] cursor-pointer shadow-sm'
+  const quickActionClass = 'inline-flex items-center justify-center gap-1.5 min-h-[40px] px-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98] cursor-pointer shadow-sm'
 
   // Pestañas de la ficha: etiquetas de UNA palabra, con sus insignias.
   const fichaTabs = [
@@ -550,40 +550,46 @@ export default function CustomerDetailPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Acciones rápidas */}
-          <div className="flex flex-wrap gap-2 border-t border-[#f0f3ff] pt-4">
-            {phoneWithCode && (
-              <a
-                href={`tel:+${phoneWithCode}`}
-                className={`${quickActionClass} bg-white border border-[#cbd5e1] text-[#00357f] hover:bg-[#dee8ff]/40`}
+          {/* Acciones rápidas. Dictado del dueño (2026-11-18): Llamar,
+              WhatsApp y Agendar examen van SIEMPRE en el mismo renglón,
+              compactos, y Agendar examen en azul bajito (antes era azul
+              sólido y los botones se envolvían a dos renglones). Cobrar,
+              cuando aparece, ocupa su propio renglón completo. */}
+          <div className="flex flex-col gap-2 border-t border-[#f0f3ff] pt-4">
+            <div className="flex gap-2">
+              {phoneWithCode && (
+                <a
+                  href={`tel:+${phoneWithCode}`}
+                  className={`${quickActionClass} flex-1 min-w-0 bg-white border border-[#cbd5e1] text-[#00357f] hover:bg-[#dee8ff]/40`}
+                >
+                  <Phone className="w-4 h-4 shrink-0" />
+                  Llamar
+                </a>
+              )}
+              {phoneWithCode && (
+                <a
+                  href={`https://wa.me/${phoneWithCode}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${quickActionClass} flex-1 min-w-0 bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113]`}
+                >
+                  <MessageCircle className="w-4 h-4 shrink-0" />
+                  WhatsApp
+                </a>
+              )}
+              <Link
+                href="/agendar"
+                className={`${quickActionClass} flex-1 min-w-0 bg-[#dee8ff] hover:bg-[#c9dbff] text-[#00357f]`}
               >
-                <Phone className="w-4 h-4" />
-                Llamar
-              </a>
-            )}
-            {phoneWithCode && (
-              <a
-                href={`https://wa.me/${phoneWithCode}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${quickActionClass} bg-[#49da9f] hover:bg-[#3bc48b] text-[#002113]`}
-              >
-                <MessageCircle className="w-4 h-4" />
-                WhatsApp
-              </a>
-            )}
-            <Link
-              href="/agendar"
-              className={`${quickActionClass} bg-[#00357f] hover:bg-[#004aad] text-white`}
-            >
-              <CalendarPlus className="w-4 h-4" />
-              Agendar examen
-            </Link>
+                <CalendarPlus className="w-4 h-4 shrink-0" />
+                Agendar examen
+              </Link>
+            </div>
             {billing.pendingTotal > 0 && (
               <button
                 type="button"
                 onClick={() => setActiveTab('billing')}
-                className={`${quickActionClass} bg-[#ba1a1a] hover:bg-[#a31616] text-white`}
+                className={`${quickActionClass} w-full bg-[#ba1a1a] hover:bg-[#a31616] text-white`}
               >
                 <Wallet className="w-4 h-4" />
                 Cobrar

@@ -7,12 +7,15 @@ import {
   getReminders,
   searchCustomers,
   getCoupons,
-  getMemberDiscountPercent
+  getMemberDiscountPercent,
+  getReminderConfig
 } from '@/lib/services'
 import { registerCustomerAction } from '@/app/customers/actions'
 import PageHeader from '@/components/page-header'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDetails } from '@/lib/product-data'
+import { DEFAULT_REMINDER_MONTHS, toWhatsAppNumber } from '@/lib/reminder-config'
+import { buildTicketMessage, orderCodeFromSaleId, type TicketLine } from '@/lib/ticket'
 import { Database } from '@/types/database.types'
 import {
   Search,
@@ -23,7 +26,8 @@ import {
   ShoppingCart,
   UserPlus,
   X,
-  Pencil
+  Pencil,
+  MessageSquare
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -66,6 +70,31 @@ interface CustomerProfile {
   } | null
 }
 
+// Counter discount dictated by the owner (2026-11-18): at the counter
+// the seller can discount by percentage OR by naming the final price
+// the customer will pay. It is mutually exclusive with a coupon —
+// «aplicar cupón O aplicar descuento», never both stacked.
+type ManualDiscount =
+  | { mode: 'percent'; percent: number; reason: string }
+  | { mode: 'finalPrice'; finalPrice: number; reason: string }
+
+// Snapshot of a just-registered sale, captured BEFORE the POS state is
+// cleared, so the success card can offer the WhatsApp ticket with
+// exactly what was charged on screen.
+interface LastSaleTicket {
+  saleId: string
+  createdAt: string
+  buyerName: string
+  buyerPhone: string | null
+  lines: TicketLine[]
+  subtotal: number
+  discount: { amount: number; detail?: string } | null
+  total: number
+  paid: number
+  pendingBalance: number
+  reminderMonths: number
+}
+
 export default function SellerDashboard() {
   const [products, setProducts] = useState<Product[]>([])
   const [reminders, setReminders] = useState<(Reminder & { customer_name?: string })[]>([])
@@ -98,6 +127,15 @@ export default function SellerDashboard() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [couponCode, setCouponCode] = useState('')
   const [activeCoupon, setActiveCoupon] = useState<Coupon | null>(null)
+  // Manual counter discount (see ManualDiscount): the form drafts live
+  // separately from the applied discount, like the coupon code does.
+  const [manualMode, setManualMode] = useState<'percent' | 'finalPrice'>('percent')
+  const [manualPercentInput, setManualPercentInput] = useState('')
+  const [manualFinalPriceInput, setManualFinalPriceInput] = useState('')
+  const [manualReason, setManualReason] = useState('')
+  const [activeManualDiscount, setActiveManualDiscount] = useState<ManualDiscount | null>(null)
+  // Success card with the WhatsApp ticket of the last registered sale.
+  const [lastSale, setLastSale] = useState<LastSaleTicket | null>(null)
   const [paidAmountInput, setPaidAmountInput] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer'>('cash')
   const [saleNotes, setSaleNotes] = useState('')
@@ -315,22 +353,86 @@ export default function SellerDashboard() {
   // Real-time mathematics (products + their complements)
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + ((unitPriceOf(item.product) + complementsUnitTotal(item)) * item.quantity), 0), [cart, isClientBuyer, memberDiscount])
   
-  // Validate and apply coupon
+  // Validate and apply coupon. A coupon and a manual discount never
+  // stack (owner's rule): applying the coupon removes the manual one.
   const handleApplyCoupon = (e: React.FormEvent) => {
     e.preventDefault()
     if (!couponCode.trim()) return
 
     const matched = coupons.find(c => c.code.toUpperCase() === couponCode.trim().toUpperCase())
     if (matched && matched.is_active && new Date(matched.valid_until) > new Date()) {
+      const replacedManual = !!activeManualDiscount
       setActiveCoupon(matched)
-      showFeedback('success', `Cupón "${matched.code}" aplicado con ${matched.discount_percent}% de descuento.`)
+      if (replacedManual) setActiveManualDiscount(null)
+      showFeedback('success', `Cupón "${matched.code}" aplicado con ${matched.discount_percent}% de descuento.${replacedManual ? ' Se quitó el descuento manual: los descuentos no se combinan.' : ''}`)
     } else {
       setActiveCoupon(null)
       showFeedback('error', 'El cupón no es válido o ha expirado.')
     }
   }
 
-  const discount = useMemo(() => activeCoupon ? subtotal * (activeCoupon.discount_percent / 100) : 0, [activeCoupon, subtotal])
+  // Apply the manual counter discount (percentage or final price).
+  // Applying it removes any active coupon — they never stack.
+  const handleApplyManualDiscount = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (subtotal <= 0) return
+
+    let next: ManualDiscount
+    if (manualMode === 'percent') {
+      const percent = parseFloat(manualPercentInput.trim().replace(',', '.'))
+      if (!Number.isFinite(percent) || percent < 1 || percent > 100) {
+        showFeedback('error', 'El porcentaje de descuento debe estar entre 1 y 100.')
+        return
+      }
+      next = { mode: 'percent', percent, reason: manualReason.trim() }
+    } else {
+      const finalPrice = parseFloat(manualFinalPriceInput.trim().replace(',', '.'))
+      if (!Number.isFinite(finalPrice) || finalPrice < 0) {
+        showFeedback('error', 'Escribe el precio final que pagará el cliente.')
+        return
+      }
+      if (finalPrice >= subtotal) {
+        showFeedback('error', `El precio final debe ser menor que el subtotal (${formatPrice(subtotal)}).`)
+        return
+      }
+      next = { mode: 'finalPrice', finalPrice, reason: manualReason.trim() }
+    }
+
+    const replacedCoupon = !!activeCoupon
+    setActiveManualDiscount(next)
+    if (replacedCoupon) {
+      setActiveCoupon(null)
+      setCouponCode('')
+    }
+    showFeedback('success', `Descuento manual aplicado.${replacedCoupon ? ' Se quitó el cupón: los descuentos no se combinan.' : ''}`)
+  }
+
+  // «Quitar» next to the discount line: clears whichever discount
+  // origin is active (coupon or manual).
+  const handleRemoveDiscount = () => {
+    setActiveCoupon(null)
+    setCouponCode('')
+    setActiveManualDiscount(null)
+    showFeedback('success', 'Descuento retirado.')
+  }
+
+  // The discount comes from the single active origin: coupon OR manual.
+  const discount = useMemo(() => {
+    if (activeCoupon) return subtotal * (activeCoupon.discount_percent / 100)
+    if (!activeManualDiscount) return 0
+    return activeManualDiscount.mode === 'percent'
+      ? subtotal * (activeManualDiscount.percent / 100)
+      : Math.max(0, subtotal - activeManualDiscount.finalPrice)
+  }, [activeCoupon, activeManualDiscount, subtotal])
+
+  // Full label of the active discount for the summary line.
+  const discountLabel = activeCoupon
+    ? `Descuento cupón ${activeCoupon.code} (${activeCoupon.discount_percent}%)`
+    : activeManualDiscount?.mode === 'percent'
+      ? `Descuento manual (${activeManualDiscount.percent}%)`
+      : activeManualDiscount
+        ? 'Descuento por precio final'
+        : 'Descuento'
   const taxableBase = useMemo(() => subtotal - discount, [subtotal, discount])
   const netSubtotal = useMemo(() => taxableBase / 1.16, [taxableBase])
   const iva = useMemo(() => taxableBase - netSubtotal, [taxableBase, netSubtotal])
@@ -516,25 +618,94 @@ export default function SellerDashboard() {
         complements: item.complements.map(c => ({ name: c.name, price: c.price }))
       }))
 
+      // Discount detail line persisted in the sale notes (the owner's
+      // dictation: the discount must travel with the sale so the ticket
+      // and the history can explain it). Built from the LIVE screen
+      // values, so it always matches the stored discount amount.
+      const discountReason = activeManualDiscount?.reason || ''
+      const discountNoteLine = discount > 0
+        ? activeCoupon
+          ? `Descuento: cupón ${activeCoupon.code} (${activeCoupon.discount_percent}%) −${formatPrice(discount)}`
+          : activeManualDiscount?.mode === 'percent'
+            ? `Descuento: manual ${activeManualDiscount.percent}% −${formatPrice(discount)}${discountReason ? ` · Motivo: ${discountReason}` : ''}`
+            : activeManualDiscount
+              ? `Descuento: precio final de ${formatPrice(subtotal)} a ${formatPrice(activeManualDiscount.finalPrice)} (−${formatPrice(discount)})${discountReason ? ` · Motivo: ${discountReason}` : ''}`
+              : ''
+        : ''
+
+      // Short explanation of the discount for the WhatsApp ticket.
+      const ticketDiscountDetail = discount > 0
+        ? [
+            activeCoupon
+              ? `cupón ${activeCoupon.code}`
+              : activeManualDiscount?.mode === 'percent'
+                ? `${activeManualDiscount.percent}%`
+                : activeManualDiscount
+                  ? 'precio final'
+                  : '',
+            discountReason
+          ].filter(Boolean).join(' · ') || undefined
+        : undefined
+
+      // Ticket snapshot BEFORE registering/clearing: the lines with the
+      // prices actually charged on screen (client price when it applied)
+      // and the money figures of this exact sale.
+      const ticketLines: TicketLine[] = cart.map(item => ({
+        name: item.product.name,
+        quantity: item.quantity,
+        lineTotal: unitPriceOf(item.product) * item.quantity,
+        complements: item.complements.map(c => ({
+          name: c.name,
+          lineTotal: c.price * item.quantity
+        }))
+      }))
+      const ticketPaid = effectivePaidAmount || total
+
       // Register sale with everything captured on screen: the registered
       // customer (when one was selected), the applied coupon and the note.
-      await createSale(nameToRegister, items, effectivePaidAmount || total, paymentMethod, {
+      const saleResult = await createSale(nameToRegister, items, ticketPaid, paymentMethod, {
         customerId: buyer?.id || null,
         couponId: activeCoupon?.id || null,
         discountApplied: discount,
-        notes: saleNotes.trim() || undefined,
+        notes: saleNotes.trim()
+          ? [saleNotes.trim(), discountNoteLine].filter(Boolean).join('\n')
+          : discountNoteLine || undefined,
         // The buyer was resolved from the typed name at checkout (exact
         // match or minimal profile just created): the screen charged
         // visitor prices, so the recorded sale keeps those prices.
         chargeAsWalkIn: !selectedCustomer && !!buyer,
       })
 
+      // Success card with the WhatsApp ticket: it survives the state
+      // cleanup below. The reminder period for the closing line comes
+      // from the real configuration (fallback: the default 6 months).
+      const createdSaleId = (saleResult as any)?.sale?.id as string | undefined
+      if (createdSaleId) {
+        let reminderMonths = DEFAULT_REMINDER_MONTHS
+        try {
+          reminderMonths = (await getReminderConfig()).months
+        } catch { /* keep the default period */ }
+        setLastSale({
+          saleId: createdSaleId,
+          createdAt: new Date().toISOString(),
+          buyerName: nameToRegister,
+          buyerPhone: buyer?.customer_profiles?.phone || null,
+          lines: ticketLines,
+          subtotal,
+          discount: discount > 0 ? { amount: discount, detail: ticketDiscountDetail } : null,
+          total,
+          paid: ticketPaid,
+          pendingBalance: Math.max(0, total - ticketPaid),
+          reminderMonths
+        })
+      }
+
       showFeedback('success', '¡Venta registrada exitosamente! El inventario se actualizó y se programó la cita de revisión.')
       if (profileCreationFailed) {
         showFeedback('error', 'La venta se registró con el nombre escrito, pero no se pudo crear el perfil del cliente. Agrégalo después en Clientes.')
       }
 
-      // Clear POS state
+      // Clear POS state (coupon AND manual discount, like the rest)
       setCart([])
       setCustomerSearch('')
       setSelectedCustomer(null)
@@ -543,8 +714,11 @@ export default function SellerDashboard() {
       setPaidAmountInput('')
       setCouponCode('')
       setActiveCoupon(null)
-      setSaleNotes('')
-      setActiveCoupon(null)
+      setActiveManualDiscount(null)
+      setManualMode('percent')
+      setManualPercentInput('')
+      setManualFinalPriceInput('')
+      setManualReason('')
       setSaleNotes('')
       setActiveTab('products')
       
@@ -568,6 +742,24 @@ export default function SellerDashboard() {
       currency: 'MXN'
     }).format(price)
   }
+
+  // WhatsApp ticket of the last registered sale (success card): the
+  // number is normalized with the same helper the birthdays use, and
+  // the message is built from the snapshot taken at checkout.
+  const lastSaleWaNumber = lastSale?.buyerPhone ? toWhatsAppNumber(lastSale.buyerPhone) : null
+  const lastSaleTicketText = lastSale
+    ? buildTicketMessage({
+        orderCode: orderCodeFromSaleId(lastSale.saleId),
+        date: new Date(lastSale.createdAt),
+        lines: lastSale.lines,
+        subtotal: lastSale.subtotal,
+        discount: lastSale.discount,
+        total: lastSale.total,
+        paid: lastSale.paid,
+        pendingBalance: lastSale.pendingBalance,
+        reminderMonths: lastSale.reminderMonths
+      })
+    : ''
 
   return (
     <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 space-y-4 md:space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
@@ -595,6 +787,51 @@ export default function SellerDashboard() {
         <div className="bg-[#ffdad6] border border-[#ba1a1a]/25 rounded-2xl p-4 flex items-center gap-3">
           <ShieldAlert className="w-5 h-5 text-[#ba1a1a] shrink-0" />
           <p className="text-sm font-semibold text-[#ba1a1a]">{errorMessage}</p>
+        </div>
+      )}
+
+      {/* Success card of the last registered sale: persistent (unlike
+          the auto-dismissing feedback) and the only place the WhatsApp
+          ticket is offered. The POS behind it is already clean. */}
+      {lastSale && (
+        <div className="bg-[#e2f9ee] border border-[#00422b]/25 rounded-[20px] or-shadow-card p-5 space-y-3 text-left">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="text-base font-bold text-[#00422b] flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 shrink-0" />
+              ¡Venta registrada!
+            </h3>
+            <span className="shrink-0 bg-white/70 text-[#00422b] text-[11px] font-bold px-2.5 py-1 rounded-full tabular-nums">
+              Orden #{orderCodeFromSaleId(lastSale.saleId)}
+            </span>
+          </div>
+          <p className="text-sm font-medium text-[#00422b]">
+            {lastSale.buyerName} · Total {formatPrice(lastSale.total)}
+            {lastSale.pendingBalance > 0 && (
+              <> · Saldo pendiente {formatPrice(lastSale.pendingBalance)}</>
+            )}
+          </p>
+          {lastSaleWaNumber ? (
+            <a
+              href={`https://wa.me/${lastSaleWaNumber}?text=${encodeURIComponent(lastSaleTicketText)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl px-4 flex items-center justify-center gap-2 transition-colors active:scale-[0.99]"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Enviar ticket por WhatsApp
+            </a>
+          ) : (
+            <p className="text-[13px] font-semibold text-[#737784]">
+              Sin teléfono registrado: el ticket no se puede enviar por WhatsApp.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setLastSale(null)}
+            className="w-full min-h-[44px] bg-white border border-[#00422b]/25 text-[#00422b] text-sm font-bold rounded-xl px-4 hover:bg-white/60 transition-colors cursor-pointer"
+          >
+            Nueva venta
+          </button>
         </div>
       )}
 
@@ -998,6 +1235,80 @@ export default function SellerDashboard() {
                         </button>
                       </form>
 
+                      {/* Manual counter discount (owner's dictation):
+                          percentage OR final price, with an optional
+                          reason. Exclusive with the coupon — applying
+                          one removes the other. */}
+                      <div className="space-y-2.5 border-t border-[#f0f3ff] pt-3.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[13px] font-semibold text-[#434653]">Descuento manual</span>
+                          <div className="flex bg-[#f0f3ff] rounded-full p-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setManualMode('percent')}
+                              className={`px-3 min-h-[32px] rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                                manualMode === 'percent' ? 'bg-[#00357f] text-white' : 'text-[#737784] hover:text-[#00357f]'
+                              }`}
+                            >
+                              Porcentaje %
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setManualMode('finalPrice')}
+                              className={`px-3 min-h-[32px] rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                                manualMode === 'finalPrice' ? 'bg-[#00357f] text-white' : 'text-[#737784] hover:text-[#00357f]'
+                              }`}
+                            >
+                              Precio final $
+                            </button>
+                          </div>
+                        </div>
+                        <form onSubmit={handleApplyManualDiscount} className="space-y-2">
+                          {manualMode === 'percent' ? (
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              step="0.01"
+                              placeholder="Porcentaje de descuento (1–100)"
+                              value={manualPercentInput}
+                              onChange={(e) => setManualPercentInput(e.target.value)}
+                              disabled={subtotal === 0}
+                              className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] tabular-nums transition-colors"
+                            />
+                          ) : (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="Precio final que pagará el cliente"
+                              value={manualFinalPriceInput}
+                              onChange={(e) => setManualFinalPriceInput(e.target.value)}
+                              disabled={subtotal === 0}
+                              className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] tabular-nums transition-colors"
+                            />
+                          )}
+                          <input
+                            type="text"
+                            placeholder="Motivo del descuento (opcional)"
+                            value={manualReason}
+                            onChange={(e) => setManualReason(e.target.value)}
+                            disabled={subtotal === 0}
+                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                          />
+                          <button
+                            type="submit"
+                            disabled={subtotal === 0}
+                            className="w-full bg-white border border-[#dee8ff] text-sm font-bold rounded-xl text-[#00357f] hover:bg-[#dee8ff]/30 min-h-[44px] cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            Aplicar descuento
+                          </button>
+                        </form>
+                        <p className="text-[11px] font-medium text-[#737784]">
+                          El descuento manual y el cupón no se combinan: aplicar uno quita el otro.
+                        </p>
+                      </div>
+
                     </div>
 
                     {/* Payment values */}
@@ -1009,9 +1320,18 @@ export default function SellerDashboard() {
                           <span className="tabular-nums">{formatPrice(subtotal)}</span>
                         </div>
                         {discount > 0 && (
-                          <div className="flex justify-between text-[#00422b] font-bold">
-                            <span>Descuento ({activeCoupon?.discount_percent}%)</span>
-                            <span className="tabular-nums">-{formatPrice(discount)}</span>
+                          <div className="flex justify-between items-center gap-2 text-[#00422b] font-bold">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="truncate">{discountLabel}</span>
+                              <button
+                                type="button"
+                                onClick={handleRemoveDiscount}
+                                className="shrink-0 text-[11px] font-bold text-[#ba1a1a] bg-[#ffdad6] hover:bg-[#ffc9c4] rounded-full px-2 py-0.5 cursor-pointer transition-colors"
+                              >
+                                Quitar
+                              </button>
+                            </span>
+                            <span className="tabular-nums shrink-0">−{formatPrice(discount)}</span>
                           </div>
                         )}
                         {/* Informative VAT breakdown: catalog prices already

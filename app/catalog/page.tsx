@@ -1,15 +1,17 @@
 'use client'
 
-import { useEffect, useState, useMemo, Suspense } from 'react'
+import { useEffect, useState, useMemo, useRef, useLayoutEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { getProducts, getWishlist, toggleWishlistItem, getMemberDiscountPercent, createLensRequest, getAppSetting, getMessageTemplate } from '@/lib/services'
+import { getProducts, saveProductsOrder, getWishlist, toggleWishlistItem, getMemberDiscountPercent, createLensRequest, getAppSetting, getMessageTemplate } from '@/lib/services'
+import { isAdminRole } from '@/lib/roles'
 import {
   CATALOG_INQUIRY_TEMPLATE_KEY,
   DEFAULT_CATALOG_INQUIRY_TEMPLATE,
   buildCatalogInquiryMessage,
 } from '@/lib/message-templates'
 import { getProductLensOptions } from '@/lib/product-lens-options'
+import FaceScanner from '@/components/face-scanner'
 import { uploadPrescriptionFile, attachPrescriptionToRequest, validatePrescriptionFile } from '@/lib/catalog-data'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDescription, getProductDetails, getProductImageAlt, getProductImages } from '@/lib/product-data'
@@ -39,7 +41,9 @@ import {
   TrendingUp,
   Sparkles,
   Glasses,
-  LayoutGrid
+  LayoutGrid,
+  GripVertical,
+  ScanFace
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -59,6 +63,10 @@ function CatalogContent() {
 
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
+  // Face scanner (dictado del dueño 2026-11-18): ayuda junto a la
+  // búsqueda que detecta la forma del rostro EN el teléfono del
+  // cliente y sugiere armazones del catálogo.
+  const [scannerOpen, setScannerOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
@@ -95,6 +103,11 @@ function CatalogContent() {
   const brandFilter = searchParams.get('brand') || 'all'
   const layoutMode = (searchParams.get('layout') as 'grid' | 'list') || 'grid'
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
+
+  // Sticky-deck filter rows: refs let the deck keep the active chip
+  // visible inside each row's horizontal scroll.
+  const categoryRowRef = useRef<HTMLDivElement>(null)
+  const brandRowRef = useRef<HTMLDivElement>(null)
 
   // Lens Wizard Stepper state
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
@@ -340,6 +353,24 @@ function CatalogContent() {
     router.replace('/catalog', { scroll: false })
   }
 
+  // Keeps the active chip of a deck row visible: scrolls the ROW (not
+  // the page) so the pressed chip sits at its left edge.
+  const scrollActiveChipIntoView = (row: HTMLDivElement | null) => {
+    if (!row) return
+    const active = row.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (!active) return
+    const target = active.offsetLeft - row.offsetLeft - 8
+    row.scrollTo({ left: Math.max(0, target), behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    scrollActiveChipIntoView(categoryRowRef.current)
+  }, [selectedCategories])
+
+  useEffect(() => {
+    scrollActiveChipIntoView(brandRowRef.current)
+  }, [brandFilter, brandOptions])
+
   // Face-shape guide: prefer the frame_shape selected by the administrator;
   // legacy products without that field fall back to their name.
   const isFaceShapeCompatible = (product: Product, shape: string) => {
@@ -414,6 +445,220 @@ function CatalogContent() {
 
     return result
   }, [products, selectedCategories, brandFilter, maxPriceFilter, searchTerm, onlyPromoFilter, faceShapeFilter, sortBy])
+
+  // ——— Reordenar arrastrando (solo administrador, dictado del dueño
+  // 2026-11-18) ———
+  // El admin/superadmin arrastra las tarjetas desde un asa (pointer
+  // events: sirve con dedo y con ratón) y el orden se guarda en
+  // products.display_order vía saveProductsOrder; ese orden es el que
+  // ven los clientes. Para clientes y público no cambia NADA: sin
+  // asas, sin comportamiento nuevo, solo el orden guardado aplicado
+  // por getProducts.
+  const isAdmin = !!userProfile && isAdminRole(userProfile.role)
+
+  // El arrastre solo tiene sentido sobre la lista COMPLETA y en el
+  // orden guardado: con un filtro activo (o un ordenamiento de vista)
+  // la vista es parcial y reordenarla corrompería el orden global.
+  const hasActiveViewFilters =
+    selectedCategories.length > 0 ||
+    brandFilter !== 'all' ||
+    searchTerm.trim() !== '' ||
+    faceShapeFilter !== 'all' ||
+    onlyPromoFilter ||
+    searchParams.get('price') !== null ||
+    sortBy !== 'recommended'
+  const canReorder = isAdmin && !hasActiveViewFilters && !loading && processedProducts.length > 1
+
+  // Orden local mientras el admin acomoda: los ids en el orden
+  // deseado. Vive solo en esta pantalla; al soltar se persiste y, si
+  // el guardado falla, se revierte a la foto previa al arrastre.
+  const [arrangedIds, setArrangedIds] = useState<string[] | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [savingOrder, setSavingOrder] = useState(false)
+  const [orderNotice, setOrderNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const cardRefs = useRef(new Map<string, HTMLDivElement>())
+  const noticeTimerRef = useRef<number | null>(null)
+  // Tras un arrastre real, el clic sintético que cierra el gesto NO
+  // debe abrir el detalle del producto.
+  const suppressClickRef = useRef(false)
+
+  interface DragSession {
+    id: string
+    order: string[]
+    snapshot: string[]
+    startX: number
+    startY: number
+    lastX: number
+    lastY: number
+    baseX: number
+    baseY: number
+    moved: boolean
+    visualRect: DOMRect | null
+  }
+  const dragRef = useRef<DragSession | null>(null)
+
+  // Si el catálogo se recarga, el orden local deja de representar a
+  // los datos y se descarta.
+  useEffect(() => {
+    setArrangedIds(null)
+  }, [products])
+
+  const gridProducts = useMemo(() => {
+    if (!arrangedIds) return processedProducts
+    const position = new Map(arrangedIds.map((id, i) => [id, i]))
+    return [...processedProducts].sort(
+      (a, b) => (position.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (position.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+    )
+  }, [processedProducts, arrangedIds])
+
+  const showOrderNotice = (kind: 'ok' | 'error', text: string) => {
+    setOrderNotice({ kind, text })
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
+    noticeTimerRef.current = window.setTimeout(() => setOrderNotice(null), 3400)
+  }
+
+  // Al reordenar a mitad de arrastre, la tarjeta arrastrada cambia de
+  // celda y su posición visual saltaría: se compensa el salto en la
+  // base del translate para que siga pegada al dedo/ratón.
+  useLayoutEffect(() => {
+    const session = dragRef.current
+    if (!session || !session.visualRect) return
+    const el = cardRefs.current.get(session.id)
+    if (!el) return
+    const now = el.getBoundingClientRect()
+    const jumpX = now.left - session.visualRect.left
+    const jumpY = now.top - session.visualRect.top
+    session.visualRect = null
+    if (jumpX !== 0 || jumpY !== 0) {
+      session.baseX -= jumpX
+      session.baseY -= jumpY
+      el.style.transform = `translate(${session.baseX + session.lastX - session.startX}px, ${session.baseY + session.lastY - session.startY}px) scale(1.03)`
+    }
+  }, [arrangedIds])
+
+  const startDrag = (e: React.PointerEvent, product: Product) => {
+    if (!canReorder || savingOrder) return
+    const el = cardRefs.current.get(product.id)
+    if (!el) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    const initialOrder = gridProducts.map(p => p.id)
+    const session: DragSession = {
+      id: product.id,
+      order: initialOrder,
+      snapshot: initialOrder,
+      startX: e.clientX,
+      startY: e.clientY,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      baseX: 0,
+      baseY: 0,
+      moved: false,
+      visualRect: null,
+    }
+    dragRef.current = session
+    setDraggingId(product.id)
+    el.style.transform = 'translate(0px, 0px) scale(1.03)'
+
+    const onMove = (ev: PointerEvent) => {
+      const s = dragRef.current
+      if (!s) return
+      const node = cardRefs.current.get(s.id)
+      if (!node) return
+      const dx = ev.clientX - s.startX
+      const dy = ev.clientY - s.startY
+      if (Math.abs(dx) + Math.abs(dy) > 4) s.moved = true
+      s.lastX = ev.clientX
+      s.lastY = ev.clientY
+      node.style.transform = `translate(${s.baseX + dx}px, ${s.baseY + dy}px) scale(1.03)`
+      // ¿El puntero entró a otra tarjeta? Esa es la nueva posición:
+      // se intercambia en el orden local y el efecto de layout
+      // compensa el salto de celda de la tarjeta arrastrada.
+      const from = s.order.indexOf(s.id)
+      let to = -1
+      for (const [pid, sibling] of cardRefs.current) {
+        if (pid === s.id) continue
+        const r = sibling.getBoundingClientRect()
+        if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {
+          to = s.order.indexOf(pid)
+          break
+        }
+      }
+      if (to >= 0 && to !== from) {
+        const next = [...s.order]
+        next.splice(from, 1)
+        next.splice(to, 0, s.id)
+        s.order = next
+        s.visualRect = node.getBoundingClientRect()
+        setArrangedIds(next)
+      }
+    }
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+    }
+
+    const onUp = () => {
+      cleanup()
+      const s = dragRef.current
+      dragRef.current = null
+      setDraggingId(null)
+      if (!s) return
+      const node = cardRefs.current.get(s.id)
+      if (node) node.style.transform = ''
+      if (!s.moved) return
+      // El clic sintético del gesto no debe abrir el detalle; la
+      // bandera se consume en el primer clic o caduca sola.
+      suppressClickRef.current = true
+      window.setTimeout(() => { suppressClickRef.current = false }, 350)
+      if (s.order.join('|') === s.snapshot.join('|')) return
+      // Guardado GLOBAL: los productos fuera de esta vista (p. ej.
+      // sobre el tope de precio por defecto) conservan sus lugares;
+      // los visibles ocupan las mismas posiciones, ya reordenados.
+      const visible = new Set(s.order)
+      const merged = products.map(p => p.id)
+      const slots = merged.map((id, i) => (visible.has(id) ? i : -1)).filter(i => i >= 0)
+      slots.forEach((slot, i) => {
+        merged[slot] = s.order[i]
+      })
+      setSavingOrder(true)
+      saveProductsOrder(merged)
+        .then(() => showOrderNotice('ok', 'Orden guardado'))
+        .catch((err: any) => {
+          setArrangedIds(s.snapshot)
+          showOrderNotice('error', err?.message || 'No se pudo guardar el orden. Se restauró el anterior.')
+        })
+        .finally(() => setSavingOrder(false))
+    }
+
+    const onCancel = () => {
+      cleanup()
+      const s = dragRef.current
+      dragRef.current = null
+      setDraggingId(null)
+      if (!s) return
+      const node = cardRefs.current.get(s.id)
+      if (node) node.style.transform = ''
+      setArrangedIds(s.snapshot)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+  }
+
+  // Clic de tarjeta: tras un arrastre, el primer clic es el cierre
+  // del gesto y se traga; los demás abren el detalle como siempre.
+  const handleCardClick = (p: Product) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
+    handleOpenDetailModal(p)
+  }
 
   // Lens Wizard pricing: frame (with member pricing) + THIS PRODUCT's
   // vision option + the sum of its chosen extras. The options live on the
@@ -756,6 +1001,68 @@ function CatalogContent() {
         }
       `}</style>
 
+      {/* Brand strip: SOLO la pastilla, centrada y parpadeante
+          (dictado del dueño 2026-11-18: fuera el titular «Ve el mundo
+          con claridad», el subtítulo y las pastillas de cifras — la
+          banda se compacta a lo que ocupa la pastilla). */}
+      <section className="anim-fade-up relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-3 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.45)] sm:px-6 md:py-4">
+        {/* Decorative light glows */}
+        <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 hidden md:block w-56 h-56 rounded-full bg-white/10 blur-2xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 hidden md:block w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
+
+        <div className="relative flex justify-center">
+          <p className="anim-blink-pill inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/15 px-3.5 py-1.5 text-[11px] font-bold text-white md:text-xs">
+            <Sparkles className="w-3.5 h-3.5" /> Óptica Rayo · Catálogo en línea
+          </p>
+        </div>
+      </section>
+
+      {/* Search: THE search field of the page (single-search rule),
+          immediately under the hero band and before every filter
+          (dictado del dueño 2026-11-18: que no haya que bajar a
+          buscarlo). It drives the `search` filter on its own. */}
+      <div className="relative z-10 px-1">
+        <div className="relative max-w-xl">
+          <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#00357f]/50 pointer-events-none" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => updateFilter('search', e.target.value)}
+            placeholder="Busca tu próximo armazón: modelo, marca, color…"
+            aria-label="Buscar en el catálogo"
+            className="w-full rounded-2xl border border-[#cbd5e1]/70 bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.35)] outline-none focus:border-[#00357f]/40 focus:ring-4 focus:ring-[#00357f]/15 transition min-h-[52px]"
+          />
+        </div>
+      </div>
+
+      {/* Face-shape help card (dictado del dueño 2026-11-18): junto a
+          la búsqueda, ofrece el escáner de rostro. El análisis ocurre
+          en el teléfono del cliente; ninguna foto se sube ni se
+          guarda (el aviso va también dentro del escáner). */}
+      <section className="anim-fade-up or-shadow-card flex flex-col gap-3 rounded-[20px] bg-white p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5" aria-label="Ayuda para elegir lentes">
+        <div className="flex items-start gap-3 sm:flex-1">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#dee8ff] text-[#00357f]">
+            <ScanFace className="h-5.5 w-5.5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-extrabold tracking-tight text-[#111c2d] sm:text-base">
+              ¿Necesita ayuda para saber qué lentes le convienen?
+            </h2>
+            <p className="mt-0.5 text-xs leading-relaxed text-[#5d606f] sm:text-[13px]">
+              Descubra su forma de rostro con la cámara de su teléfono y le sugerimos los
+              armazones de nuestro catálogo que mejor le quedan. Sin subir ninguna foto.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setScannerOpen(true)}
+          className="min-h-[48px] shrink-0 cursor-pointer rounded-2xl bg-[#00357f] px-5 text-sm font-bold text-white shadow-md shadow-[#00357f]/25 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
+        >
+          Descubrir mi forma de rostro
+        </button>
+      </section>
+
       {/* TOP: compact carousel — mobile-first pattern: peek the next card
           so the swipe is obvious, user-controlled (no auto-rotation),
           low horizontal cards: photo, name, price. Content is the real
@@ -826,112 +1133,75 @@ function CatalogContent() {
         </section>
       )}
 
-      {/* Floating search: white card overlapping the carousel's bottom edge.
-          This is THE search field of the page (single-search rule): it
-          drives the `search` filter on its own. */}
-      <div className={`relative z-10 px-1 ${carouselProducts.length > 0 ? '-mt-6' : ''}`}>
-        <div className="relative max-w-xl">
-          <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#00357f]/50 pointer-events-none" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={e => updateFilter('search', e.target.value)}
-            placeholder="Busca tu próximo armazón: modelo, marca, color…"
-            aria-label="Buscar en el catálogo"
-            className="w-full rounded-2xl border border-[#cbd5e1]/70 bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.35)] outline-none focus:border-[#00357f]/40 focus:ring-4 focus:ring-[#00357f]/15 transition min-h-[52px]"
-          />
-        </div>
-      </div>
-
-      {/* Brand strip: light, compact brand gradient on every size — on
-          mobile it stays short (small padding, normal-size headline) so it
-          gives color without becoming the giant box the owner rejected;
-          on desktop it simply grows taller. */}
-      <section className="anim-fade-up relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-3 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.45)] sm:px-6 md:px-8 md:py-6">
-        {/* Decorative light glows (desktop band only) */}
-        <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 hidden md:block w-56 h-56 rounded-full bg-white/10 blur-2xl" />
-        <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 hidden md:block w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
-
-        <div className="relative space-y-2 md:space-y-4 max-w-2xl">
-          <p className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 text-white border border-white/20 rounded-full px-3 py-1">
-            <Sparkles className="w-3.5 h-3.5" /> Óptica Rayo · Catálogo en línea
-          </p>
-          <h1 className="text-[22px] md:text-[28px] font-black tracking-tight leading-[1.1] text-white text-balance">
-            Ve el mundo con claridad
-          </h1>
-          <p className="text-[13px] md:text-base text-white/85 font-medium leading-relaxed max-w-xl line-clamp-1 md:line-clamp-none">
-            Encuentra tus armazones favoritos y cotiza tus micas con nuestro asistente digital: precios claros y modelos para cada rostro.
-          </p>
-
-          {!loading && products.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-1 text-[10px] font-black uppercase tracking-wider">
-              <span className="bg-white/15 border border-white/15 text-white rounded-full px-3 py-1.5">{products.length} modelos</span>
-              {promoProducts.length > 0 && (
-                <span className="bg-[#49da9f]/25 border border-[#49da9f]/40 text-white rounded-full px-3 py-1.5">{promoProducts.length} destacados y promos</span>
-              )}
-              <a href="/agendar" className="bg-white/15 border border-white/15 text-white rounded-full px-3 py-1.5 transition-all active:scale-95 hover:underline">Examen de la vista gratis · Agenda tu cita</a>
-            </div>
-          )}
-        </div>
-      </section>
-
       {/* Sticky filter deck: categories + brand chips travel together
           under the site nav while scrolling — one deck, no extra
           floating bar competing with the search field. */}
       <div className="anim-fade-up sticky top-[61px] md:top-16 z-30 -mx-4 px-4 py-2 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 bg-[#e9f0fd]/90 backdrop-blur-md space-y-2">
-      {/* Quick category pills: icon + count, same multi-select filter as the panel */}
-      <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible" role="group" aria-label="Categorías del catálogo">
-        {categories.map(cat => {
-          const Icon = cat.icon
-          const isSelected = cat.value === 'all'
-            ? selectedCategories.length === 0
-            : selectedCategories.includes(cat.value)
-          const count = cat.value === 'all'
-            ? products.length
-            : (categoryCounts[cat.value] || 0)
-          return (
-            <button
-              key={cat.value}
-              type="button"
-              onClick={() => toggleCategoryFilter(cat.value)}
-              aria-pressed={isSelected}
-              className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-xs font-bold min-h-[44px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
-                isSelected
-                  ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
-                  : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{cat.label}</span>
-              <span className={`text-[10px] font-black rounded-full px-1.5 py-0.5 ${isSelected ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>
-                {count}
-              </span>
-            </button>
-          )
-        })}
+      {/* Filter rows (dictado del dueño 2026-11-18: «eso de marca y
+          eso como que hay que darle mejor orden»): dos renglones con
+          la MISMA estructura — etiqueta alineada a la izquierda
+          («Categoría» / «Marca»), pastillas de la misma altura y
+          estilo con el conteo en el mismo formato de pastilla, y
+          desplazamiento horizontal suave que deja siempre visible la
+          pastilla activa. Mismos valores y mismo filtrado de antes. */}
+      <div className="flex items-center gap-2">
+        <span className="w-16 shrink-0 text-[11px] font-semibold text-[#434653]">Categoría</span>
+        <div className="relative min-w-0 flex-1">
+          <div ref={categoryRowRef} className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Categorías del catálogo">
+            {categories.map(cat => {
+              const Icon = cat.icon
+              const isSelected = cat.value === 'all'
+                ? selectedCategories.length === 0
+                : selectedCategories.includes(cat.value)
+              const count = cat.value === 'all'
+                ? products.length
+                : (categoryCounts[cat.value] || 0)
+              return (
+                <button
+                  key={cat.value}
+                  type="button"
+                  onClick={() => toggleCategoryFilter(cat.value)}
+                  aria-pressed={isSelected}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-bold min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
+                    isSelected
+                      ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
+                      : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{cat.label}</span>
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${isSelected ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#e9f0fd] to-transparent" />
+        </div>
       </div>
 
-      {/* Brand filter: its own chip row under the categories. Single
-          selection («Todas» or one brand), written to ?brand= and
-          combined with AND logic against every other filter. Only
-          rendered when the catalog really carries 2+ brands. */}
+      {/* Brand filter: single selection («Todas» or one brand),
+          written to ?brand= and combined with AND logic against
+          every other filter. Only rendered when the catalog really
+          carries 2+ brands. */}
       {brandOptions.length >= 2 && (
         <div className="flex items-center gap-2">
-          <span className="shrink-0 text-[11px] font-semibold text-[#434653]">Marca</span>
+          <span className="w-16 shrink-0 text-[11px] font-semibold text-[#434653]">Marca</span>
           <div className="relative min-w-0 flex-1">
-            <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filtrar por marca">
+            <div ref={brandRowRef} className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filtrar por marca">
               <button
                 type="button"
                 onClick={() => updateFilter('brand', null)}
                 aria-pressed={brandFilter === 'all'}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-4 text-xs font-semibold min-h-[44px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
+                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-bold min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
                   brandFilter === 'all'
                     ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
-                    : 'bg-white border-[#e7eeff] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f]'
+                    : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
                 }`}
               >
                 <span>Todas</span>
-                <span className={`text-[10px] ${brandFilter === 'all' ? 'text-white/70' : 'text-[#737784]'}`}>{products.length}</span>
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${brandFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>{products.length}</span>
               </button>
               {brandOptions.map(({ brand, count }) => {
                 const isActive = brandFilter === brand
@@ -941,14 +1211,14 @@ function CatalogContent() {
                     type="button"
                     onClick={() => updateFilter('brand', isActive ? null : brand)}
                     aria-pressed={isActive}
-                    className={`flex shrink-0 items-center gap-1.5 rounded-full border px-4 text-xs font-semibold min-h-[44px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
+                    className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-bold min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
                       isActive
                         ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
-                        : 'bg-white border-[#e7eeff] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f]'
+                        : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
                     }`}
                   >
                     <span>{brand}</span>
-                    <span className={`text-[10px] ${isActive ? 'text-white/70' : 'text-[#737784]'}`}>{count}</span>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>{count}</span>
                   </button>
                 )
               })}
@@ -1205,6 +1475,18 @@ function CatalogContent() {
             </div>
           )}
 
+          {/* Reorder hint for the admin: how to drag when it is
+              available, and why it is off while filters are on. */}
+          {isAdmin && !loading && processedProducts.length > 1 && (
+            canReorder ? (
+              <p className="text-[11px] font-medium text-[#737784]">
+                Arrastra las tarjetas desde el asa para reordenar el catálogo; el orden se guarda al soltar y es el que ven los clientes.
+              </p>
+            ) : (
+              <p className="text-[11px] font-medium text-[#737784]">Quita los filtros para reordenar</p>
+            )
+          )}
+
           {/* Results display */}
           {loading ? (
             <div
@@ -1246,7 +1528,7 @@ function CatalogContent() {
               }
             >
               <AnimatePresence mode="popLayout">
-                {processedProducts.map((p, index) => {
+                {gridProducts.map((p, index) => {
                   const isFaved = wishlist.includes(p.id)
                   const details = getProductDetails(p)
                   const images = getProductImages(p)
@@ -1278,18 +1560,43 @@ function CatalogContent() {
                     </button>
                   )
 
+                  // Asa de arrastre (solo admin, solo con la lista
+                  // completa sin filtros): el arrastre nace AQUÍ, con
+                  // pointer events (dedo y ratón); tocar cualquier
+                  // otra parte de la tarjeta —corazón incluido— sigue
+                  // haciendo lo de siempre.
+                  const dragHandle = canReorder ? (
+                    <button
+                      type="button"
+                      aria-label={`Arrastrar ${p.name} para reordenar`}
+                      title="Arrastra para reordenar"
+                      onPointerDown={(e) => startDrag(e, p)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex h-9 w-9 shrink-0 cursor-grab touch-none items-center justify-center rounded-full bg-white/95 text-[#00357f] shadow-md ring-1 ring-[#00357f]/15 transition active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </button>
+                  ) : null
+                  const isDraggingThis = draggingId === p.id
+                  const cardRef = (node: HTMLDivElement | null) => {
+                    if (node) cardRefs.current.set(p.id, node)
+                    else cardRefs.current.delete(p.id)
+                  }
+
                   if (layoutMode === 'list') {
                     const colorMaterial = [details.color, details.material].filter(Boolean).join(' · ')
                     return (
                       <motion.div
-                        layout
+                        ref={cardRef}
+                        layout={!draggingId}
                         exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
                         transition={{ duration: 0.25 }}
                         key={p.id}
-                        onClick={() => handleOpenDetailModal(p)}
+                        onClick={() => handleCardClick(p)}
                         style={enterStyle}
-                        className="anim-stagger-item or-shadow-card group relative flex cursor-pointer items-center gap-3 rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3"
+                        className={`anim-stagger-item or-shadow-card group relative flex cursor-pointer items-center gap-3 rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3 ${isDraggingThis ? 'z-40 shadow-[0_24px_48px_-12px_rgba(0,53,127,0.45)]' : ''}`}
                       >
+                        {dragHandle}
                         <span className="relative block h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[14px] bg-[#f8faff]">
                           {images.length > 0 ? (
                             <img
@@ -1336,18 +1643,26 @@ function CatalogContent() {
 
                   return (
                     <motion.div
-                      layout
+                      ref={cardRef}
+                      layout={!draggingId}
                       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
                       transition={{ duration: 0.25 }}
                       key={p.id}
-                      onClick={() => handleOpenDetailModal(p)}
+                      onClick={() => handleCardClick(p)}
                       style={enterStyle}
-                      className="anim-stagger-item or-shadow-card group relative flex cursor-pointer flex-col rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3"
+                      className={`anim-stagger-item or-shadow-card group relative flex cursor-pointer flex-col rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3 ${isDraggingThis ? 'z-40 shadow-[0_24px_48px_-12px_rgba(0,53,127,0.45)]' : ''}`}
                     >
                       {renderCardFace(p, (
-                        <span className="absolute top-1.5 right-1.5 z-30">
-                          {heartButton}
-                        </span>
+                        <>
+                          {dragHandle && (
+                            <span className="absolute bottom-1.5 left-1.5 z-30">
+                              {dragHandle}
+                            </span>
+                          )}
+                          <span className="absolute top-1.5 right-1.5 z-30">
+                            {heartButton}
+                          </span>
+                        </>
                       ))}
                     </motion.div>
                   )
@@ -1359,6 +1674,37 @@ function CatalogContent() {
         </div>
 
       </div>
+
+      {/* Escáner de rostro: modal en portal; al tocar un armazón
+          sugerido se cierra y se abre el detalle de ese producto,
+          como si el cliente lo hubiera tocado en la rejilla. */}
+      <FaceScanner
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        products={products}
+        priceOf={priceOf}
+        onPickProduct={(p) => {
+          setScannerOpen(false)
+          handleOpenDetailModal(p)
+        }}
+        onShowAllFrames={() => {
+          setScannerOpen(false)
+          updateFilter('category', 'frames')
+        }}
+      />
+
+      {/* Aviso discreto del guardado del orden (solo lo ve el admin
+          que acaba de arrastrar). */}
+      {orderNotice && (
+        <div
+          role="status"
+          className={`fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2.5 text-xs font-bold whitespace-nowrap shadow-lg md:bottom-8 ${
+            orderNotice.kind === 'ok' ? 'bg-[#00422b] text-white' : 'bg-[#ba1a1a] text-white'
+          }`}
+        >
+          {orderNotice.text}
+        </div>
+      )}
 
       {/* ========================================================
          MODAL: LENS WIZARD STEPPER CONFIGURATOR

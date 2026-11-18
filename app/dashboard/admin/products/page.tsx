@@ -438,7 +438,8 @@ export default function AdminProductsPage() {
         gallery_urls: galleryUrls,
         image_alt: pImageAlt.trim() || null,
         is_promo: pIsPromo,
-        is_featured: pIsFeatured
+        is_featured: pIsFeatured,
+        display_order: null
       })
 
       // Lens options are stored PER PRODUCT: they start from the
@@ -647,6 +648,25 @@ export default function AdminProductsPage() {
       }
     })
   }, [filteredProducts, productSort])
+
+  // Vista compacta móvil (dictado del dueño, 2026-11-18): en el celular
+  // la tabla ancha obligaba a un scroll horizontal larguísimo, así que
+  // ahí la lista son filas apiladas con su propio orden simple (precio
+  // o nombre), independiente del orden por columnas de escritorio.
+  const [mobileSort, setMobileSort] = useState<'name' | 'price-asc' | 'price-desc'>('name')
+  const [expandedDescId, setExpandedDescId] = useState<string | null>(null)
+
+  const mobileSortedProducts = useMemo(() => {
+    const rows = [...filteredProducts]
+    switch (mobileSort) {
+      case 'price-asc':
+        return rows.sort((a, b) => a.price - b.price)
+      case 'price-desc':
+        return rows.sort((a, b) => b.price - a.price)
+      default:
+        return rows.sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    }
+  }, [filteredProducts, mobileSort])
 
   return (
     <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 space-y-4 md:space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
@@ -874,6 +894,22 @@ export default function AdminProductsPage() {
             />
           </div>
         </div>
+        {/* Orden de la vista compacta (solo móvil): la tabla de
+            escritorio ordena por columnas; en el celular el dueño
+            pidió un control simple y visible junto al buscador. */}
+        <div className="md:hidden">
+          <label className="block text-[10px] font-bold text-[#737784] uppercase tracking-wider mb-1">Ordenar por</label>
+          <select
+            value={mobileSort}
+            onChange={(e) => setMobileSort(e.target.value as 'name' | 'price-asc' | 'price-desc')}
+            aria-label="Ordenar productos"
+            className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2 text-xs focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none cursor-pointer font-semibold text-[#111c2d]"
+          >
+            <option value="price-asc">Precio: menor a mayor</option>
+            <option value="price-desc">Precio: mayor a menor</option>
+            <option value="name">Nombre</option>
+          </select>
+        </div>
       </div>
 
       {/* Brand suggestions shared by the create/edit «Marca» fields */}
@@ -894,7 +930,102 @@ export default function AdminProductsPage() {
           No se encontraron productos en el inventario.
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-[#cbd5e1] shadow-sm overflow-hidden">
+        <>
+        {/* Vista compacta móvil (dictado del dueño, 2026-11-18): filas
+            apiladas SIN scroll horizontal. Precio y stock siempre a la
+            vista; la descripción va a una línea con «Ver más»; tocar la
+            fila abre el mismo modal de edición con todas las opciones
+            del producto (setEditingProduct, igual que el botón Editar). */}
+        <div className="md:hidden bg-white rounded-2xl border border-[#cbd5e1] shadow-sm overflow-hidden">
+          <ul className="divide-y divide-[#f0f3ff]">
+            {mobileSortedProducts.map(p => {
+              const parsed = parseProductDescription(p)
+              const notes = parsed.notes.trim()
+              const descExpanded = expandedDescId === p.id
+              const descLong = notes.length > 55
+              return (
+                <li
+                  key={p.id}
+                  onClick={() => setEditingProduct(p)}
+                  className="flex gap-3 p-3 cursor-pointer transition-colors hover:bg-[#f9f9ff] active:bg-[#f0f3ff]"
+                >
+                  <span className="w-12 h-12 rounded-xl bg-[#f9f9ff] border border-[#cbd5e1]/40 flex items-center justify-center overflow-hidden shrink-0" aria-hidden="true">
+                    {p.image_url ? (
+                      <img src={p.image_url} alt="" className="w-full h-full object-contain" />
+                    ) : (
+                      <Package className="w-5 h-5 text-[#cbd5e1]" />
+                    )}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-bold text-sm text-[#111c2d] truncate" title={p.name}>{p.name}</p>
+                      <p className="font-black text-sm text-[#00357f] font-mono whitespace-nowrap">{formatPrice(p.price)}</p>
+                    </div>
+                    <p className="text-[11px] text-[#737784] font-medium truncate mt-0.5">
+                      {[parsed.brand, CATEGORY_LABELS[p.category]].filter(Boolean).join(' · ')}
+                      {parsed.sku && <span className="font-mono font-bold uppercase"> · SKU: {parsed.sku}</span>}
+                    </p>
+                    {p.is_promo && (
+                      <span className="inline-flex mt-1 bg-[#00668a] text-white font-bold text-[9px] px-2 py-0.5 rounded items-center gap-1 uppercase tracking-wider">
+                        <Sparkles className="w-3 h-3" /> Promoción
+                      </span>
+                    )}
+                    {notes && (
+                      <div className="mt-1">
+                        <p className={`text-[11px] text-[#737784] font-medium ${descExpanded ? '' : 'line-clamp-1'}`}>
+                          {notes}
+                          {parsed.material && ` (Material: ${parsed.material})`}
+                        </p>
+                        {descLong && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setExpandedDescId(descExpanded ? null : p.id) }}
+                            className="text-[11px] font-bold text-[#00357f] underline underline-offset-2 cursor-pointer mt-0.5"
+                          >
+                            {descExpanded ? 'Ver menos' : 'Ver más'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2 mt-2">
+                      <span className={`inline-block font-bold text-[9px] px-2.5 py-0.5 rounded-full border uppercase whitespace-nowrap ${
+                        p.stock === 0
+                          ? 'bg-[#ffdad6] text-[#ba1a1a] border-[#ffdad6]'
+                          : p.stock < 5
+                          ? 'bg-[#ffdad6] text-[#ba1a1a] border-[#ffdad6]'
+                          : 'bg-[#49da9f]/20 text-[#00422b] border-[#49da9f]/30'
+                      }`}>
+                        {p.stock === 0 ? 'Agotado' : p.stock < 5 ? `Stock Bajo: ${p.stock}` : `Stock: ${p.stock}`}
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setEditingProduct(p) }}
+                          className="bg-[#dee8ff] hover:bg-[#dee8ff]/80 text-[#00357f] px-3 py-1.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[36px]"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setDeletingProduct(p) }}
+                          className="border border-[#ba1a1a]/30 hover:bg-[#ffdad6] text-[#ba1a1a] px-3 py-1.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[36px]"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Borrar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+
+        {/* Tabla de escritorio: intacta; solo se oculta bajo md, donde
+            la vista compacta de arriba la sustituye. */}
+        <div className="hidden md:block bg-white rounded-2xl border border-[#cbd5e1] shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[780px]">
               <thead>
@@ -915,7 +1046,11 @@ export default function AdminProductsPage() {
                 {sortedProducts.map(p => {
                   const parsed = parseProductDescription(p)
                   return (
-                    <tr key={p.id} className="hover:bg-[#f9f9ff] transition-colors">
+                    <tr
+                      key={p.id}
+                      onClick={() => setEditingProduct(p)}
+                      className="hover:bg-[#f9f9ff] transition-colors cursor-pointer"
+                    >
                       <td className="pl-5 pr-3 py-3">
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="w-11 h-11 rounded-xl bg-[#f9f9ff] border border-[#cbd5e1]/40 flex items-center justify-center overflow-hidden shrink-0" aria-hidden="true">
@@ -965,14 +1100,14 @@ export default function AdminProductsPage() {
                       <td className="pl-3 pr-5 py-3">
                         <div className="flex gap-2 justify-end">
                           <button
-                            onClick={() => setEditingProduct(p)}
+                            onClick={(e) => { e.stopPropagation(); setEditingProduct(p) }}
                             className="bg-[#dee8ff] hover:bg-[#dee8ff]/80 text-[#00357f] px-3.5 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             Editar
                           </button>
                           <button
-                            onClick={() => setDeletingProduct(p)}
+                            onClick={(e) => { e.stopPropagation(); setDeletingProduct(p) }}
                             className="border border-[#ba1a1a]/30 hover:bg-[#ffdad6] text-[#ba1a1a] px-3.5 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -987,6 +1122,7 @@ export default function AdminProductsPage() {
             </table>
           </div>
         </div>
+        </>
       )}
 
       {/* ========================================================
@@ -1140,7 +1276,7 @@ export default function AdminProductsPage() {
                 <div>
                   <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Forma del armazón</label>
                   <select value={pFrameShape} onChange={(e) => setPFrameShape(e.target.value as FrameShape | '')} className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px] cursor-pointer">
-                    <option value="">Sin clasificar</option>
+                    <option value="">Sin etiquetar</option>
                     {FRAME_SHAPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </div>
@@ -1324,7 +1460,7 @@ export default function AdminProductsPage() {
                 <div>
                   <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Forma del armazón</label>
                   <select value={eFrameShape} onChange={(e) => setEFrameShape(e.target.value as FrameShape | '')} className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px] cursor-pointer">
-                    <option value="">Sin clasificar</option>
+                    <option value="">Sin etiquetar</option>
                     {FRAME_SHAPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </div>

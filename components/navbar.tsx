@@ -280,7 +280,7 @@ export default async function Navbar() {
           hamburguesa («Mi perfil»). La rejilla 1fr/auto/1fr mantiene la marca centrada
           aunque un lado vaya vacío (la campanita no se pinta para
           invitados ni clientes). */}
-      <header className="site-nav relative w-full bg-[#f9f9ff]/95 backdrop-blur border-b border-[#c3c6d5] sticky top-0 z-50 px-4 py-2.5 grid grid-cols-[1fr_auto_1fr] items-center md:hidden shadow-sm">
+      <header className="site-nav relative w-full bg-[#f9f9ff]/95 backdrop-blur border-b border-[#c3c6d5] sticky top-0 z-50 px-4 pb-2.5 pt-[calc(0.625rem+env(safe-area-inset-top))] grid grid-cols-[1fr_auto_1fr] items-center md:hidden shadow-sm">
         <div className="flex items-center justify-start">
           <MainMenu
             items={navItems}

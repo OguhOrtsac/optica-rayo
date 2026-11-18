@@ -9,6 +9,7 @@ import {
   Search,
   PlusCircle,
   ChevronRight,
+  ChevronUp,
   Users,
   Eye,
   ShoppingBag,
@@ -146,8 +147,8 @@ export default function CustomersPage() {
       <div className="bg-white border border-[#cbd5e1]/60 rounded-[20px] or-shadow-card p-4 md:p-5 flex flex-col">
         <div className="flex items-center justify-between gap-3 mb-4">
           <h3 className="flex items-center gap-2.5 text-base font-bold text-[#111c2d]">
-            <span className="w-9 h-9 rounded-xl bg-[#dee8ff] flex items-center justify-center shrink-0">
-              <Eye className="w-4 h-4 text-[#00357f]" />
+            <span className="w-9 h-9 rounded-xl bg-[#e6f7fb] flex items-center justify-center shrink-0">
+              <Eye className="w-4 h-4 text-[#0899c9]" />
             </span>
             Historial de exámenes
           </h3>
@@ -259,13 +260,9 @@ export default function CustomersPage() {
               </ul>
             </div>
 
-            {/* Acceso a la comparativa completa de la ficha */}
-            <div className="mt-4 pt-3 border-t border-[#e7eeff]">
-              <Link href={`/customers/${customerId}`}
-                className="text-xs font-bold text-[#00357f] hover:underline w-fit">
-                Ver expediente clínico completo
-              </Link>
-            </div>
+            {/* El acceso a la ficha completa vive en «Ver perfil» de la
+                tarjeta (dictado del dueño, 2026-11-18: fuera el enlace
+                «Ver expediente clínico completo», duplicaba ese acceso). */}
 
             {variant === 'desktop' && (
               <Link href={`/customers/${customerId}/exam/new`}
@@ -289,8 +286,8 @@ export default function CustomersPage() {
     <div className="bg-white border border-[#cbd5e1]/60 rounded-[20px] or-shadow-card p-4 md:p-5 flex flex-col">
       <div className="flex items-center justify-between gap-3 mb-4">
         <h3 className="flex items-center gap-2.5 text-base font-bold text-[#111c2d]">
-          <span className="w-9 h-9 rounded-xl bg-[#dee8ff] flex items-center justify-center shrink-0">
-            <ShoppingBag className="w-4 h-4 text-[#00357f]" />
+          <span className="w-9 h-9 rounded-xl bg-[#e2f9ee] flex items-center justify-center shrink-0">
+            <ShoppingBag className="w-4 h-4 text-[#00422b]" />
           </span>
           Historial de compras
         </h3>
@@ -451,9 +448,13 @@ export default function CustomersPage() {
                         <ChevronRight className={`w-4 h-4 shrink-0 transition-transform ${isActive ? 'text-[#00357f] rotate-90' : 'text-[#c3c6d5]'}`} />
                       </button>
 
-                      {/* Detalle colapsable en móvil */}
+                      {/* Detalle colapsable en móvil. Dictado del dueño
+                          (2026-11-18): la tarjeta desplegada lleva un MARCO
+                          visible que pulsa suave (anim-frame-pulse) para
+                          que se note que estás dentro de una tarjeta
+                          abierta, y un botón «Cerrar» al final. */}
                       {isActive && (
-                        <div className="block md:hidden px-2 pb-3 pt-1 space-y-3">
+                        <div className="anim-frame-pulse block md:hidden mx-0.5 mt-1 rounded-[22px] border-2 border-[#0899c9]/45 bg-[#f6f9ff]/70 px-2 pb-3 pt-2 space-y-3">
                           {detailLoading ? (
                             <div className="flex items-center justify-center py-6">
                               <div className="w-5 h-5 border-2 border-[#00357f] border-t-transparent rounded-full animate-spin" />
@@ -469,30 +470,30 @@ export default function CustomersPage() {
                                   </span>
                                   {age && (
                                     <span className="flex items-center gap-1.5">
-                                      <Cake className="w-4 h-4 text-[#00509e]" />
+                                      <Cake className="w-4 h-4 text-[#be185d]" />
                                       {age} años
                                     </span>
                                   )}
                                   {c.customer_profiles?.phone && (
                                     <span className="flex items-center gap-1.5">
-                                      <Phone className="w-4 h-4 text-[#00509e]" />
+                                      <Phone className="w-4 h-4 text-[#047857]" />
                                       {c.customer_profiles.phone}
                                     </span>
                                   )}
                                 </div>
                                 <div className="flex gap-2 pt-3 border-t border-[#e7eeff]">
                                   <Link href={`/customers/${c.id}`}
-                                    className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] border border-[#cbd5e1] rounded-xl text-xs font-bold text-[#434653] hover:bg-[#dee8ff]/60 transition-colors">
+                                    className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] bg-[#ede9fe] text-[#6d28d9] rounded-xl text-xs font-bold hover:bg-[#ddd0fd] transition-colors">
                                     <Eye className="w-4 h-4" />
-                                    Expediente
+                                    Ver perfil
                                   </Link>
                                   <Link href={`/customers/${c.id}/sale/new`}
-                                    className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white rounded-xl text-xs font-bold transition-colors">
+                                    className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] bg-[#e2f9ee] text-[#00422b] rounded-xl text-xs font-bold hover:bg-[#c9f2dd] transition-colors">
                                     <ShoppingBag className="w-4 h-4" />
                                     Venta
                                   </Link>
                                   <Link href={`/customers/${c.id}/exam/new`}
-                                    className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] border border-[#cbd5e1] text-[#00357f] bg-white rounded-xl text-xs font-bold hover:bg-[#dee8ff]/60 transition-colors">
+                                    className="flex-1 flex items-center justify-center gap-1.5 min-h-[44px] bg-[#dee8ff] text-[#00357f] rounded-xl text-xs font-bold hover:bg-[#c9dbff] transition-colors">
                                     <Eye className="w-4 h-4" />
                                     Examen
                                   </Link>
@@ -501,6 +502,15 @@ export default function CustomersPage() {
 
                               {renderExamHistory(c.id, 'mobile')}
                               {renderSalesHistory(c.id, 'mobile')}
+
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCustomer(null)}
+                                className="w-full min-h-[40px] flex items-center justify-center gap-1.5 rounded-xl border border-[#cbd5e1] bg-white text-xs font-bold text-[#434653] hover:bg-[#f0f3ff] transition-colors cursor-pointer"
+                              >
+                                <ChevronUp className="w-4 h-4" />
+                                Cerrar vista previa
+                              </button>
                             </>
                           )}
                         </div>
@@ -550,13 +560,13 @@ export default function CustomersPage() {
                         </span>
                         {getAge(selectedCustomer.customer_profiles?.date_of_birth) && (
                           <span className="flex items-center gap-1.5 text-xs text-[#434653] font-medium">
-                            <Cake className="w-4 h-4 text-[#00509e]" />
+                            <Cake className="w-4 h-4 text-[#be185d]" />
                             {getAge(selectedCustomer.customer_profiles?.date_of_birth)} años
                           </span>
                         )}
                         {selectedCustomer.customer_profiles?.phone && (
                           <span className="flex items-center gap-1.5 text-xs text-[#434653] font-medium">
-                            <Phone className="w-4 h-4 text-[#00509e]" />
+                            <Phone className="w-4 h-4 text-[#047857]" />
                             {selectedCustomer.customer_profiles.phone}
                           </span>
                         )}
@@ -565,17 +575,17 @@ export default function CustomersPage() {
                   </div>
                   <div className="flex gap-2 w-full sm:w-auto">
                     <Link href={`/customers/${selectedCustomer.id}`}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 min-h-[44px] border border-[#cbd5e1] rounded-xl text-xs font-bold text-[#434653] hover:bg-[#dee8ff]/60 transition-colors">
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 min-h-[44px] bg-[#ede9fe] text-[#6d28d9] rounded-xl text-xs font-bold hover:bg-[#ddd0fd] transition-colors">
                       <Eye className="w-4 h-4" />
-                      Expediente
+                      Ver perfil
                     </Link>
                     <Link href={`/customers/${selectedCustomer.id}/sale/new`}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white rounded-xl text-xs font-bold transition-colors shadow-sm">
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 min-h-[44px] bg-[#e2f9ee] text-[#00422b] rounded-xl text-xs font-bold hover:bg-[#c9f2dd] transition-colors">
                       <ShoppingBag className="w-4 h-4" />
                       Nueva Venta
                     </Link>
                     <Link href={`/customers/${selectedCustomer.id}/exam/new`}
-                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 min-h-[44px] bg-white border border-[#cbd5e1] hover:bg-[#dee8ff]/60 text-[#00357f] rounded-xl text-xs font-bold transition-colors">
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 min-h-[44px] bg-[#dee8ff] hover:bg-[#c9dbff] text-[#00357f] rounded-xl text-xs font-bold transition-colors">
                       <Eye className="w-4 h-4" />
                       Examen
                     </Link>

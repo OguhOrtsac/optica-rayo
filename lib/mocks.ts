@@ -26,6 +26,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Negro carbono',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -46,6 +47,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Transparente',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -66,6 +68,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Transparente',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -86,6 +89,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Carey',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -106,6 +110,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Transparente',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -126,6 +131,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Negro y dorado',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -146,6 +152,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Negro mate',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -166,6 +173,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Negro',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -186,6 +194,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Negro',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -206,6 +215,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Transparente',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -226,6 +236,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Gris fotosensible',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -246,6 +257,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Transparente',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   },
   {
@@ -266,6 +278,7 @@ export let MOCK_PRODUCTS: Product[] = [
     color: 'Tabaco',
     gallery_urls: [],
     image_alt: null,
+    display_order: null,
     created_at: new Date().toISOString()
   }
 ]
@@ -404,6 +417,20 @@ export function addMockProduct(product: Omit<Product, 'id' | 'created_at'>) {
 
 export function updateMockProductStock(id: string, newStock: number) {
   MOCK_PRODUCTS = MOCK_PRODUCTS.map(p => p.id === id ? { ...p, stock: newStock } : p)
+}
+
+/**
+ * Demo-mode counterpart of saveProductsOrder (lib/services.ts): stamps
+ * each product's display_order from the dragged id sequence and sorts
+ * the in-memory catalog to match, so the demo behaves like the real
+ * catalog until the session ends. Ids not in the sequence keep their
+ * previous relative order at the end.
+ */
+export function reorderMockProducts(orderedIds: string[]) {
+  const position = new Map(orderedIds.map((id, i) => [id, i + 1]))
+  MOCK_PRODUCTS = [...MOCK_PRODUCTS]
+    .map(p => ({ ...p, display_order: position.get(p.id) ?? p.display_order ?? null }))
+    .sort((a, b) => (a.display_order ?? Number.MAX_SAFE_INTEGER) - (b.display_order ?? Number.MAX_SAFE_INTEGER))
 }
 
 export function addMockSale(

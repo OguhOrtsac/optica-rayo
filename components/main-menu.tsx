@@ -190,20 +190,25 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
     const Icon = ICONS[link.icon]
     const active = pathname === link.href
     if (nested) {
+      // Dictado del dueño (2026-11-18): los submenús se veían «muertos»
+      // del mismo color blanco/gris del cajón. Ahora viven sobre un
+      // panel tintado con el color suave de su grupo (ver renderGroup):
+      // el texto va en el tono fuerte del grupo, el chip es blanco y la
+      // subentrada activa es una pastilla blanca que resalta sobre el
+      // tinte.
       return (
         <Link
           key={`${link.label}-${link.href}`}
           href={link.href}
           aria-current={active ? 'page' : undefined}
-          className={`flex min-h-11 items-center gap-2.5 py-2 pl-6 pr-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
-            active
-              ? 'bg-[#dee8ff] text-[#00357f]'
-              : 'text-[#434653] hover:bg-[#f0f3ff] active:bg-[#dee8ff]/70 hover:text-[#00357f]'
+          style={{ color: active ? '#00357f' : color.fg }}
+          className={`flex min-h-11 items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
+            active ? 'bg-white shadow-sm' : 'hover:bg-white/60 active:bg-white/80'
           }`}
         >
           <span
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-            style={{ backgroundColor: active ? '#ffffff' : color.bg, color: color.fg }}
+            style={{ backgroundColor: active ? '#ffffff' : 'rgba(255,255,255,0.65)', color: color.fg }}
           >
             <Icon className="h-4 w-4 shrink-0" />
           </span>
@@ -260,7 +265,10 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
           <ChevronDown className={`h-4 w-4 shrink-0 text-[#5d606f] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
         </button>
         {expanded && (
-          <div className="pb-1.5">
+          <div
+            className="mx-2 mb-2 space-y-0.5 rounded-2xl p-1.5"
+            style={{ backgroundColor: color.bg }}
+          >
             {group.links.map(link => renderLink(link, color, true))}
           </div>
         )}
