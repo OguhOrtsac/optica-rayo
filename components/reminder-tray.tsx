@@ -9,7 +9,7 @@ import {
   type DueReminder,
 } from '@/lib/services'
 import { buildReminderMessage, toWhatsAppNumber } from '@/lib/reminder-config'
-import { CheckCheck, Eye, MessageSquare } from 'lucide-react'
+import { CheckCheck, MessageSquare } from 'lucide-react'
 
 /**
  * Exam Review Reminders tray for the administrator.
@@ -21,8 +21,10 @@ import { CheckCheck, Eye, MessageSquare } from 'lucide-react'
  * SEND-ONLY (owner's order, 2026-11-18): the message template and the
  * period («recordar cada X meses») are configured ONLY in «Mensajes»
  * (/dashboard/admin/mensajes). This tray reads both values from the
- * shared configuration to build each WhatsApp link, and its «Ver más»
- * preview modal is read-only.
+ * shared configuration to build each WhatsApp link. The template is
+ * NOT previewed here (owner's order, 2026-11-18 evening): only a short
+ * note says a predefined message exists and can be changed in
+ * «Mensajes».
  */
 export default function ReminderTray() {
   const [months, setMonths] = useState(6)
@@ -30,7 +32,6 @@ export default function ReminderTray() {
   const [due, setDue] = useState<DueReminder[]>([])
   const [loading, setLoading] = useState(true)
   const [feedback, setFeedback] = useState<string | null>(null)
-  const [showTemplateModal, setShowTemplateModal] = useState(false)
 
   const loadAll = async () => {
     setLoading(true)
@@ -73,24 +74,14 @@ export default function ReminderTray() {
     // (un solo renglón) lleva el título y los conteos — vencidos en rojo
     // y por atender en naranja —; repetirlos aquí se veía doble y gordo.
     <div className="text-left">
-      {/* Vista previa del mensaje que se envía: SOLO LECTURA. El mensaje
-          y el periodo se configuran en «Mensajes»; aquí solo se envía. */}
-      <div className="bg-[#f9f9ff] border border-[#cbd5e1]/50 rounded-xl p-4 mb-5">
-        {/* Previa en dos renglones (regla del dueño: «si no cupo en
-            uno, a los dos, pero que se vea bien»); el mensaje completo
-            se lee en el modal de «Ver más», sin editar. */}
-        <p className="text-sm text-[#434653] leading-relaxed whitespace-pre-line line-clamp-2">
-          {template || 'Mensaje de WhatsApp para el recordatorio…'}
-        </p>
-        <button
-          type="button"
-          onClick={() => setShowTemplateModal(true)}
-          className="mt-1.5 inline-flex items-center gap-1 text-xs font-bold text-[#00357f] hover:text-[#004aad] transition-colors cursor-pointer"
-        >
-          <Eye className="w-3.5 h-3.5" /> Ver más
-        </button>
-        <p className="text-[10px] text-[#737784] font-medium mt-2">
-          Este mensaje y el periodo se configuran en <strong className="text-[#00357f]">Mensajes</strong>.
+      {/* Sin vista previa del mensaje (orden del dueño, 2026-11-18):
+          solo una notita de que ya existe un mensaje predefinido y
+          dónde se modifica. El mensaje y el periodo se configuran en
+          «Mensajes»; aquí solo se envía. */}
+      <div className="mb-5">
+        <p className="text-[11px] text-[#737784] font-medium">
+          Nota: ya existe un mensaje predefinido y se puede modificar en{' '}
+          <strong className="text-[#00357f]">Mensajes</strong>.
         </p>
         {feedback && <p className="text-[11px] font-bold text-emerald-700 mt-2">{feedback}</p>}
       </div>
@@ -168,33 +159,6 @@ export default function ReminderTray() {
         </div>
       )}
 
-      {/* Modal: mensaje completo del recordatorio, SOLO LECTURA */}
-      {showTemplateModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-[#111c2d]/50" role="dialog" aria-modal="true" aria-label="Mensaje de recordatorio">
-          <div className="bg-white rounded-[20px] or-shadow-card w-full max-w-lg p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150 text-left">
-            <h4 className="text-base font-semibold text-[#111c2d]">Mensaje de recordatorio</h4>
-            <div className="bg-[#f9f9ff] border border-[#cbd5e1] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] leading-relaxed whitespace-pre-line">
-              {template || 'Mensaje de WhatsApp para el recordatorio…'}
-            </div>
-            <p className="text-[10px] text-[#737784] font-medium">
-              Puede usar <strong className="text-[#00357f]">{'{nombre}'}</strong> y{' '}
-              <strong className="text-[#00357f]">{'{meses}'}</strong>: se llenan solos con el nombre del cliente y el plazo configurado.
-            </p>
-            <p className="text-[10px] text-[#737784] font-medium">
-              Este mensaje y el periodo se configuran en <strong className="text-[#00357f]">Mensajes</strong>.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => setShowTemplateModal(false)}
-                className="min-h-[44px] px-4 rounded-xl bg-[#dee8ff] text-[#00357f] text-sm font-bold transition-all active:scale-95 cursor-pointer"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

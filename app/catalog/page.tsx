@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef, useLayoutEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
 import { getProducts, saveProductsOrder, getWishlist, toggleWishlistItem, getMemberDiscountPercent, createLensRequest, getAppSetting, getMessageTemplate } from '@/lib/services'
 import { isAdminRole } from '@/lib/roles'
@@ -12,6 +13,7 @@ import {
 } from '@/lib/message-templates'
 import { getProductLensOptions } from '@/lib/product-lens-options'
 import FaceScanner from '@/components/face-scanner'
+import type { FaceShape } from '@/lib/face-shape'
 import { uploadPrescriptionFile, attachPrescriptionToRequest, validatePrescriptionFile } from '@/lib/catalog-data'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDescription, getProductDetails, getProductImageAlt, getProductImages } from '@/lib/product-data'
@@ -56,6 +58,15 @@ interface ProfileData {
   email: string
 }
 
+// Llave de sessionStorage del aviso emergente de descuento: si el
+// visitante lo cierra, no vuelve a salir en la misma sesión.
+const MEMBER_POPUP_KEY = 'optica-rayo:member-popup-dismissed'
+
+// Llave de sessionStorage de la tarjeta de ayuda del escáner: si el
+// visitante la quita con su X, no vuelve a salir en la misma sesión
+// (el acceso al escáner queda en el rostrito junto al buscador).
+const HELP_CARD_KEY = 'optica-rayo:scanner-help-dismissed'
+
 function CatalogContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -67,6 +78,21 @@ function CatalogContent() {
   // búsqueda que detecta la forma del rostro EN el teléfono del
   // cliente y sugiere armazones del catálogo.
   const [scannerOpen, setScannerOpen] = useState(false)
+  // Forma recordada del escáner: si el cliente entra al detalle de un
+  // armazón recomendado y lo cierra, vuelve al RESULTADO del escáner
+  // (corrección del dueño 2026-11-18: el escáner no debe expulsarlo
+  // al catálogo). Solo se abandona con la X del escáner o con «Ver
+  // todos los armazones», que limpian esta memoria.
+  const [scannerShape, setScannerShape] = useState<FaceShape | null>(null)
+  const detailFromScannerRef = useRef(false)
+  // Aviso emergente «¿Ya eres cliente?» (corrección 5 del dueño
+  // 2026-11-18): ya no vive en el flujo de la página; flota arriba
+  // solo para invitados y se controla con este estado.
+  const [memberPopupVisible, setMemberPopupVisible] = useState(false)
+  // Tarjeta de ayuda del escáner descartable (corrección 6 del dueño
+  // 2026-11-18): nace visible; su X la quita por el resto de la
+  // sesión. El estado inicial se lee de sessionStorage al montar.
+  const [helpCardDismissed, setHelpCardDismissed] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
@@ -94,20 +120,24 @@ function CatalogContent() {
   // Fetch URL Parameters (Shallow Routing values)
   const categoryFilter = searchParams.get('category') || 'all'
   const selectedCategories = useMemo(() => {
-    return categoryFilter !== 'all' ? categoryFilter.split(',') : []
+    if (categoryFilter === 'all') return [] as string[]
+    return categoryFilter.split(',').map(c => c.trim()).filter(c => c !== '' && c !== 'all')
   }, [categoryFilter])
   const maxPriceFilter = parseInt(searchParams.get('price') || '10000')
   const searchTerm = searchParams.get('search') || ''
   const sortBy = searchParams.get('sort') || 'recommended'
   const onlyPromoFilter = searchParams.get('promo') === 'true'
-  const brandFilter = searchParams.get('brand') || 'all'
+  // Marca: MULTISELECCIÓN real (corrección del dueño 2026-11-18: el
+  // renglón de pastillas de marcas hacía la barra enorme y «tosca»).
+  // La URL lleva ?brand=A,B; un enlace viejo con una sola marca
+  // (?brand=A) sigue funcionando porque parsea igual.
+  const selectedBrands = useMemo(() => {
+    const raw = searchParams.get('brand')
+    if (!raw) return [] as string[]
+    return raw.split(',').map(b => b.trim()).filter(Boolean)
+  }, [searchParams])
   const layoutMode = (searchParams.get('layout') as 'grid' | 'list') || 'grid'
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
-
-  // Sticky-deck filter rows: refs let the deck keep the active chip
-  // visible inside each row's horizontal scroll.
-  const categoryRowRef = useRef<HTMLDivElement>(null)
-  const brandRowRef = useRef<HTMLDivElement>(null)
 
   // Lens Wizard Stepper state
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
@@ -219,6 +249,56 @@ function CatalogContent() {
     })()
     return () => { cancelled = true }
   }, [])
+
+  // Aviso emergente de descuento (corrección 5 del dueño 2026-11-18):
+  // aparece al abrir el catálogo, flotando arriba, SOLO para
+  // invitados — sin sesión. El cliente ya ve sus precios (y su banda
+  // verde en el flujo) y al personal no se le muestra. Si el
+  // visitante lo cierra con la X, no vuelve a salir en la misma
+  // sesión (sessionStorage); en una visita nueva puede salir otra
+  // vez. El texto del descuento es fijo por dictado del dueño
+  // («15% o más»); la lógica real de precios no cambia.
+  useEffect(() => {
+    if (loading || userProfile || memberPct <= 0) return
+    let dismissed = false
+    try {
+      dismissed = window.sessionStorage.getItem(MEMBER_POPUP_KEY) === '1'
+    } catch {
+      // Almacenamiento no disponible: el aviso se muestra igual.
+    }
+    if (dismissed) return
+    const t = window.setTimeout(() => setMemberPopupVisible(true), 600)
+    return () => window.clearTimeout(t)
+  }, [loading, userProfile, memberPct])
+
+  const dismissMemberPopup = () => {
+    setMemberPopupVisible(false)
+    try {
+      window.sessionStorage.setItem(MEMBER_POPUP_KEY, '1')
+    } catch {
+      // Sin almacenamiento, el aviso simplemente se oculta esta vez.
+    }
+  }
+
+  // La tarjeta de ayuda del escáner recuerda su descarte por sesión.
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(HELP_CARD_KEY) === '1') {
+        setHelpCardDismissed(true)
+      }
+    } catch {
+      // Sin almacenamiento, la tarjeta se muestra como siempre.
+    }
+  }, [])
+
+  const dismissHelpCard = () => {
+    setHelpCardDismissed(true)
+    try {
+      window.sessionStorage.setItem(HELP_CARD_KEY, '1')
+    } catch {
+      // Sin almacenamiento, la tarjeta simplemente se oculta esta vez.
+    }
+  }
 
   // Categories definitions
   const categories = [
@@ -353,23 +433,25 @@ function CatalogContent() {
     router.replace('/catalog', { scroll: false })
   }
 
-  // Keeps the active chip of a deck row visible: scrolls the ROW (not
-  // the page) so the pressed chip sits at its left edge.
-  const scrollActiveChipIntoView = (row: HTMLDivElement | null) => {
-    if (!row) return
-    const active = row.querySelector<HTMLElement>('[aria-pressed="true"]')
-    if (!active) return
-    const target = active.offsetLeft - row.offsetLeft - 8
-    row.scrollTo({ left: Math.max(0, target), behavior: 'smooth' })
+  // Marca multiselección (diseño final del dueño 2026-11-18): vive
+  // en la tarjeta «Filtros y Búsqueda Avanzada» y aplica al toque,
+  // igual que las categorías. La URL lleva ?brand=A,B (unión); un
+  // enlace con una sola marca sigue funcionando.
+  const toggleBrandFilter = (brand: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    const current = (params.get('brand')?.split(',') || [])
+      .map(b => b.trim())
+      .filter(Boolean)
+    const next = current.includes(brand)
+      ? current.filter(b => b !== brand)
+      : [...current, brand]
+    if (next.length === 0) {
+      params.delete('brand')
+    } else {
+      params.set('brand', next.join(','))
+    }
+    router.replace(`/catalog?${params.toString()}`, { scroll: false })
   }
-
-  useEffect(() => {
-    scrollActiveChipIntoView(categoryRowRef.current)
-  }, [selectedCategories])
-
-  useEffect(() => {
-    scrollActiveChipIntoView(brandRowRef.current)
-  }, [brandFilter, brandOptions])
 
   // Face-shape guide: prefer the frame_shape selected by the administrator;
   // legacy products without that field fall back to their name.
@@ -396,24 +478,24 @@ function CatalogContent() {
     return true
   }
 
-  // Filtered and sorted products
-  const processedProducts = useMemo(() => {
+  // Marca real de un producto ('' si no tiene capturada).
+  const brandOf = (p: Product) => (getProductDetails(p).brand || '').trim()
+
+  // Filtrado completo para una combinación dada de categorías y
+  // marcas (unión DENTRO de cada grupo, AND entre grupos, como
+  // siempre).
+  const applyFilters = (cats: string[], brands: string[]) => {
     let result = [...products]
 
-    // 1. Category Filter
-    if (selectedCategories.length > 0) {
-      result = result.filter(p => selectedCategories.includes(p.category))
+    if (cats.length > 0) {
+      result = result.filter(p => cats.includes(p.category))
+    }
+    if (brands.length > 0) {
+      result = result.filter(p => brands.includes(brandOf(p)))
     }
 
-    // 1b. Brand Filter (single brand, from the brand chips row)
-    if (brandFilter !== 'all') {
-      result = result.filter(p => (getProductDetails(p).brand || '').trim() === brandFilter)
-    }
-
-    // 2. Max Price Filter
     result = result.filter(p => p.price <= maxPriceFilter)
 
-    // 3. Search Term Filter
     if (searchTerm.trim() !== '') {
       const q = searchTerm.toLowerCase()
       result = result.filter(p => {
@@ -424,17 +506,21 @@ function CatalogContent() {
       })
     }
 
-    // 4. Promo only Filter
     if (onlyPromoFilter) {
       result = result.filter(p => p.is_promo)
     }
 
-    // 5. Face shape filter
     if (faceShapeFilter !== 'all') {
       result = result.filter(p => isFaceShapeCompatible(p, faceShapeFilter))
     }
 
-    // 6. Sorting
+    return result
+  }
+
+  // Filtered and sorted products
+  const processedProducts = useMemo(() => {
+    const result = applyFilters(selectedCategories, selectedBrands)
+
     if (sortBy === 'price_asc') {
       result.sort((a, b) => a.price - b.price)
     } else if (sortBy === 'price_desc') {
@@ -444,7 +530,10 @@ function CatalogContent() {
     }
 
     return result
-  }, [products, selectedCategories, brandFilter, maxPriceFilter, searchTerm, onlyPromoFilter, faceShapeFilter, sortBy])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, selectedCategories, selectedBrands, maxPriceFilter, searchTerm, onlyPromoFilter, faceShapeFilter, sortBy])
+
+
 
   // ——— Reordenar arrastrando (solo administrador, dictado del dueño
   // 2026-11-18) ———
@@ -461,7 +550,7 @@ function CatalogContent() {
   // la vista es parcial y reordenarla corrompería el orden global.
   const hasActiveViewFilters =
     selectedCategories.length > 0 ||
-    brandFilter !== 'all' ||
+    selectedBrands.length > 0 ||
     searchTerm.trim() !== '' ||
     faceShapeFilter !== 'all' ||
     onlyPromoFilter ||
@@ -792,6 +881,15 @@ function CatalogContent() {
     setSelectedProduct(null)
     setRequestStatus('idle')
     setRequestNote('')
+    // Si el detalle se abrió DESDE el resultado del escáner, al
+    // cerrarlo el cliente vuelve a ese resultado (con su forma y sus
+    // recomendados), las veces que entre y salga de productos. La
+    // memoria (scannerShape) se conserva; solo la X del escáner o
+    // «Ver todos los armazones» abandonan el flujo.
+    if (detailFromScannerRef.current) {
+      detailFromScannerRef.current = false
+      setScannerOpen(true)
+    }
   }
 
   // REAL submit: creates the lens request in the DB via createLensRequest
@@ -953,9 +1051,16 @@ function CatalogContent() {
   selectedCategories.forEach(c => {
     activeChips.push({ key: `cat-${c}`, label: categoryLabel(c), clear: () => toggleCategoryFilter(c) })
   })
-  if (brandFilter !== 'all') {
-    activeChips.push({ key: 'brand', label: `Marca: ${brandFilter}`, clear: () => updateFilter('brand', null) })
-  }
+  selectedBrands.forEach(b => {
+    activeChips.push({
+      key: `brand-${b}`,
+      label: `Marca: ${b}`,
+      clear: () => {
+        const rest = selectedBrands.filter(x => x !== b)
+        updateFilter('brand', rest.length > 0 ? rest.join(',') : null)
+      },
+    })
+  })
   if (faceShapeFilter !== 'all') {
     const shapeLabel = faceShapes.find(s => s.value === faceShapeFilter)?.label || faceShapeFilter
     activeChips.push({ key: 'face', label: `Rostro: ${shapeLabel}`, clear: () => updateFilter('faceShape', null) })
@@ -968,7 +1073,7 @@ function CatalogContent() {
   }
 
   return (
-    <main className="min-h-screen text-[#111c2d] px-4 py-4 sm:p-6 md:p-8 space-y-6 max-w-[1280px] mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] px-4 pt-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6 max-w-[1280px] mx-auto pb-24 md:pb-8 text-left">
       <style>{`
         @keyframes gradient-x {
           0%, 100% { background-position: 0% 50%; }
@@ -1005,7 +1110,7 @@ function CatalogContent() {
           (dictado del dueño 2026-11-18: fuera el titular «Ve el mundo
           con claridad», el subtítulo y las pastillas de cifras — la
           banda se compacta a lo que ocupa la pastilla). */}
-      <section className="anim-fade-up relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-3 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.45)] sm:px-6 md:py-4">
+      <section className="anim-fade-up relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-2.5 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.45)] sm:px-6 md:py-4">
         {/* Decorative light glows */}
         <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 hidden md:block w-56 h-56 rounded-full bg-white/10 blur-2xl" />
         <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 hidden md:block w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
@@ -1021,8 +1126,8 @@ function CatalogContent() {
           immediately under the hero band and before every filter
           (dictado del dueño 2026-11-18: que no haya que bajar a
           buscarlo). It drives the `search` filter on its own. */}
-      <div className="relative z-10 px-1">
-        <div className="relative max-w-xl">
+      <div className="relative z-10 flex items-center gap-2 px-1">
+        <div className="relative min-w-0 max-w-xl flex-1">
           <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#00357f]/50 pointer-events-none" />
           <input
             type="text"
@@ -1030,18 +1135,43 @@ function CatalogContent() {
             onChange={e => updateFilter('search', e.target.value)}
             placeholder="Buscar lentes, marcas…"
             aria-label="Buscar en el catálogo"
-            className="w-full rounded-2xl border border-[#cbd5e1]/70 bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.35)] outline-none focus:border-[#00357f]/40 focus:ring-4 focus:ring-[#00357f]/15 transition min-h-[52px]"
+            className="w-full rounded-2xl border border-[#cbd5e1]/70 bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-2.5 sm:py-3.5 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.35)] outline-none focus:border-[#00357f]/40 focus:ring-4 focus:ring-[#00357f]/15 transition min-h-[44px] sm:min-h-[52px]"
           />
         </div>
+        {/* Rostrito del escáner (corrección 6 del dueño 2026-11-18):
+            acceso permanente y compacto al escáner en la MISMA línea
+            del buscador, se haya quitado la tarjeta de ayuda o no. */}
+        <button
+          type="button"
+          onClick={() => setScannerOpen(true)}
+          aria-label="Descubrir mi forma de rostro"
+          title="Descubrir mi forma de rostro"
+          className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-2xl bg-[#00357f] text-white shadow-md shadow-[#00357f]/25 transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
+        >
+          <ScanFace className="h-5 w-5" />
+        </button>
       </div>
 
       {/* Face-shape help card (dictado del dueño 2026-11-18): junto a
           la búsqueda, ofrece el escáner de rostro. El análisis ocurre
           en el teléfono del cliente; ninguna foto se sube ni se
           guarda (el aviso va también dentro del escáner). */}
-      <section className="anim-fade-up or-shadow-card flex flex-col gap-3 rounded-[20px] bg-white p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5" aria-label="Ayuda para elegir lentes">
-        <div className="flex items-start gap-3 sm:flex-1">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#dee8ff] text-[#00357f]">
+      {!helpCardDismissed && (
+      <section className="anim-fade-up or-shadow-card relative flex flex-col gap-3 rounded-[20px] bg-white p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-5" aria-label="Ayuda para elegir lentes">
+        {/* X para quitar la tarjeta (corrección 6 del dueño
+            2026-11-18): al cerrarla no vuelve en la misma sesión y
+            el escáner queda en el rostrito junto al buscador. */}
+        <button
+          type="button"
+          onClick={dismissHelpCard}
+          aria-label="Quitar esta ayuda"
+          title="Quitar esta ayuda"
+          className="absolute top-2.5 right-2.5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#737784] transition hover:bg-[#f0f3ff] hover:text-[#111c2d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="flex items-start gap-3 pr-8 sm:flex-1 sm:pr-0">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#dee8ff] text-[#00357f] sm:h-11 sm:w-11">
             <ScanFace className="h-5.5 w-5.5" />
           </span>
           <div className="min-w-0">
@@ -1057,11 +1187,12 @@ function CatalogContent() {
         <button
           type="button"
           onClick={() => setScannerOpen(true)}
-          className="min-h-[48px] shrink-0 cursor-pointer rounded-2xl bg-[#00357f] px-5 text-sm font-bold text-white shadow-md shadow-[#00357f]/25 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
+          className="min-h-[44px] shrink-0 cursor-pointer rounded-2xl bg-[#00357f] px-5 text-sm font-bold text-white shadow-md shadow-[#00357f]/25 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 sm:mr-9 sm:min-h-[48px]"
         >
           Descubrir mi forma de rostro
         </button>
       </section>
+      )}
 
       {/* TOP: compact carousel — mobile-first pattern: peek the next card
           so the swipe is obvious, user-controlled (no auto-rotation),
@@ -1069,7 +1200,7 @@ function CatalogContent() {
           «Más vendidos» ranking when sales data is readable (staff
           sessions); otherwise the featured/promo selection takes over. */}
       {carouselProducts.length > 0 && (
-        <section className="anim-fade-up space-y-3" aria-label={hasBestSellers ? 'Más vendidos' : 'Destacados y promociones'}>
+        <section className="anim-fade-up space-y-2 sm:space-y-3" aria-label={hasBestSellers ? 'Más vendidos' : 'Destacados y promociones'}>
           <div className="flex items-center justify-between gap-3 px-0.5">
             <h2 className="text-base font-extrabold tracking-tight text-[#111c2d] flex items-center gap-2">
               {hasBestSellers ? (
@@ -1123,7 +1254,7 @@ function CatalogContent() {
                   type="button"
                   onClick={() => scrollTo(i)}
                   aria-label={hasBestSellers ? `Ir al más vendido ${i + 1}` : `Ir al destacado ${i + 1}`}
-                  className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                  className="flex h-9 w-9 sm:h-11 sm:w-11 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                 >
                   <span className={`block h-1.5 rounded-full transition-all ${i === selectedIndex ? 'w-6 bg-[#00357f]' : 'w-1.5 bg-[#cbd5e1]'}`} />
                 </button>
@@ -1133,117 +1264,10 @@ function CatalogContent() {
         </section>
       )}
 
-      {/* Sticky filter deck: categories + brand chips travel together
-          under the site nav while scrolling — one deck, no extra
-          floating bar competing with the search field. */}
-      <div className="anim-fade-up sticky top-[61px] md:top-16 z-40 -mx-4 px-4 py-1.5 sm:py-2 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 bg-[#e9f0fd]/95 backdrop-blur-md space-y-1.5 sm:space-y-2">
-      {/* Filter rows (dictado del dueño 2026-11-18: «eso de marca y
-          eso como que hay que darle mejor orden»): dos renglones con
-          la MISMA estructura — etiqueta alineada a la izquierda
-          («Categoría» / «Marca»), pastillas de la misma altura y
-          estilo con el conteo en el mismo formato de pastilla.
-          Corrección del mismo día: SIN desplazamiento horizontal
-          (orden expresa del dueño) — los renglones se envuelven
-          (flex-wrap) y TODAS las pastillas se leen completas, con la
-          letra un punto menor en móvil. Mismos valores y filtrado.
-          Compactación posterior del mismo día (el dueño: los filtros
-          sin scroll «se ve bien mal» si ocupan tanto alto): en móvil
-          las pastillas miden 30px con texto de 10px y huecos de 4px,
-          y las etiquetas van como letrita de 10px ENCIMA de cada
-          grupo para liberar todo el ancho; en escritorio el renglón
-          conserva etiqueta a la izquierda y pastillas de 40px. */}
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[#737784] sm:w-16 sm:shrink-0 sm:text-[11px] sm:font-semibold sm:normal-case sm:tracking-normal sm:text-[#434653]">Categoría</span>
-        <div className="relative min-w-0 flex-1">
-          <div ref={categoryRowRef} className="flex flex-wrap gap-1 sm:gap-2" role="group" aria-label="Categorías del catálogo">
-            {categories.map(cat => {
-              const Icon = cat.icon
-              const isSelected = cat.value === 'all'
-                ? selectedCategories.length === 0
-                : selectedCategories.includes(cat.value)
-              const count = cat.value === 'all'
-                ? products.length
-                : (categoryCounts[cat.value] || 0)
-              return (
-                <button
-                  key={cat.value}
-                  type="button"
-                  onClick={() => toggleCategoryFilter(cat.value)}
-                  aria-pressed={isSelected}
-                  className={`flex shrink-0 items-center gap-1 sm:gap-1.5 rounded-full border px-2 sm:px-3.5 text-[10px] sm:text-xs font-bold whitespace-nowrap min-h-[30px] sm:min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
-                    isSelected
-                      ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
-                      : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span>{cat.label}</span>
-                  <span className={`rounded-full px-1 py-px text-[9px] sm:px-1.5 sm:py-0.5 sm:text-[10px] font-black ${isSelected ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>
-                    {count}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Brand filter: single selection («Todas» or one brand),
-          written to ?brand= and combined with AND logic against
-          every other filter. Only rendered when the catalog really
-          carries 2+ brands. */}
-      {brandOptions.length >= 2 && (
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[#737784] sm:w-16 sm:shrink-0 sm:text-[11px] sm:font-semibold sm:normal-case sm:tracking-normal sm:text-[#434653]">Marca</span>
-          <div className="relative min-w-0 flex-1">
-            <div ref={brandRowRef} className="flex flex-wrap gap-1 sm:gap-2" role="group" aria-label="Filtrar por marca">
-              <button
-                type="button"
-                onClick={() => updateFilter('brand', null)}
-                aria-pressed={brandFilter === 'all'}
-                className={`flex shrink-0 items-center gap-1 sm:gap-1.5 rounded-full border px-2 sm:px-3.5 text-[10px] sm:text-xs font-bold whitespace-nowrap min-h-[30px] sm:min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
-                  brandFilter === 'all'
-                    ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
-                    : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
-                }`}
-              >
-                <span>Todas</span>
-                <span className={`rounded-full px-1 py-px text-[9px] sm:px-1.5 sm:py-0.5 sm:text-[10px] font-black ${brandFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>{products.length}</span>
-              </button>
-              {brandOptions.map(({ brand, count }) => {
-                const isActive = brandFilter === brand
-                return (
-                  <button
-                    key={brand}
-                    type="button"
-                    onClick={() => updateFilter('brand', isActive ? null : brand)}
-                    aria-pressed={isActive}
-                    className={`flex shrink-0 items-center gap-1 sm:gap-1.5 rounded-full border px-2 sm:px-3.5 text-[10px] sm:text-xs font-bold whitespace-nowrap min-h-[30px] sm:min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
-                      isActive
-                        ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
-                        : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
-                    }`}
-                  >
-                    <span>{brand}</span>
-                    <span className={`rounded-full px-1 py-px text-[9px] sm:px-1.5 sm:py-0.5 sm:text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>{count}</span>
-                  </button>
-                )
-              })}
-            </div>
-            </div>
-        </div>
-      )}
-      </div>
-
-      {/* Member pricing banner */}
-      {!loading && memberPct > 0 && !isClient && (
-        <div className="flex flex-wrap items-center gap-2 bg-[#dee8ff] border border-[#00357f]/20 rounded-xl px-4 py-3">
-          <Tag className="w-4 h-4 text-[#00357f]" />
-          <p className="text-xs font-bold text-[#00357f]">
-            ¿Ya eres cliente de Óptica Rayo? Inicia sesión y obtén {memberPct}% de descuento en el catálogo, además de precios especiales por producto.
-          </p>
-        </div>
-      )}
+      {/* Member pricing banner: la banda de INVITADO salió del flujo
+          (corrección 5 del dueño 2026-11-18) y ahora es el aviso
+          emergente flotante de más abajo. Aquí solo queda la banda
+          verde del cliente con sesión, como siempre. */}
       {!loading && isClient && (
         <div className="flex flex-wrap items-center gap-2 bg-[#e2f9ee] border border-[#49da9f]/40 rounded-xl px-4 py-3">
           <Tag className="w-4 h-4 text-[#00422b]" />
@@ -1255,22 +1279,26 @@ function CatalogContent() {
 
 
       {/* LAYOUT: FILTERS & PRODUCT GRID */}
-      <div className="flex flex-col gap-6 items-start w-full">
+      <div className="flex flex-col gap-4 sm:gap-6 items-start w-full">
 
-        {/* 1. COLLAPSIBLE TOP FILTERS */}
-        <div className="w-full bg-white border border-[#cbd5e1] rounded-2xl p-4 sm:p-6 shadow-sm">
+        {/* 1. COLLAPSIBLE TOP FILTERS — el ÚNICO sistema de filtros
+            (diseño final del dueño 2026-11-18: fuera la barra
+            pegajosa de pastillas, que duplicaba a esta tarjeta y se
+            comía la pantalla). Fuente un escalón menor en todo el
+            interior, por dictado suyo («más ordenadito»). */}
+        <div className="w-full bg-white border border-[#cbd5e1] rounded-2xl p-3 sm:p-6 shadow-sm">
           <div
             className="flex justify-between items-center cursor-pointer select-none group"
             onClick={() => setIsFiltersOpen(!isFiltersOpen)}
           >
-            <span className="text-xs font-bold uppercase tracking-wider text-[#00357f] flex items-center gap-2">
-              <SlidersHorizontal className="w-4.5 h-4.5" />
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#00357f] flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4" />
               Filtros y Búsqueda Avanzada
             </span>
             <div className="flex items-center gap-4">
               <button
                 onClick={(e) => { e.stopPropagation(); handleResetFilters(); }}
-                className="text-[10px] font-black text-[#00357f] hover:underline cursor-pointer uppercase"
+                className="text-[9px] font-black text-[#00357f] hover:underline cursor-pointer uppercase"
               >
                 Limpiar Filtros
               </button>
@@ -1288,12 +1316,12 @@ function CatalogContent() {
                 exit={{ height: 0, opacity: 0 }}
                 className="overflow-hidden"
               >
-                <div className="pt-6 mt-4 border-t border-[#f0f3ff] space-y-6">
+                <div className="pt-4 mt-3 border-t border-[#f0f3ff] space-y-5">
 
                   {/* Category Filter (Horizontal, Multi-select) */}
-                  <div className="space-y-3">
-                    <label className="block text-[9px] font-bold uppercase tracking-wider text-[#737784]">Categorías (Selecciona una o varias)</label>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="space-y-2.5">
+                    <label className="block text-[8px] font-bold uppercase tracking-wider text-[#737784]">Categorías (Selecciona una o varias)</label>
+                    <div className="flex flex-wrap gap-1.5">
                       {categories.map(cat => {
                         const isSelected = cat.value === 'all'
                           ? selectedCategories.length === 0
@@ -1308,26 +1336,58 @@ function CatalogContent() {
                             key={cat.value}
                             type="button"
                             onClick={() => toggleCategoryFilter(cat.value)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-200 active:scale-95 cursor-pointer min-h-[38px] ${
+                            aria-pressed={isSelected}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all duration-200 active:scale-95 cursor-pointer min-h-[34px] ${
                               isSelected
                                 ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f] shadow-sm scale-102 font-black'
                                 : 'bg-[#f0f3ff] border-[#cbd5e1]/40 text-[#434653] hover:bg-[#dee8ff]/30 hover:border-[#cbd5e1]'
                             }`}
                           >
                             <span>{cat.label}</span>
-                            <span className="text-[9px] opacity-60">({count})</span>
+                            <span className="text-[8px] opacity-60">({count})</span>
                           </button>
                         )
                       })}
                     </div>
                   </div>
 
+                  {/* Brand Filter (Multi-select, unión): la sección
+                      «Marca» vive AQUÍ, en la única tarjeta de
+                      filtros, con el mismo estilo seleccionado
+                      verdecito de las categorías. */}
+                  {brandOptions.length >= 2 && (
+                    <div className="space-y-2.5">
+                      <label className="block text-[8px] font-bold uppercase tracking-wider text-[#737784]">Marca (Selecciona una o varias)</label>
+                      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por marca">
+                        {brandOptions.map(({ brand, count }) => {
+                          const isSelected = selectedBrands.includes(brand)
+                          return (
+                            <button
+                              key={brand}
+                              type="button"
+                              onClick={() => toggleBrandFilter(brand)}
+                              aria-pressed={isSelected}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all duration-200 active:scale-95 cursor-pointer min-h-[34px] ${
+                                isSelected
+                                  ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f] shadow-sm scale-102 font-black'
+                                  : 'bg-[#f0f3ff] border-[#cbd5e1]/40 text-[#434653] hover:bg-[#dee8ff]/30 hover:border-[#cbd5e1]'
+                              }`}
+                            >
+                              <span>{brand}</span>
+                              <span className="text-[8px] opacity-60">({count})</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Other Filters Grid (3 Columns) */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-5 border-t border-[#f0f3ff]">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-4 border-t border-[#f0f3ff]">
 
                     {/* Face Shape */}
-                    <div className="space-y-3">
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-[#737784]">Forma de Rostro</label>
+                    <div className="space-y-2.5">
+                      <label className="block text-[8px] font-bold uppercase tracking-wider text-[#737784]">Forma de Rostro</label>
                       <div className="grid grid-cols-2 gap-1.5">
                         {faceShapes.map(shape => {
                           const isSelected = faceShapeFilter === shape.value
@@ -1335,7 +1395,7 @@ function CatalogContent() {
                             <button
                               key={shape.value}
                               onClick={() => updateFilter('faceShape', shape.value)}
-                              className={`px-3 py-2 rounded-lg text-[10px] font-bold border text-center transition-all active:scale-95 cursor-pointer min-h-[38px] uppercase tracking-wider ${
+                              className={`px-2.5 py-1.5 rounded-lg text-[9px] font-bold border text-center transition-all active:scale-95 cursor-pointer min-h-[34px] uppercase tracking-wider ${
                                 isSelected
                                   ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f]'
                                   : 'bg-[#f0f3ff] border-[#cbd5e1]/40 text-[#434653] hover:bg-[#dee8ff]/30'
@@ -1349,10 +1409,10 @@ function CatalogContent() {
                     </div>
 
                     {/* Smooth, Interactive Price range with illumination */}
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-wider text-[#737784]">
+                    <div className="space-y-2.5">
+                      <div className="flex justify-between items-center text-[8px] font-bold uppercase tracking-wider text-[#737784]">
                         <label>Rango de Precio</label>
-                        <span className="text-[#00357f] text-xs font-black">
+                        <span className="text-[#00357f] text-[11px] font-black">
                           $0 - {formatPrice(maxPriceFilter)}
                         </span>
                       </div>
@@ -1368,16 +1428,16 @@ function CatalogContent() {
                           background: `linear-gradient(to right, #00357f 0%, #0088cc ${((maxPriceFilter) / (absoluteMaxPrice || 10000)) * 100}%, #f0f3ff ${((maxPriceFilter) / (absoluteMaxPrice || 10000)) * 100}%, #f0f3ff 100%)`
                         }}
                       />
-                      <div className="flex justify-between text-[9px] text-[#737784] font-bold">
+                      <div className="flex justify-between text-[8px] text-[#737784] font-bold">
                         <span>Min: $0</span>
                         <span>Máx: {formatPrice(absoluteMaxPrice || 10000)}</span>
                       </div>
                     </div>
 
                     {/* Toggle Promos */}
-                    <div className="space-y-3 flex flex-col justify-center">
-                      <div className="flex items-center justify-between p-3 bg-[#f0f3ff] border border-[#cbd5e1]/40 rounded-xl h-[48px] mt-auto">
-                        <span className="text-xs font-bold text-[#434653]">Solo Promociones</span>
+                    <div className="space-y-2.5 flex flex-col justify-center">
+                      <div className="flex items-center justify-between p-3 bg-[#f0f3ff] border border-[#cbd5e1]/40 rounded-xl h-[44px] mt-auto">
+                        <span className="text-[11px] font-bold text-[#434653]">Solo Promociones</span>
                         <label className="relative inline-flex items-center cursor-pointer">
                           <input
                             type="checkbox"
@@ -1398,10 +1458,10 @@ function CatalogContent() {
         </div>
 
         {/* 2. RESULTS CONTAINER */}
-        <div className="w-full space-y-6">
+        <div className="w-full space-y-4 sm:space-y-6">
 
           {/* Controls Bar */}
-          <div className="bg-white border border-[#cbd5e1] rounded-2xl p-4 flex flex-col sm:flex-row gap-4 items-center justify-between shadow-sm">
+          <div className="bg-white border border-[#cbd5e1] rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row gap-4 items-center justify-between shadow-sm">
 
             {/* Results count (the only search field is the floating one
                 above the brand strip — no duplicate field here). */}
@@ -1688,20 +1748,80 @@ function CatalogContent() {
 
       </div>
 
+      {/* Aviso emergente de descuento para INVITADOS (corrección 5
+          del dueño 2026-11-18): flota arriba al abrir el catálogo —
+          la banda «¿Ya eres cliente?» ya no ocupa un renglón del
+          flujo. La pastilla del descuento parpadea como la del
+          héroe. Dos salidas: «Iniciar sesión» o la X (que lo apaga
+          por el resto de la sesión). El texto del descuento es fijo
+          por dictado del dueño («15% o más»); los precios reales no
+          cambian. */}
+      {memberPopupVisible && (
+        <div
+          role="dialog"
+          aria-label="Descuento para clientes de Óptica Rayo"
+          className="anim-fade-up fixed inset-x-4 top-[70px] z-[45] mx-auto max-w-md rounded-3xl border border-[#00357f]/15 bg-white/95 p-4 shadow-[0_24px_48px_-16px_rgba(0,53,127,0.45)] backdrop-blur-md sm:top-[76px]"
+        >
+          <button
+            type="button"
+            onClick={dismissMemberPopup}
+            aria-label="Cerrar el aviso"
+            className="absolute top-2.5 right-2.5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#737784] transition hover:bg-[#f0f3ff] hover:text-[#111c2d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div className="flex items-start gap-3 pr-7">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#dee8ff] text-[#00357f]">
+              <Tag className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold tracking-tight text-[#111c2d]">
+                ¿Ya eres cliente de Óptica Rayo?
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[#434653]">
+                Nuestros clientes tienen{' '}
+                <span className="anim-blink-pill inline-flex items-center rounded-full bg-[#e2f9ee] px-2 py-0.5 font-black text-[#00422b]">
+                  15% o más de descuento
+                </span>{' '}
+                en el catálogo, además de precios especiales por producto.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/login"
+            className="mt-3 flex min-h-[44px] w-full cursor-pointer items-center justify-center rounded-2xl bg-[#00357f] px-4 text-sm font-bold text-white shadow-md shadow-[#00357f]/25 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
+          >
+            Iniciar sesión
+          </Link>
+        </div>
+      )}
+
       {/* Escáner de rostro: modal en portal; al tocar un armazón
-          sugerido se cierra y se abre el detalle de ese producto,
-          como si el cliente lo hubiera tocado en la rejilla. */}
+          sugerido se cierra y se abre el detalle de ese producto.
+          Al cerrar ESE detalle, el cliente vuelve al resultado del
+          escáner (resumeShape), las veces que entre y salga; solo
+          la X del escáner o «Ver todos los armazones» abandonan el
+          flujo y limpian la forma recordada. */}
       <FaceScanner
         open={scannerOpen}
-        onClose={() => setScannerOpen(false)}
+        onClose={() => {
+          setScannerOpen(false)
+          setScannerShape(null)
+          detailFromScannerRef.current = false
+        }}
         products={products}
         priceOf={priceOf}
+        resumeShape={scannerShape}
+        onShapeResolved={setScannerShape}
         onPickProduct={(p) => {
+          detailFromScannerRef.current = true
           setScannerOpen(false)
           handleOpenDetailModal(p)
         }}
         onShowAllFrames={() => {
           setScannerOpen(false)
+          setScannerShape(null)
+          detailFromScannerRef.current = false
           updateFilter('category', 'frames')
         }}
       />
