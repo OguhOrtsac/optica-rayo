@@ -12,8 +12,10 @@ import {
   getBirthdayDismissals,
   dismissBirthday,
   getMessageTemplates,
+  getWeekSalesSeries,
   type DueReminder,
-  type MessageTemplates
+  type MessageTemplates,
+  type WeekSalesSeries
 } from '@/lib/services'
 import { toWhatsAppNumber } from '@/lib/reminder-config'
 import {
@@ -28,6 +30,7 @@ import { ensureFixedPaymentNotifications } from '@/lib/expenses'
 import { Database } from '@/types/database.types'
 import ReminderTray from '@/components/reminder-tray'
 import RecentActivity from '@/components/recent-activity'
+import SalesSparkline from '@/components/sales-sparkline'
 import {
   TrendingUp,
   Wallet,
@@ -46,7 +49,8 @@ import {
   Settings,
   Landmark,
   Receipt,
-  PiggyBank
+  PiggyBank,
+  ShoppingCart
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -76,6 +80,10 @@ export default function AdminDashboard() {
   // y la respuesta a solicitudes leen su texto de aquí, con el texto de
   // siempre como respaldo mientras cargan o si la lectura falla.
   const [msgTemplates, setMsgTemplates] = useState<MessageTemplates | null>(null)
+  // Vista previa «Ventas de la semana» (estilo de la foto del dueño):
+  // serie de los últimos 7 días para la mini gráfica; se carga aparte,
+  // sin bloquear el panel, y si falla la tarjeta muestra su esqueleto.
+  const [weekSeries, setWeekSeries] = useState<WeekSalesSeries | null>(null)
   const [birthdayDismissals, setBirthdayDismissals] = useState<Set<string>>(new Set())
   const [dismissingId, setDismissingId] = useState<string | null>(null)
   const [birthdayError, setBirthdayError] = useState<string | null>(null)
@@ -110,6 +118,12 @@ export default function AdminDashboard() {
     // lectura falla, los botones usan el texto por defecto de siempre.
     getMessageTemplates()
       .then(setMsgTemplates)
+      .catch(() => {})
+
+    // Serie de la semana para la mini gráfica de la previa: aparte y
+    // sin bloquear el panel.
+    getWeekSalesSeries()
+      .then(setWeekSeries)
       .catch(() => {})
 
     try {
@@ -336,6 +350,27 @@ export default function AdminDashboard() {
       ) : (
         <div className="space-y-6">
 
+          {/* BOTÓN HÉROE «Realizar Venta» — lenguaje de la foto del dueño
+              (2026-11-18) adaptado al tema claro: degradado azul primario
+              → celeste ANIMADO (.or-hero-gradient), icono en cuadro
+              translúcido, título grande en blanco, subtítulo en
+              mayúsculas y chevron en círculo translúcido. */}
+          <Link
+            href="/dashboard/seller"
+            className="anim-stagger-item or-hero-gradient or-shadow-raised flex items-center gap-4 rounded-[24px] p-5 text-white transition-transform active:scale-[0.99]"
+          >
+            <span className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+              <ShoppingCart className="w-7 h-7" />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[22px] leading-tight font-extrabold">Realizar Venta</span>
+              <span className="block text-[11px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">Punto de venta</span>
+            </span>
+            <span className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+              <ChevronRight className="w-5 h-5" />
+            </span>
+          </Link>
+
           {/* FINANZAS: una sola tarjeta contenedora con mini tarjetas.
               Primera fila: Ventas hoy · Ventas del mes · Por cobrar.
               Segunda fila: Pagos · Utilidad del mes. */}
@@ -437,32 +472,64 @@ export default function AdminDashboard() {
             </div>
           </section>
 
+          {/* VISTA PREVIA «Ventas de la semana» — tarjeta estilo la foto
+              del dueño: título en negrita, pastilla con el total de la
+              semana y la mini gráfica de línea violeta de los últimos 7
+              días (semana completa, con ceros). La tarjeta entera lleva
+              al detalle del mes; el pie repite el «Ver detalles…» de la
+              referencia. */}
+          <section
+            className="anim-stagger-item bg-white rounded-[24px] or-shadow-card p-4 sm:p-5"
+            style={{ '--enter-delay': '60ms' } as React.CSSProperties}
+          >
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <h3 className="text-base font-extrabold text-[#111c2d]">Ventas de la semana</h3>
+              <span className="shrink-0 bg-[#ede9fe] text-[#7c3aed] text-sm font-extrabold px-3 py-1 rounded-full tabular-nums">
+                {weekSeries ? formatPrice(weekSeries.total) : '—'}
+              </span>
+            </div>
+            {weekSeries ? (
+              <SalesSparkline days={weekSeries.days} />
+            ) : (
+              <div className="h-24 skeleton-shimmer rounded-xl" aria-hidden="true" />
+            )}
+            <Link
+              href="/dashboard/admin/finanzas/mes"
+              className="inline-flex items-center gap-1.5 min-h-[40px] text-sm font-bold text-[#7c3aed] transition-all active:scale-95"
+            >
+              <TrendingUp className="w-4 h-4" />
+              Ver detalles…
+            </Link>
+          </section>
+
           {/* Configuración: Productos, Usuarios, Mensajes y Clientes.
               La sección completa vive dentro de una tarjeta blanca para
               que su contorno se vea sobre el fondo; los mosaicos internos
               usan el tono #f9f9ff para separarse del blanco de la tarjeta.
-              Con 4 mosaicos la rejilla es 2×2 en móvil para que no se
-              amontonen, y una fila de 4 desde sm. */}
-          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '60ms' } as React.CSSProperties}>
+              Orden del dueño (2026-11-18): las CUATRO tarjetitas en UN
+              solo renglón también en móvil — rejilla de 4 columnas en
+              todos los anchos, con chip y etiqueta achicados para que
+              ninguna palabra se corte a 360px. */}
+          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '120ms' } as React.CSSProperties}>
             <div className="flex items-center gap-3 mb-4">
               <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
                 <Settings className="w-5 h-5" />
               </span>
               <h3 className="text-base font-semibold text-[#111c2d]">Configuración</h3>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
               {quickAccess.map(item => {
                 const Icon = item.icon
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="bg-[#f9f9ff] hover:bg-[#eef3ff] ring-1 ring-[#cbd5e1]/40 rounded-[20px] p-3 flex flex-col items-center justify-center gap-2 min-h-[76px] transition-all active:scale-95"
+                    className="bg-[#f9f9ff] hover:bg-[#eef3ff] ring-1 ring-[#cbd5e1]/40 rounded-2xl sm:rounded-[20px] p-1.5 sm:p-3 flex flex-col items-center justify-center gap-1 sm:gap-2 min-h-[64px] sm:min-h-[76px] transition-all active:scale-95"
                   >
-                    <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.chip}`}>
-                      <Icon className="w-5 h-5" />
+                    <span className={`w-[30px] h-[30px] sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 ${item.chip}`}>
+                      <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                     </span>
-                    <span className="text-xs font-bold text-[#111c2d]">{item.label}</span>
+                    <span className="text-[10px] sm:text-xs font-bold leading-tight text-center text-[#111c2d]">{item.label}</span>
                   </Link>
                 )
               })}
@@ -473,7 +540,7 @@ export default function AdminDashboard() {
               y avisar a los 6 meses «ya es tiempo de tu nuevo examen».
               Va inmediatamente después de Configuración, con el contador de
               vencidos en rojo sobre la cabecera; la sección nace minimizada. */}
-          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '120ms' } as React.CSSProperties}>
+          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
             <button
               type="button"
               onClick={() => toggleSection('reminders')}
@@ -515,7 +582,7 @@ export default function AdminDashboard() {
           </section>
 
           {/* Solicitudes de lentes armados — colapsable, nace minimizada */}
-          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
+          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '240ms' } as React.CSSProperties}>
             <button
               type="button"
               onClick={() => toggleSection('requests')}
@@ -611,7 +678,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Cumpleaños próximos (7 días): felicitar también es vender */}
-          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '240ms' } as React.CSSProperties}>
+          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-[20px] or-shadow-card text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
             <button
               type="button"
               onClick={() => toggleSection('birthdays')}
@@ -659,14 +726,14 @@ export default function AdminDashboard() {
                       )
                       const dismissing = dismissingId === b.id
                       return (
-                        <li key={b.id} className="flex items-center gap-3 py-3 min-h-[48px]">
+                        <li key={b.id} className="flex items-center gap-2 py-3 min-h-[48px]">
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-[#111c2d] truncate">{b.name}</p>
-                            <p className="text-xs text-[#737784] font-medium mt-0.5">
+                            <p className="text-[11px] text-[#737784] font-medium mt-0.5">
                               {b.daysUntil === 0 ? '¡Cumple hoy!' : b.daysUntil === 1 ? 'Mañana' : `En ${b.daysUntil} días`}
                             </p>
                           </div>
-                          <span className="shrink-0 bg-[#e6f5fb] text-[#0899c9] text-xs font-bold px-2.5 py-1 rounded-full capitalize">
+                          <span className="shrink-0 bg-[#e6f5fb] text-[#0899c9] text-[11px] font-bold px-2 py-0.5 rounded-full capitalize">
                             {b.dayLabel}
                           </span>
                           {waNumber ? (
@@ -674,7 +741,7 @@ export default function AdminDashboard() {
                               href={`https://wa.me/${waNumber}?text=${waMessage}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="shrink-0 flex items-center gap-1.5 min-h-[44px] px-3.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-95 cursor-pointer"
+                              className="shrink-0 flex items-center gap-1 min-h-[44px] px-2.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-95 cursor-pointer"
                             >
                               <MessageSquare className="w-3.5 h-3.5" />
                               Felicitar
@@ -684,7 +751,7 @@ export default function AdminDashboard() {
                               type="button"
                               disabled
                               title="Este cliente no tiene teléfono registrado"
-                              className="shrink-0 flex items-center gap-1.5 min-h-[44px] px-3.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600/50 cursor-not-allowed"
+                              className="shrink-0 flex items-center gap-1 min-h-[44px] px-2.5 rounded-lg text-xs font-bold text-white bg-emerald-600/50 cursor-not-allowed"
                             >
                               <MessageSquare className="w-3.5 h-3.5" />
                               Felicitar
@@ -694,11 +761,11 @@ export default function AdminDashboard() {
                             type="button"
                             onClick={() => handleDismissBirthday(b)}
                             disabled={!!dismissingId}
-                            aria-label={`Eliminar cumpleaños de ${b.name}`}
-                            className="shrink-0 flex items-center gap-1.5 min-h-[44px] px-3 rounded-lg text-[11px] font-bold text-[#ba1a1a] transition hover:bg-[#ffdad6]/60 disabled:opacity-60 cursor-pointer"
+                            aria-label="Eliminar"
+                            title="Eliminar"
+                            className="shrink-0 flex items-center justify-center w-10 h-10 rounded-lg text-[#ba1a1a] transition hover:bg-[#ffdad6]/60 disabled:opacity-60 cursor-pointer"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            {dismissing ? 'Quitando…' : 'Eliminar'}
+                            <Trash2 className={`w-4 h-4 ${dismissing ? 'animate-pulse opacity-60' : ''}`} />
                           </button>
                         </li>
                       )

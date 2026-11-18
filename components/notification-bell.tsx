@@ -33,6 +33,13 @@ import { createClient as createBrowserClient } from '@/utils/supabase/client'
 // «Borrar», which deletes the row for real via deleteMyNotification so
 // the list does not grow forever.
 //
+// Compact dropdown (owner's order, 2026-11-18): the panel is capped at
+// min(92vw, 360px) wide and 70dvh tall with the scroll inside the list
+// only (header and footer stay fixed), and the items use smaller type
+// and padding so it never covers the whole phone screen. The per-item
+// action buttons are secondary links inside the dropdown, so they use
+// a 36px touch height instead of the 44px primary-action minimum.
+//
 // Renders nothing for guests and customers.
 
 type NotificationItem = {
@@ -262,11 +269,11 @@ export default function NotificationBell({ role }: { role: string | null }) {
       </button>
 
       {open && (
-        <div className="fixed inset-x-2 top-[72px] z-50 overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white shadow-xl md:absolute md:inset-x-auto md:right-0 md:top-[calc(100%+8px)] md:w-[360px]">
-          <div className="flex items-center gap-2 border-b border-[#cbd5e1]/60 px-4 py-3">
-            <h3 className="text-base font-semibold text-[#111c2d]">Avisos</h3>
+        <div className="fixed top-[72px] right-2 z-50 flex max-h-[70dvh] w-[min(92vw,360px)] flex-col overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white shadow-xl md:absolute md:top-[calc(100%+8px)] md:right-0 md:w-[360px]">
+          <div className="flex shrink-0 items-center gap-2 border-b border-[#cbd5e1]/60 px-3 py-2.5">
+            <h3 className="text-sm font-semibold text-[#111c2d]">Avisos</h3>
             {unreadCount > 0 && (
-              <span className="rounded-full bg-[#ffdad6] px-2.5 py-0.5 text-xs font-bold text-[#ba1a1a]">
+              <span className="rounded-full bg-[#ffdad6] px-2 py-0.5 text-[11px] font-bold text-[#ba1a1a]">
                 {unreadCount} sin leer
               </span>
             )}
@@ -275,18 +282,18 @@ export default function NotificationBell({ role }: { role: string | null }) {
           {actionError && (
             <p
               role="alert"
-              className="border-b border-[#ba1a1a]/20 bg-[#ffdad6] px-4 py-2 text-xs font-semibold text-[#ba1a1a]"
+              className="shrink-0 border-b border-[#ba1a1a]/20 bg-[#ffdad6] px-3 py-1.5 text-[11px] font-semibold text-[#ba1a1a]"
             >
               {actionError}
             </p>
           )}
 
           {visible.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm font-medium text-[#737784]">
+            <p className="px-3 py-5 text-center text-[13px] font-medium text-[#737784]">
               Sin avisos por ahora.
             </p>
           ) : (
-            <ul className="max-h-[55vh] divide-y divide-[#cbd5e1]/50 overflow-y-auto">
+            <ul className="min-h-0 flex-1 divide-y divide-[#cbd5e1]/50 overflow-y-auto">
               {visible.map(n => {
                 const cfg = typeConfig(n.type)
                 const Icon = cfg.Icon
@@ -295,38 +302,38 @@ export default function NotificationBell({ role }: { role: string | null }) {
                     <Link
                       href={cfg.href}
                       onClick={() => handleItemClick(n)}
-                      className={`flex min-h-12 items-start gap-3 px-4 pt-3 pb-1 transition hover:bg-[#dee8ff]/40 ${
+                      className={`flex min-h-11 items-start gap-2.5 px-3 pt-2.5 pb-0.5 transition hover:bg-[#dee8ff]/40 ${
                         n.is_read ? 'opacity-75' : ''
                       }`}
                     >
                       <span
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${cfg.chipBg} ${cfg.chipText}`}
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${cfg.chipBg} ${cfg.chipText}`}
                       >
-                        <Icon className="h-4 w-4" />
+                        <Icon className="h-3.5 w-3.5" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-2">
                           <span
-                            className={`text-[11px] font-bold tracking-wide uppercase ${cfg.chipText}`}
+                            className={`text-[10px] font-bold tracking-wide uppercase ${cfg.chipText}`}
                           >
                             {cfg.label}
                           </span>
-                          <span className="shrink-0 text-[11px] font-medium text-[#737784]">
+                          <span className="shrink-0 text-[10px] font-medium text-[#737784]">
                             {relativeTime(n.created_at)}
                           </span>
                         </span>
-                        <span className="block truncate text-sm font-semibold text-[#111c2d]">
+                        <span className="block truncate text-[13px] font-semibold text-[#111c2d]">
                           {n.title}
                         </span>
-                        <span className="line-clamp-2 block text-xs leading-relaxed font-medium text-[#434653]">
+                        <span className="line-clamp-2 block text-xs leading-snug font-medium text-[#434653]">
                           {n.message}
                         </span>
                       </span>
                       {!n.is_read && (
-                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#ba1a1a]" />
+                        <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#ba1a1a]" />
                       )}
                     </Link>
-                    <div className="flex items-center justify-end gap-1 px-3 pb-2">
+                    <div className="flex items-center justify-end gap-1 px-2 pb-1.5">
                       {!n.is_read && (
                         <button
                           type="button"
@@ -356,12 +363,12 @@ export default function NotificationBell({ role }: { role: string | null }) {
           )}
 
           {unreadCount > 0 && (
-            <div className="border-t border-[#cbd5e1]/60 p-2">
+            <div className="shrink-0 border-t border-[#cbd5e1]/60 p-1.5">
               <button
                 type="button"
                 onClick={handleMarkAllRead}
                 disabled={markingAll}
-                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold text-[#00357f] transition hover:bg-[#dee8ff]/50 active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl text-[13px] font-bold text-[#00357f] transition hover:bg-[#dee8ff]/50 active:scale-[0.99] disabled:opacity-60 cursor-pointer"
               >
                 <CheckCheck className="h-4 w-4" />
                 Marcar todas como leídas
