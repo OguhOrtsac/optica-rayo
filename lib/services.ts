@@ -2111,6 +2111,46 @@ export async function getMonthSales(year: number, month: number): Promise<MonthS
   }
 }
 
+export interface WeekSalesSeries {
+  /** Los últimos 7 días locales (hoy incluido), en orden, SIEMPRE los
+   *  7: los días sin ventas van con total 0 (la previa semanal del
+   *  panel dibuja la semana completa, a diferencia de la gráfica del
+   *  mes, que salta los días sin actividad). */
+  days: { date: string; total: number }[]
+  /** Σ total vendido en los 7 días. */
+  total: number
+}
+
+/**
+ * Last 7 local days of sales (today included) for the panel's week
+ * preview: one entry per day — zero-filled — plus the week total.
+ * Same source and definitions as getMonthSales (Σ total by local
+ * created_at day). Throws on any database failure.
+ */
+export async function getWeekSalesSeries(): Promise<WeekSalesSeries> {
+  if (!isSupabaseConfigured()) throw new Error('Base de datos no configurada')
+  const now = new Date()
+  const todayKey = finLocalDateKey(now)
+  const startKey = finLocalDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6))
+  const sales = await fetchFinanceSales(finDayStartISO(startKey), finNextDayStartISO(todayKey))
+
+  const totalByDay = new Map<string, number>()
+  for (const sale of sales) {
+    totalByDay.set(sale.date_label, finRound2((totalByDay.get(sale.date_label) ?? 0) + sale.total))
+  }
+
+  const days: WeekSalesSeries['days'] = []
+  for (let back = 6; back >= 0; back--) {
+    const date = finLocalDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back))
+    days.push({ date, total: totalByDay.get(date) ?? 0 })
+  }
+
+  return {
+    days,
+    total: finRound2(days.reduce((sum, d) => sum + d.total, 0)),
+  }
+}
+
 export interface CashUtility {
   /** YYYY-MM-DD local, inclusivo. */
   from: string

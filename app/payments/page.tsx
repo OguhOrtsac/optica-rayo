@@ -429,78 +429,78 @@ export default function PaymentsPage() {
           la página detrás conserva la lista tal cual. */}
       {selectedCustomer && (
         <div
-          className="fixed inset-0 z-50 overflow-y-auto"
+          className="fixed inset-0 z-50"
           role="dialog"
           aria-modal="true"
           aria-label={`Estado de cuenta de ${selectedCustomer.full_name}`}
         >
           <div className="fixed inset-0 bg-[#111c2d]/55 backdrop-blur-[2px]" />
           <div
-            className="relative flex min-h-full items-start sm:items-center justify-center p-4"
+            className="relative flex h-full items-center justify-center p-3"
             onClick={closeModal}
           >
             <div
-              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden"
+              className="relative w-[min(94vw,430px)] max-h-[92dvh] flex flex-col bg-white rounded-3xl shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
               {/* Banda semáforo: el color del estado del cliente */}
-              <div className={`${semaphore.band} px-5 py-4 flex items-center justify-between gap-3`}>
-                <span className={`inline-flex items-center gap-2 text-sm font-black uppercase tracking-wider ${semaphore.text}`}>
-                  <semaphore.Icon className="w-5 h-5 shrink-0" />
+              <div className={`${semaphore.band} px-4 py-2.5 shrink-0 flex items-center justify-between gap-3`}>
+                <span className={`inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider ${semaphore.text}`}>
+                  <semaphore.Icon className="w-4 h-4 shrink-0" />
                   {semaphore.label}
                 </span>
                 <button
                   type="button"
                   onClick={closeModal}
                   aria-label="Cerrar"
-                  className={`p-2 rounded-full hover:bg-white/60 transition-colors cursor-pointer ${semaphore.text}`}
+                  className={`w-9 h-9 shrink-0 flex items-center justify-center rounded-full hover:bg-white/60 transition-colors cursor-pointer ${semaphore.text}`}
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="p-5 sm:p-6 space-y-5">
+              <div className="p-4 space-y-3 overflow-y-auto">
                 <div className="min-w-0">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#00357f] block">Cliente seleccionado</span>
-                  <h2 className="text-xl font-bold text-[#111c2d] truncate mt-1">{selectedCustomer.full_name}</h2>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#00357f] block">Cliente seleccionado</span>
+                  <h2 className="text-base font-bold text-[#111c2d] truncate mt-0.5 leading-snug">{selectedCustomer.full_name}</h2>
                   <p className="text-[11px] text-[#737784] font-medium truncate">
                     @{selectedCustomer.email?.replace('@opticarayo.com', '')}
                   </p>
                   {selectedCustomer.customer_profiles?.phone && (
-                    <p className="text-xs text-[#434653] font-semibold mt-0.5">{selectedCustomer.customer_profiles.phone}</p>
+                    <p className="text-[11px] text-[#434653] font-semibold mt-0.5">{selectedCustomer.customer_profiles.phone}</p>
                   )}
                 </div>
 
                 {loadingSummary || !selectedSummary ? (
-                  <div className="py-10 flex flex-col items-center justify-center">
-                    <div className="w-8 h-8 border-4 border-[#00357f] border-t-transparent rounded-full animate-spin" />
-                    <p className="text-xs text-[#737784] font-medium mt-2">Cargando estado de cuenta...</p>
+                  <div className="py-6 flex flex-col items-center justify-center">
+                    <div className="w-6 h-6 border-[3px] border-[#00357f] border-t-transparent rounded-full animate-spin" />
+                    <p className="text-[11px] text-[#737784] font-medium mt-2">Cargando estado de cuenta...</p>
                   </div>
                 ) : (
                   <>
-                    <div className={`border rounded-xl p-4 ${selectedSummary.totalDebt > 0 ? 'bg-[#ffdad6]/60 border-[#ba1a1a]/15' : 'bg-[#e2f9ee] border-[#00422b]/10'}`}>
-                      <span className="text-xs font-semibold text-[#434653] block">Saldo pendiente total</span>
-                      <span className={`text-3xl font-black font-mono block mt-1 ${selectedSummary.totalDebt > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>
+                    <div className={`border rounded-xl p-3 ${selectedSummary.totalDebt > 0 ? 'bg-[#ffdad6]/60 border-[#ba1a1a]/15' : 'bg-[#e2f9ee] border-[#00422b]/10'}`}>
+                      <span className="text-[11px] font-semibold text-[#434653] block">Saldo pendiente total</span>
+                      <span className={`text-sm font-black font-mono block mt-0.5 ${selectedSummary.totalDebt > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>
                         {formatPrice(selectedSummary.totalDebt)}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-[#f0f3ff]/70 border border-[#cbd5e1]/40 rounded-xl p-4">
-                        <span className="text-xs font-semibold text-[#434653] block">Cuotas pendientes</span>
-                        <span className="text-xl font-bold text-[#111c2d] block mt-1">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="bg-[#f0f3ff]/70 border border-[#cbd5e1]/40 rounded-xl p-2.5">
+                        <span className="text-[11px] font-semibold text-[#434653] block">Cuotas pendientes</span>
+                        <span className="text-sm font-bold text-[#111c2d] block mt-0.5">
                           {selectedSummary.pendingCount}
                         </span>
                       </div>
-                      <div className="bg-[#f0f3ff]/70 border border-[#cbd5e1]/40 rounded-xl p-4">
-                        <span className="text-xs font-semibold text-[#434653] block">Próximo vencimiento</span>
+                      <div className="bg-[#f0f3ff]/70 border border-[#cbd5e1]/40 rounded-xl p-2.5">
+                        <span className="text-[11px] font-semibold text-[#434653] block">Próximo vencimiento</span>
                         {selectedSummary.nextDue ? (
-                          <span className={`text-sm font-bold block mt-1 ${selectedSummary.isOverdue ? 'text-[#ba1a1a]' : 'text-[#00357f]'}`}>
+                          <span className={`text-[13px] font-bold block mt-0.5 ${selectedSummary.isOverdue ? 'text-[#ba1a1a]' : 'text-[#00357f]'}`}>
                             {formatDate(selectedSummary.nextDue)}
                             {selectedSummary.isOverdue && ' (vencido)'}
                           </span>
                         ) : (
-                          <span className="text-sm font-bold text-[#00422b] block mt-1">Sin vencimientos</span>
+                          <span className="text-[13px] font-bold text-[#00422b] block mt-0.5">Sin vencimientos</span>
                         )}
                       </div>
                     </div>
@@ -518,10 +518,10 @@ export default function PaymentsPage() {
                     )}
 
                     {phoneWithCode && (
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-2.5">
                         <a
                           href={`tel:+${phoneWithCode}`}
-                          className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl border border-[#00357f]/30 text-[#00357f] text-sm font-bold transition-all active:scale-[0.98]"
+                          className="inline-flex items-center justify-center gap-2 min-h-[40px] px-3 rounded-xl border border-[#00357f]/30 text-[#00357f] text-[13px] font-bold transition-all active:scale-[0.98]"
                         >
                           <Phone className="w-4 h-4" /> Llamar
                         </a>
@@ -529,18 +529,18 @@ export default function PaymentsPage() {
                           href={`https://wa.me/${phoneWithCode}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl border border-[#00422b]/30 text-[#00422b] text-sm font-bold transition-all active:scale-[0.98]"
+                          className="inline-flex items-center justify-center gap-2 min-h-[40px] px-3 rounded-xl border border-[#00422b]/30 text-[#00422b] text-[13px] font-bold transition-all active:scale-[0.98]"
                         >
                           <MessageCircle className="w-4 h-4" /> WhatsApp
                         </a>
                       </div>
                     )}
 
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {selectedSummary.totalDebt > 0 && (
                         <Link
                           href={`/customers/${selectedCustomer.id}#cobranza`}
-                          className="w-full py-3 bg-[#15803d] hover:bg-[#166534] text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
+                          className="w-full min-h-[40px] py-2 bg-[#15803d] hover:bg-[#166534] text-white rounded-xl text-[13px] font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
                         >
                           <Wallet className="w-4 h-4" />
                           Registrar abono
@@ -548,7 +548,7 @@ export default function PaymentsPage() {
                       )}
                       <Link
                         href={`/customers/${selectedCustomer.id}`}
-                        className="w-full py-3 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
+                        className="w-full min-h-[40px] py-2 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl text-[13px] font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
                       >
                         Ir a perfil
                         <ArrowRight className="w-4 h-4" />
@@ -556,7 +556,7 @@ export default function PaymentsPage() {
                       <button
                         type="button"
                         onClick={closeModal}
-                        className="w-full py-3 bg-[#ffdad6] hover:bg-[#ffc9c4] text-[#ba1a1a] rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
+                        className="w-full min-h-[40px] py-2 bg-[#ffdad6] hover:bg-[#ffc9c4] text-[#ba1a1a] rounded-xl text-[13px] font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                         Cerrar
