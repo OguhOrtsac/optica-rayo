@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { orderCodeFromSaleId } from '@/lib/ticket'
 import {
   Activity,
   Cake,
@@ -121,7 +122,7 @@ export default function RecentActivity({
         kind: 'sale',
         title: customerName,
         detail: `Registrada por ${sellerName}`,
-        expandDetail: `Venta registrada por ${sellerName} · Orden #${s.id.slice(0, 6).toUpperCase()}`,
+        expandDetail: `Venta registrada por ${sellerName} · Orden #${orderCodeFromSaleId(s.id)}`,
         created_at: s.created_at,
         amount: s.total,
       }

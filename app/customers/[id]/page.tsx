@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, getMessageTemplate, type ReminderConfig } from '@/lib/services'
 import { registerInstallmentPaymentAction, registerSaleBalancePaymentAction } from '@/app/customers/actions'
 import { buildReminderMessage } from '@/lib/reminder-config'
+import { orderCodeFromSaleId } from '@/lib/ticket'
 import {
   PAYMENT_REMINDER_TEMPLATE_KEY,
   DEFAULT_PAYMENT_REMINDER_TEMPLATE,
@@ -1176,7 +1177,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                   return (
                     <div key={sale.id} className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
                       <div className="bg-[#f9f9ff] border-b border-[#cbd5e1]/40 px-5 py-3.5 flex flex-wrap justify-between items-center gap-2 text-xs font-medium">
-                        <span className="font-bold text-[#00357f]">Orden #{sale.id.slice(0, 6).toUpperCase()}</span>
+                        <span className="font-bold text-[#00357f]">Orden #{orderCodeFromSaleId(sale.id)}</span>
                         <span className="text-[#737784]">Total: <strong className="font-mono text-[#111c2d]">{formatPrice(sale.total)}</strong></span>
                         <span className="text-[#737784]">Abonado: <strong className="font-mono text-[#111c2d]">{formatPrice(Number(sale.paid_amount || 0))}</strong></span>
                         <span className={Number(sale.pending_balance || 0) > 0 ? 'text-[#ba1a1a] font-bold' : 'text-[#00422b] font-bold'}>
@@ -1256,7 +1257,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                 {billing.salesWithoutInstallments.map((sale: any) => (
                   <div key={sale.id} className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
                     <div className="bg-[#f9f9ff] border-b border-[#cbd5e1]/40 px-5 py-3.5 flex flex-wrap justify-between items-center gap-2 text-xs font-medium">
-                      <span className="font-bold text-[#00357f]">Orden #{sale.id.slice(0, 6).toUpperCase()}</span>
+                      <span className="font-bold text-[#00357f]">Orden #{orderCodeFromSaleId(sale.id)}</span>
                       <span className="text-[#737784]">Total: <strong className="font-mono text-[#111c2d]">{formatPrice(sale.total)}</strong></span>
                       <span className="text-[#737784]">Abonado: <strong className="font-mono text-[#111c2d]">{formatPrice(Number(sale.paid_amount || 0))}</strong></span>
                       <span className="text-[#ba1a1a] font-bold">
