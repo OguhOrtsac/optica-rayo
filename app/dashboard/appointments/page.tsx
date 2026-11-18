@@ -201,7 +201,7 @@ export default function StaffAppointmentsPage() {
   const liveCount = appointments.filter(a => a.status !== 'cancelled').length
 
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 max-w-4xl mx-auto pb-24 md:pb-8 text-left space-y-5">
+    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-4xl mx-auto pb-24 md:pb-8 text-left space-y-5">
       {/* Header */}
       <header className="anim-fade-up">
         <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight flex items-center gap-2.5">

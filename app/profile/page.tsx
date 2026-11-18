@@ -77,7 +77,7 @@ export default function ProfilePage() {
 
   if (loadingProfile) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f9f9ff] text-[#111c2d]">
+      <main className="min-h-screen flex items-center justify-center text-[#111c2d]">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
           <p className="text-sm text-[#737784] font-medium">Cargando perfil...</p>
@@ -88,7 +88,7 @@ export default function ProfilePage() {
 
   if (!profileData) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f9f9ff] text-[#111c2d] p-4">
+      <main className="min-h-screen flex items-center justify-center text-[#111c2d] p-4">
         <div className="text-center space-y-4 max-w-sm w-full bg-white border border-[#cbd5e1] p-6 rounded-2xl shadow-sm">
           <p className="text-[#737784] font-semibold text-xs">No se pudo cargar el perfil.</p>
           <form action={logout}>
@@ -105,7 +105,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
 
       {/* Back link */}
       <div>

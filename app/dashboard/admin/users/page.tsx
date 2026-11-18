@@ -319,7 +319,7 @@ export default function RegisterUsersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] p-4 md:p-8 space-y-6 max-w-7xl mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-7xl mx-auto pb-24 md:pb-8 text-left">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-6">

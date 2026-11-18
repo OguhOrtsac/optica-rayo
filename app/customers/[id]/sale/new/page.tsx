@@ -312,7 +312,7 @@ export default function NewLinkedSalePage({ params }: PageProps) {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#f9f9ff] flex flex-col items-center justify-center gap-4">
+      <main className="min-h-screen flex flex-col items-center justify-center gap-4">
         <div className="w-10 h-10 border-4 border-[#00357f] border-t-transparent rounded-full animate-spin" />
         <p className="text-sm text-[#737784] font-medium">Cargando catálogo y datos del cliente...</p>
       </main>
@@ -321,7 +321,7 @@ export default function NewLinkedSalePage({ params }: PageProps) {
 
   if (!customer) {
     return (
-      <main className="min-h-screen bg-[#f9f9ff] flex items-center justify-center p-6">
+      <main className="min-h-screen flex items-center justify-center p-6">
         <div className="max-w-sm w-full bg-white border border-[#cbd5e1] rounded-2xl p-8 text-center shadow-sm space-y-4">
           <div className="w-14 h-14 bg-rose-100 rounded-full flex items-center justify-center mx-auto">
             <AlertCircle className="w-7 h-7 text-[#ba1a1a]" />
@@ -336,7 +336,7 @@ export default function NewLinkedSalePage({ params }: PageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] pt-4 pb-24 md:pb-8">
+    <main className="min-h-screen text-[#111c2d] pt-4 pb-24 md:pb-8">
       <div className="max-w-[1440px] mx-auto px-4 md:px-8 space-y-6">
 
         {/* Header */}
