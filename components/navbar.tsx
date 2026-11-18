@@ -178,7 +178,7 @@ export default async function Navbar() {
       <nav className="site-nav w-full bg-[#f9f9ff]/90 backdrop-blur-md border-b border-[#c3c6d5] sticky top-0 z-50 px-6 h-16 hidden md:block shadow-sm">
         <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
           {/* Brand Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link href="/" className="flex min-h-11 items-center gap-2 group rounded-xl px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
             <div className="w-8 h-8 rounded-full bg-[#d9e2ff] flex items-center justify-center text-[#00357f] font-bold overflow-hidden">
               {initials || "OR"}
             </div>
@@ -194,7 +194,7 @@ export default async function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="text-sm font-semibold text-[#434653] hover:text-[#00357f] px-3 py-2 rounded-lg hover:bg-[#dee8ff]/40 transition-colors"
+                  className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-[#434653] transition-colors hover:bg-[#dee8ff]/40 hover:text-[#00357f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                 >
                   {link.label}
                 </Link>
@@ -210,14 +210,14 @@ export default async function Navbar() {
             {isAuthenticated ? (
               <Link
                 href="/profile"
-                className="flex items-center gap-2.5 group/profile py-1"
+                className="flex min-h-11 items-center gap-2.5 group/profile rounded-xl px-2 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                 title={`Perfil de ${displayName}`}
               >
                 <span className="text-right leading-tight">
                   <span className="block text-xs font-bold text-[#434653] group-hover/profile:text-[#00357f] transition-colors">
                     {displayName}
                   </span>
-                  <span className="block text-[10px] font-semibold text-[#737784]">
+                  <span className="block text-[10px] font-semibold text-[#5d606f]">
                     {roleLabel(role)}
                   </span>
                 </span>
@@ -225,7 +225,7 @@ export default async function Navbar() {
             ) : (
               <Link
                 href="/login"
-                className="bg-[#00357f] hover:bg-[#00429b] text-white font-bold text-xs px-5 py-2 rounded-full transition-all duration-300 active:scale-95 h-9 flex items-center"
+                className="bg-[#00357f] hover:bg-[#00509e] text-white font-bold text-xs px-5 py-2 rounded-full transition-all duration-300 active:scale-95 min-h-11 flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2"
               >
                 Entrar o crear cuenta
               </Link>
@@ -236,7 +236,7 @@ export default async function Navbar() {
 
       {/* Mobile Top Header (Minimalist for PWA view) */}
       <header className="site-nav relative w-full bg-[#f9f9ff]/95 backdrop-blur border-b border-[#c3c6d5] sticky top-0 z-50 px-4 py-2.5 flex md:hidden justify-between items-center shadow-sm">
-        <Link href="/" className="flex items-center gap-1.5">
+        <Link href="/" className="flex min-h-11 items-center gap-1.5 rounded-xl px-2 -ml-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
           <span className="text-sm font-bold tracking-tight text-[#00357f]">
             Óptica Rayo
           </span>

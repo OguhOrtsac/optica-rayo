@@ -77,7 +77,7 @@ export default function LoginPage() {
   }, [])
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-[#f9f9ff] text-[#111c2d] p-4 relative overflow-hidden touch-manipulation">
+    <main className="min-h-screen flex flex-col items-center justify-center text-[#111c2d] p-4 relative overflow-hidden touch-manipulation">
       
       {/* Light soft ambient shapes */}
       <div className="absolute top-10 left-10 w-80 h-80 bg-[#dee8ff] rounded-full blur-3xl -z-10 pointer-events-none" />

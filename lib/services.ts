@@ -289,6 +289,11 @@ export interface CreateSaleOptions {
   couponId?: string | null
   discountApplied?: number
   notes?: string
+  // True when the POS composed the sale at visitor prices and the buyer was
+  // only resolved/linked at checkout (typed name matched or minimal profile
+  // created on the fly): the recorded sale must keep the prices actually
+  // charged on screen, not re-price as a member sale after the fact.
+  chargeAsWalkIn?: boolean
 }
 
 export async function createSale(
@@ -319,7 +324,7 @@ export async function createSale(
             .select('role')
             .eq('id', options.customerId)
             .maybeSingle()
-          buyerIsCustomer = buyer?.role === 'customer'
+          buyerIsCustomer = !options?.chargeAsWalkIn && buyer?.role === 'customer'
         } catch (roleErr) {
           console.error('Buyer role lookup failed; charging visitor price:', roleErr)
         }
@@ -1464,6 +1469,80 @@ export async function getLowStockThreshold(): Promise<number> {
 
 export async function saveLowStockThreshold(threshold: number): Promise<void> {
   await setAppSetting(LOW_STOCK_THRESHOLD_KEY, String(Math.max(0, Math.floor(threshold))))
+}
+
+// ----------------------------------------------------
+// Business data (the optical shop's public identity: name,
+// address, contact and opening hours). Edited only by
+// administrators (owner / super_admin) from the profile page;
+// stored as individual app_settings keys, reusing the existing
+// 'business_whatsapp' key that the catalog and booking pages
+// already read.
+// ----------------------------------------------------
+
+export const BUSINESS_NAME_KEY = 'business_name'
+export const BUSINESS_ADDRESS_KEY = 'business_address'
+export const BUSINESS_CITY_KEY = 'business_city'
+export const BUSINESS_STATE_KEY = 'business_state'
+export const BUSINESS_COUNTRY_KEY = 'business_country'
+export const BUSINESS_PHONE_KEY = 'business_phone'
+export const BUSINESS_EMAIL_KEY = 'business_email'
+export const BUSINESS_SCHEDULE_KEY = 'business_schedule'
+export const BUSINESS_WHATSAPP_KEY = 'business_whatsapp'
+
+export const DEFAULT_BUSINESS_NAME = 'Óptica Rayo'
+export const DEFAULT_BUSINESS_SCHEDULE = 'Lun - Sáb, 10:00 - 19:00'
+
+export interface BusinessSettings {
+  name: string
+  address: string
+  city: string
+  state: string
+  country: string
+  phone: string
+  whatsapp: string
+  email: string
+  schedule: string
+}
+
+/** Business data with sensible defaults for the fields never saved yet. */
+export async function getBusinessSettings(): Promise<BusinessSettings> {
+  const [name, address, city, state, country, phone, whatsapp, email, schedule] =
+    await Promise.all([
+      getAppSetting(BUSINESS_NAME_KEY),
+      getAppSetting(BUSINESS_ADDRESS_KEY),
+      getAppSetting(BUSINESS_CITY_KEY),
+      getAppSetting(BUSINESS_STATE_KEY),
+      getAppSetting(BUSINESS_COUNTRY_KEY),
+      getAppSetting(BUSINESS_PHONE_KEY),
+      getAppSetting(BUSINESS_WHATSAPP_KEY),
+      getAppSetting(BUSINESS_EMAIL_KEY),
+      getAppSetting(BUSINESS_SCHEDULE_KEY),
+    ])
+  return {
+    name: name || DEFAULT_BUSINESS_NAME,
+    address: address || '',
+    city: city || '',
+    state: state || '',
+    country: country || '',
+    phone: phone || '',
+    whatsapp: whatsapp || '',
+    email: email || '',
+    schedule: schedule || DEFAULT_BUSINESS_SCHEDULE,
+  }
+}
+
+/** Saves every business field; a failed save throws (see setAppSetting). */
+export async function updateBusinessSettings(data: BusinessSettings): Promise<void> {
+  await setAppSetting(BUSINESS_NAME_KEY, data.name.trim())
+  await setAppSetting(BUSINESS_ADDRESS_KEY, data.address.trim())
+  await setAppSetting(BUSINESS_CITY_KEY, data.city.trim())
+  await setAppSetting(BUSINESS_STATE_KEY, data.state.trim())
+  await setAppSetting(BUSINESS_COUNTRY_KEY, data.country.trim())
+  await setAppSetting(BUSINESS_PHONE_KEY, data.phone.trim())
+  await setAppSetting(BUSINESS_WHATSAPP_KEY, data.whatsapp.trim())
+  await setAppSetting(BUSINESS_EMAIL_KEY, data.email.trim())
+  await setAppSetting(BUSINESS_SCHEDULE_KEY, data.schedule.trim())
 }
 
 // ----------------------------------------------------

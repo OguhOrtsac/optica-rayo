@@ -20,8 +20,6 @@ import {
   TrendingUp,
   Wallet,
   ArrowUp,
-  Plus,
-  UserPlus,
   TrendingDown,
   ChevronRight,
   MessageSquare,
@@ -32,8 +30,7 @@ import {
   Package,
   Users,
   ShieldCheck,
-  LayoutGrid,
-  DollarSign
+  LayoutGrid
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -239,34 +236,8 @@ export default function AdminDashboard() {
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
 
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[#e7eeff] pb-5">
-        <div>
-          <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Resumen General</h1>
-          <p className="text-sm text-[#434653] mt-1 font-medium">Bienvenido, aquí está el estado de la óptica hoy.</p>
-        </div>
-        <div className="flex gap-3 w-full md:w-auto">
-          <Link
-            href="/dashboard/seller"
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 bg-[#00357f] hover:bg-[#004aad] text-white rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Nueva Venta
-          </Link>
-          <Link
-            href="/customers/new"
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 border border-[#cbd5e1] bg-white hover:bg-[#dee8ff]/30 text-[#00357f] rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            Nuevo Cliente
-          </Link>
-          <Link
-            href="/dashboard/appointments"
-            className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-5 py-3 border border-[#cbd5e1] bg-white hover:bg-[#dee8ff]/30 text-[#00357f] rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 cursor-pointer"
-          >
-            <CalendarDays className="w-4 h-4" />
-            Agenda
-          </Link>
-        </div>
+      <div className="border-b border-[#e7eeff] pb-5">
+        <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Resumen General</h1>
       </div>
 
       {feedbackMsg && (
@@ -287,8 +258,8 @@ export default function AdminDashboard() {
       ) : (
         <div className="space-y-6">
 
-          {/* Tarjetas compactas: 2×2 en móvil, 4 en fila en escritorio */}
-          <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Tarjetas compactas: en móvil «Por cobrar» ocupa las 2 columnas; 3 en fila en escritorio */}
+          <section className="grid grid-cols-2 lg:grid-cols-3 gap-3">
 
             {/* Ventas hoy — azul */}
             <div className="anim-stagger-item bg-[#dee8ff] border border-[#00357f]/10 rounded-2xl p-4 shadow-sm">
@@ -298,7 +269,7 @@ export default function AdminDashboard() {
                 </span>
                 <p className="text-xs font-bold text-[#434653]">Ventas hoy</p>
               </div>
-              <p className="text-2xl font-black font-mono text-[#111c2d] mt-2">{formatPrice(todayStats.total)}</p>
+              <p className="text-2xl font-black tabular-nums text-[#111c2d] mt-2">{formatPrice(todayStats.total)}</p>
               <p className="mt-1 text-[10px] font-semibold text-[#434653] flex items-center gap-1">
                 {todayStats.diffPct >= 0 ? (
                   <><ArrowUp className="w-3 h-3 text-[#00422b]" /> +{todayStats.diffPct}% vs ayer</>
@@ -309,14 +280,14 @@ export default function AdminDashboard() {
             </div>
 
             {/* Ventas mes — celeste */}
-            <div className="anim-stagger-item bg-[#e6f5fb] border border-[#0899c9]/15 rounded-2xl p-4 shadow-sm" style={{ '--enter-delay': '70ms' } as React.CSSProperties}>
+            <div className="anim-stagger-item bg-[#e6f5fb] border border-[#0899c9]/15 rounded-2xl p-4 shadow-sm" style={{ '--enter-delay': '60ms' } as React.CSSProperties}>
               <div className="flex items-center gap-2">
                 <span className="w-8 h-8 rounded-lg bg-[#0899c9] text-white flex items-center justify-center shrink-0">
                   <CalendarDays className="w-4 h-4" />
                 </span>
                 <p className="text-xs font-bold text-[#434653]">Ventas mes</p>
               </div>
-              <p className="text-2xl font-black font-mono text-[#111c2d] mt-2">{formatPrice(monthlyStats.total)}</p>
+              <p className="text-2xl font-black tabular-nums text-[#111c2d] mt-2">{formatPrice(monthlyStats.total)}</p>
               <p className="mt-1 text-[10px] font-semibold text-[#434653] flex items-center gap-1">
                 {monthlyStats.diffPct >= 0 ? (
                   <><ArrowUp className="w-3 h-3 text-[#00422b]" /> +{monthlyStats.diffPct}% vs mes anterior</>
@@ -326,25 +297,11 @@ export default function AdminDashboard() {
               </p>
             </div>
 
-            {/* Promedio por venta (del mes) — azul pálido */}
-            <div className="anim-stagger-item bg-white border border-[#cbd5e1] rounded-2xl p-4 shadow-sm" style={{ '--enter-delay': '140ms' } as React.CSSProperties}>
-              <div className="flex items-center gap-2">
-                <span className="w-8 h-8 rounded-lg bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
-                  <DollarSign className="w-4 h-4" />
-                </span>
-                <p className="text-xs font-bold text-[#434653]">Promedio por venta</p>
-              </div>
-              <p className="text-2xl font-black font-mono text-[#111c2d] mt-2">{formatPrice(monthlyStats.average)}</p>
-              <p className="mt-1 text-[10px] font-semibold text-[#737784]">
-                {monthlyStats.count} venta{monthlyStats.count !== 1 ? 's' : ''} este mes
-              </p>
-            </div>
-
             {/* Por cobrar — enlace a Pagos; rojo suave si hay adeudo, verde si no */}
             <Link
               href="/payments"
-              className={`anim-stagger-item block border rounded-2xl p-4 shadow-sm transition-all active:scale-[0.98] ${pendingTotal > 0 ? 'bg-[#ffdad6]/70 border-[#ba1a1a]/15' : 'bg-[#e2f9ee] border-[#00422b]/10'}`}
-              style={{ '--enter-delay': '210ms' } as React.CSSProperties}
+              className={`anim-stagger-item col-span-2 lg:col-span-1 block border rounded-2xl p-4 shadow-sm transition-all active:scale-[0.98] ${pendingTotal > 0 ? 'bg-[#ffdad6]/70 border-[#ba1a1a]/15' : 'bg-[#e2f9ee] border-[#00422b]/10'}`}
+              style={{ '--enter-delay': '120ms' } as React.CSSProperties}
             >
               <div className="flex items-center gap-2">
                 <span className={`w-8 h-8 rounded-lg text-white flex items-center justify-center shrink-0 ${pendingTotal > 0 ? 'bg-[#ba1a1a]' : 'bg-emerald-600'}`}>
@@ -353,7 +310,7 @@ export default function AdminDashboard() {
                 <p className="text-xs font-bold text-[#434653]">Por cobrar</p>
                 <ChevronRight className="w-3.5 h-3.5 ml-auto text-[#737784] shrink-0" />
               </div>
-              <p className={`text-2xl font-black font-mono mt-2 ${pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>{formatPrice(pendingTotal)}</p>
+              <p className={`text-2xl font-black tabular-nums mt-2 ${pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>{formatPrice(pendingTotal)}</p>
               <p className="mt-1 text-[10px] font-semibold text-[#434653]">
                 {pendingTotal > 0 ? `${pendingCount} venta${pendingCount !== 1 ? 's' : ''} con saldo pendiente` : 'Todo cobrado, sin adeudos'}
               </p>
@@ -362,7 +319,7 @@ export default function AdminDashboard() {
           </section>
 
           {/* Accesos rápidos en mosaico */}
-          <section className="anim-stagger-item" style={{ '--enter-delay': '260ms' } as React.CSSProperties}>
+          <section className="anim-stagger-item" style={{ '--enter-delay': '180ms' } as React.CSSProperties}>
             <div className="flex items-center gap-3 mb-3">
               <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
                 <LayoutGrid className="w-5 h-5" />
@@ -392,7 +349,7 @@ export default function AdminDashboard() {
               y avisar a los 6 meses «ya es tiempo de tu nuevo examen».
               Va inmediatamente después de los accesos rápidos, con el
               contador de vencidos en rojo sobre la cabecera. */}
-          <section className="anim-stagger-item space-y-3" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
+          <section className="anim-stagger-item space-y-3" style={{ '--enter-delay': '240ms' } as React.CSSProperties}>
             <div className="flex items-center gap-3 px-1">
               <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${overdueCount > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#dee8ff] text-[#00357f]'}`}>
                 <BellRing className="w-5 h-5" />
@@ -426,7 +383,7 @@ export default function AdminDashboard() {
           </section>
 
           {/* Solicitudes de lentes armados — compacta, filas en vez de tarjetas */}
-          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '340ms' } as React.CSSProperties}>
+          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '300ms' } as React.CSSProperties}>
             <div className="flex items-center gap-3 mb-2">
               <span className="w-10 h-10 rounded-xl bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
                 <MessageSquare className="w-5 h-5" />
@@ -510,7 +467,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Cumpleaños próximos (7 días): felicitar también es vender */}
-          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '380ms' } as React.CSSProperties}>
+          <div className="anim-stagger-item bg-white p-4 sm:p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left" style={{ '--enter-delay': '360ms' } as React.CSSProperties}>
             <div className="flex items-center gap-3 mb-2">
               <span className="w-10 h-10 rounded-xl bg-[#e6f5fb] text-[#0899c9] flex items-center justify-center shrink-0">
                 <Cake className="w-5 h-5" />
