@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { searchCustomers, getCustomerExams, getCustomerSales } from '@/lib/services'
 import PageHeader from '@/components/page-header'
+import { orderCodeFromSaleId } from '@/lib/ticket'
 import {
   Search,
   PlusCircle,
@@ -315,7 +316,7 @@ export default function CustomersPage() {
               <div key={sale.id} className={`p-3 border rounded-2xl flex flex-col gap-1.5 ${pending ? 'border-[#ffdad6] bg-[#ffdad6]/15' : 'border-[#e7eeff] bg-[#f9f9ff]'}`}>
                 <div className="flex justify-between items-start gap-2">
                   <span className="text-[11px] text-[#5d606f] font-bold">
-                    Orden #{sale.id.slice(0, 6).toUpperCase()}
+                    Orden #{orderCodeFromSaleId(sale.id)}
                   </span>
                   {getSaleStatusBadge(sale.status)}
                 </div>
