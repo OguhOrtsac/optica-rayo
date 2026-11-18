@@ -14,6 +14,7 @@
      --or-warn-bg / --or-warn-text     #fef3c7 / #92400e  pendiente
      --or-danger-bg / --or-danger-text #ffdad6 / #ba1a1a  vencido, deuda
      --or-neutral-bg / --or-neutral-text #dee8ff / #00357f  neutro
+     --or-shadow-card / --or-shadow-raised  sombras de marca (ver :root)
    ========================================== */
 :root {
   color-scheme: light;
@@ -32,6 +33,14 @@
   --or-danger-text: #ba1a1a;
   --or-neutral-bg: #dee8ff;
   --or-neutral-text: #00357f;
+  /* Sombras de marca: desplazamiento + desenfoque suave, teñidas del
+     primario (rgba(0,53,127,…)). Nada de halos cyan ni sombras duras. */
+  --or-shadow-card:
+    0 1px 2px rgba(0, 53, 127, 0.05),
+    0 8px 24px -12px rgba(0, 53, 127, 0.16);
+  --or-shadow-raised:
+    0 2px 6px rgba(0, 53, 127, 0.06),
+    0 20px 44px -18px rgba(0, 53, 127, 0.3);
 }
 
 @theme inline {
@@ -45,93 +54,41 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-jakarta-sans), var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  /* Ajuste fino tipográfico: mismo tipo de letra, mejor render. */
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
+  -webkit-font-smoothing: antialiased;
+  caret-color: var(--or-primary);
 }
 
 /* ==========================================
-   Premium Cards (Profundidad y Sombras Adaptativas)
+   Piso de oficio (superficies del navegador)
+   Selección, foco de teclado y cifras con la marca.
    ========================================== */
-/* Tarjetas en Tema Oscuro */
-.bg-slate-900\/30,
-.bg-slate-900,
-.bg-slate-900\/40,
-.bg-slate-950\/40,
-.bg-slate-955\/30 {
-  border-radius: 1.25rem !important; /* rounded-2xl */
-  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.6), 0 4px 12px -2px rgba(0, 0, 0, 0.4) !important;
-  border: 1px solid rgba(255, 255, 255, 0.04) !important;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s !important;
+/* Selección de texto en azul de marca. */
+::selection {
+  background: var(--or-neutral-bg);
+  color: var(--or-primary);
 }
 
-.bg-slate-900\/30:hover,
-.bg-slate-900:hover,
-.bg-slate-900\/40:hover,
-.bg-slate-950\/40:hover,
-.bg-slate-955\/30:hover {
-  transform: translateY(-2.5px) !important;
-  box-shadow: 0 16px 40px -6px rgba(0, 0, 0, 0.8), 0 4px 20px -2px rgba(6, 182, 212, 0.12) !important; /* Brillo cyan sutil */
-  border-color: rgba(6, 182, 212, 0.25) !important;
+/* Foco de teclado visible y consistente en todo lo tocable. */
+:focus-visible {
+  outline: 2px solid var(--or-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(0, 53, 127, 0.16);
 }
 
-/* Tarjetas en Tema Claro */
-html.light .bg-slate-900\/30,
-html.light .bg-slate-900,
-html.light .bg-slate-900\/40,
-html.light .bg-slate-950\/40,
-html.light .bg-slate-955\/30 {
-  background-color: #ffffff !important;
-  border-radius: 1.25rem !important;
-  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05), 0 8px 16px -6px rgba(0, 0, 0, 0.02) !important;
-  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+/* Cifras alineadas en columna: precios, saldos, totales. */
+.nums-tabular {
+  font-variant-numeric: tabular-nums;
 }
 
-html.light .bg-slate-900\/30:hover,
-html.light .bg-slate-900:hover,
-html.light .bg-slate-900\/40:hover,
-html.light .bg-slate-950\/40:hover,
-html.light .bg-slate-955\/30:hover {
-  transform: translateY(-2.5px) !important;
-  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.08), 0 10px 20px -10px rgba(0, 0, 0, 0.04) !important;
-  border-color: rgba(59, 130, 246, 0.2) !important;
+/* Sombras de marca listas para usar (consumen los tokens de :root). */
+.or-shadow-card {
+  box-shadow: var(--or-shadow-card);
 }
-
-/* ==========================================
-   Premium Interactive Buttons
-   ========================================== */
-/* Botones de acción principales (gradientes o con bg-gradient-to-r) */
-a.bg-gradient-to-r,
-button.bg-gradient-to-r,
-.bg-gradient-to-r[role="button"],
-button[type="submit"],
-.btn-premium {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  position: relative;
-  overflow: hidden;
-}
-
-a.bg-gradient-to-r:hover,
-button.bg-gradient-to-r:hover,
-button[type="submit"]:hover,
-.btn-premium:hover {
-  transform: translateY(-2px) !important;
-  filter: brightness(1.08) !important;
-  box-shadow: 0 8px 25px -4px rgba(6, 182, 212, 0.45) !important; /* Brillo cyan para tema oscuro */
-}
-
-a.bg-gradient-to-r:active,
-button.bg-gradient-to-r:active,
-button[type="submit"]:active,
-.btn-premium:active {
-  transform: translateY(0.5px) !important;
-  filter: brightness(0.94) !important;
-  box-shadow: 0 4px 10px -2px rgba(6, 182, 212, 0.2) !important;
-}
-
-/* Sombras en tema claro para botones con gradientes */
-html.light a.bg-gradient-to-r:hover,
-html.light button.bg-gradient-to-r:hover,
-html.light button[type="submit"]:hover,
-html.light .btn-premium:hover {
-  box-shadow: 0 10px 25px -4px rgba(79, 70, 229, 0.35) !important; /* Sombra indigo */
+.or-shadow-raised {
+  box-shadow: var(--or-shadow-raised);
 }
 
 /* ==========================================
@@ -216,7 +173,3 @@ html[data-nav-scrolled='true'] .site-nav {
     transition: none;
   }
 }
-
-
-
-

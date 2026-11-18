@@ -106,23 +106,24 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#f9f9ff] border-t border-[#cbd5e1] flex md:hidden justify-around items-center h-20 pb-safe px-2 shadow-lg rounded-t-2xl">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#f9f9ff] border-t border-[#c3c6d5] flex md:hidden justify-around items-center h-20 pb-safe px-2 shadow-[0_-6px_20px_rgba(0,53,127,0.10)] rounded-t-2xl">
       {links.map(link => {
         const active = isActive(link.href)
         return (
           <Link
             key={link.label}
             href={link.href}
-            className={`flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 transition-all duration-300 active:scale-90 ${
-              active 
-                ? 'text-[#00357f] scale-105 font-black' 
-                : 'text-[#5d606f] hover:text-[#00357f] font-semibold'
+            aria-current={active ? 'page' : undefined}
+            className={`flex flex-col items-center justify-center flex-1 h-full min-h-[48px] py-1 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00357f] ${
+              active
+                ? 'text-[#00357f] font-semibold'
+                : 'text-[#434653] hover:text-[#00357f] font-medium'
             }`}
           >
-            <div className={`p-1 rounded-lg transition-colors ${active ? 'bg-[#dee8ff]/50' : ''}`}>
+            <div className={`flex items-center justify-center rounded-full px-4 py-1 transition-colors ${active ? 'bg-[#dee8ff]' : ''}`}>
               {renderIcon(link.icon)}
             </div>
-            <span className="text-[8px] mt-0.5 tracking-tight select-none">
+            <span className="mt-1 text-center text-[10px] leading-tight tracking-tight select-none">
               {link.label}
             </span>
           </Link>

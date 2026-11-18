@@ -573,7 +573,7 @@ function CatalogContent() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white via-[#f9f9ff] to-[#eef4ff] text-[#111c2d] px-4 py-4 sm:p-6 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen bg-[#edf1fa] text-[#111c2d] px-4 py-4 sm:p-6 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
       <style>{`
         @keyframes gradient-x {
           0%, 100% { background-position: 0% 50%; }
@@ -614,11 +614,11 @@ function CatalogContent() {
       {carouselProducts.length > 0 && (
         <section className="anim-fade-up space-y-3" aria-label={hasBestSellers ? 'Más vendidos' : 'Destacados y promociones'}>
           <div className="flex items-center justify-between gap-3 px-0.5">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#737784] flex items-center gap-1.5">
+            <h2 className="text-base font-extrabold tracking-tight text-[#111c2d] flex items-center gap-2">
               {hasBestSellers ? (
-                <><TrendingUp className="w-4 h-4 text-[#00357f]" /> Más vendidos</>
+                <><TrendingUp className="w-5 h-5 text-[#00357f]" /> Más vendidos</>
               ) : (
-                <><Sparkles className="w-4 h-4 text-[#00357f]" /> Destacados y promociones</>
+                <><Sparkles className="w-5 h-5 text-[#00357f]" /> Destacados y promociones</>
               )}
             </h2>
             <div className="hidden md:flex gap-2">
@@ -626,17 +626,17 @@ function CatalogContent() {
                 onClick={scrollPrev}
                 disabled={!prevBtnEnabled}
                 aria-label={hasBestSellers ? 'Más vendido anterior' : 'Destacado anterior'}
-                className="w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm cursor-pointer"
+                className="w-11 h-11 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-5 h-5" />
               </button>
               <button
                 onClick={scrollNext}
                 disabled={!nextBtnEnabled}
                 aria-label={hasBestSellers ? 'Más vendido siguiente' : 'Destacado siguiente'}
-                className="w-9 h-9 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm cursor-pointer"
+                className="w-11 h-11 rounded-full bg-white border border-[#cbd5e1] flex items-center justify-center text-[#737784] hover:text-[#111c2d] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-90 shadow-sm cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -649,50 +649,52 @@ function CatalogContent() {
                     type="button"
                     onClick={() => handleOpenDetailModal(p)}
                     aria-label={`Ver ${p.name}`}
-                    className="group flex w-full items-center gap-3 rounded-2xl border border-[#cbd5e1] bg-white p-3 text-left shadow-sm transition duration-300 hover:border-[#00357f]/35 hover:shadow-[0_16px_35px_-18px_rgba(0,53,127,0.45)] active:scale-[0.99] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                    className="group flex h-full w-full flex-col overflow-hidden rounded-[20px] border border-[#cbd5e1] bg-white text-left shadow-[0_8px_24px_-12px_rgba(0,53,127,0.25)] transition duration-300 hover:border-[#00357f]/35 hover:shadow-[0_20px_40px_-16px_rgba(0,53,127,0.4)] active:scale-[0.99] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                   >
-                    <span className="relative block h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-[#cbd5e1]/40 bg-gradient-to-br from-white to-[#eef4ff]">
+                    <span className="relative block h-44 w-full shrink-0 overflow-hidden bg-gradient-to-br from-white via-[#eef4ff] to-[#dee8ff] sm:h-52">
                       {getProductImages(p).length > 0 ? (
                         <img
                           src={getProductImages(p)[0]}
                           alt={getProductImageAlt(p)}
-                          className="h-full w-full object-contain p-1.5 transition duration-500 group-hover:scale-[1.06]"
+                          className="h-full w-full object-contain p-4 transition duration-500 group-hover:scale-[1.05]"
                         />
                       ) : (
                         <span className="flex h-full w-full items-center justify-center text-[#00357f]/30">
-                          <Eye className="w-8 h-8 stroke-[1.5]" />
+                          <Eye className="w-10 h-10 stroke-[1.5]" />
                         </span>
                       )}
                       {p.is_promo && (
-                        <span className="anim-pulse-soft absolute left-1 top-1 rounded bg-gradient-to-r from-emerald-500 to-[#2fbf71] px-1.5 py-px text-[8px] font-black uppercase tracking-wider text-white shadow">
-                          Promo
+                        <span className="anim-pulse-soft absolute left-2 top-2 flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-500 to-[#2fbf71] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow">
+                          <Tag className="w-2.5 h-2.5" /> Promo
                         </span>
                       )}
                     </span>
 
-                    <span className="min-w-0 flex-1 space-y-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="rounded bg-[#dee8ff] px-1.5 py-px text-[8px] font-black uppercase tracking-wider text-[#00357f]">
+                    <span aria-hidden="true" className="block h-1.5 w-full shrink-0 bg-gradient-to-r from-[#00357f] to-[#00509e]" />
+
+                    <span className="block min-w-0 flex-1 space-y-2 p-4">
+                      <span className="flex items-center gap-2">
+                        <span className="rounded-full bg-[#dee8ff] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#00357f]">
                           {p.category === 'frames' ? 'Armazón' : 'Solar'}
                         </span>
                         {p.is_featured && (
-                          <span className="flex items-center gap-0.5 rounded bg-[#ffdad6] px-1.5 py-px text-[8px] font-black uppercase tracking-wider text-[#ba1a1a]">
+                          <span className="flex items-center gap-1 rounded-full bg-[#ffdad6] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#ba1a1a]">
                             <Percent className="w-2.5 h-2.5" /> Especial
                           </span>
                         )}
                       </span>
-                      <span className="block truncate text-[13px] font-bold leading-tight text-[#111c2d]">
+                      <span className="block text-base font-extrabold leading-snug text-[#111c2d] line-clamp-2">
                         {p.name}
                       </span>
                       <span className="block">
-                        <span className="block text-[8px] font-bold uppercase tracking-widest text-[#737784]">
+                        <span className="block text-[10px] font-bold uppercase tracking-wider text-[#737784]">
                           {isClient && priceOf(p) < p.price ? 'Precio cliente' : 'Precio'}
                         </span>
-                        <span className="font-mono text-base font-black text-[#00357f]">{formatPrice(priceOf(p))}</span>
+                        <span className="block text-2xl font-black leading-tight text-[#00357f] tabular-nums">{formatPrice(priceOf(p))}</span>
                         {isClient && priceOf(p) < p.price && (
-                          <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-[#737784]">
+                          <span className="mt-1 flex items-center gap-2 text-[11px] text-[#737784] tabular-nums">
                             <span className="line-through">{formatPrice(p.price)}</span>
-                            <span className="rounded-full bg-[#49da9f]/20 px-1.5 py-px font-sans font-black text-[#00422b]">
+                            <span className="rounded-full bg-[#49da9f]/20 px-1.5 py-px font-black text-[#00422b]">
                               -{Math.round((1 - priceOf(p) / p.price) * 100)}%
                             </span>
                           </span>
@@ -706,15 +708,17 @@ function CatalogContent() {
           </div>
 
           {scrollSnaps.length > 1 && (
-            <div className="flex justify-center gap-1.5">
+            <div className="flex justify-center">
               {scrollSnaps.map((_, i) => (
                 <button
                   key={i}
                   type="button"
                   onClick={() => scrollTo(i)}
                   aria-label={hasBestSellers ? `Ir al más vendido ${i + 1}` : `Ir al destacado ${i + 1}`}
-                  className={`h-1.5 rounded-full transition-all cursor-pointer ${i === selectedIndex ? 'w-5 bg-[#00357f]' : 'w-1.5 bg-[#cbd5e1]'}`}
-                />
+                  className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                >
+                  <span className={`block h-1.5 rounded-full transition-all ${i === selectedIndex ? 'w-6 bg-[#00357f]' : 'w-1.5 bg-[#cbd5e1]'}`} />
+                </button>
               ))}
             </div>
           )}
@@ -733,7 +737,7 @@ function CatalogContent() {
             onChange={e => updateFilter('search', e.target.value)}
             placeholder="Busca tu próximo armazón: modelo, marca, color…"
             aria-label="Buscar en el catálogo"
-            className="w-full rounded-2xl border border-[#cbd5e1]/70 bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-xl shadow-[#00357f]/10 outline-none focus:border-[#00357f]/40 focus:ring-4 focus:ring-[#00357f]/15 transition min-h-[52px]"
+            className="w-full rounded-2xl border border-[#cbd5e1]/70 bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.35)] outline-none focus:border-[#00357f]/40 focus:ring-4 focus:ring-[#00357f]/15 transition min-h-[52px]"
           />
         </div>
       </div>
@@ -742,16 +746,16 @@ function CatalogContent() {
           mobile it stays short (small padding, normal-size headline) so it
           gives color without becoming the giant box the owner rejected;
           on desktop it simply grows taller. */}
-      <section className="anim-fade-up relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-4 shadow-lg shadow-[#00357f]/20 sm:px-6 md:rounded-3xl md:px-8 md:py-9">
+      <section className="anim-fade-up relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-4 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.45)] sm:px-6 md:px-8 md:py-9">
         {/* Decorative light glows (desktop band only) */}
         <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 hidden md:block w-56 h-56 rounded-full bg-white/10 blur-2xl" />
         <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 hidden md:block w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
 
         <div className="relative space-y-2 md:space-y-4 max-w-2xl">
-          <p className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] bg-white/15 text-white border border-white/20 rounded-full px-3 py-1">
+          <p className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 text-white border border-white/20 rounded-full px-3 py-1">
             <Sparkles className="w-3.5 h-3.5" /> Óptica Rayo · Catálogo en línea
           </p>
-          <h1 className="text-2xl sm:text-3xl md:text-[2.75rem] font-black tracking-tight leading-[1.05] text-white">
+          <h1 className="text-2xl sm:text-3xl md:text-[2.75rem] font-black tracking-tight leading-[1.05] text-white text-balance">
             Ve el mundo con claridad
           </h1>
           <p className="text-xs sm:text-sm md:text-base text-white/85 font-medium leading-relaxed max-w-xl">
@@ -786,7 +790,7 @@ function CatalogContent() {
               type="button"
               onClick={() => toggleCategoryFilter(cat.value)}
               aria-pressed={isSelected}
-              className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-xs font-bold min-h-[44px] transition-all duration-200 active:scale-95 cursor-pointer ${
+              className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-xs font-bold min-h-[44px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
                 isSelected
                   ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
                   : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
@@ -996,7 +1000,7 @@ function CatalogContent() {
               <div className="flex bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-1 shrink-0">
                 <button
                   onClick={() => updateFilter('layout', 'grid')}
-                  className={`p-2 rounded-md transition-colors cursor-pointer ${
+                  className={`p-2 rounded-md transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
                     layoutMode === 'grid'
                       ? 'bg-white text-[#00357f] shadow-sm'
                       : 'text-[#737784] hover:text-[#111c2d]'
@@ -1007,7 +1011,7 @@ function CatalogContent() {
                 </button>
                 <button
                   onClick={() => updateFilter('layout', 'list')}
-                  className={`p-2 rounded-md transition-colors cursor-pointer ${
+                  className={`p-2 rounded-md transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
                     layoutMode === 'list'
                       ? 'bg-white text-[#00357f] shadow-sm'
                       : 'text-[#737784] hover:text-[#111c2d]'
@@ -1029,8 +1033,8 @@ function CatalogContent() {
               aria-label="Cargando catálogo"
             >
               {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="rounded-3xl border border-[#cbd5e1]/60 bg-white p-3 sm:p-4 space-y-3 shadow-sm">
-                  <div className="skeleton-shimmer w-full aspect-[4/3] rounded-2xl" />
+                <div key={i} className="rounded-[20px] border border-[#cbd5e1]/60 bg-white p-3 sm:p-4 space-y-3 shadow-[0_8px_24px_-12px_rgba(0,53,127,0.18)]">
+                  <div className="skeleton-shimmer w-full aspect-[4/3] rounded-[16px]" />
                   <div className="skeleton-shimmer h-3 rounded-full w-2/3" />
                   <div className="skeleton-shimmer h-3 rounded-full w-1/2" />
                   <div className="flex items-center justify-between pt-1">
@@ -1042,7 +1046,7 @@ function CatalogContent() {
               <span className="sr-only">Cargando catálogo...</span>
             </div>
           ) : processedProducts.length === 0 ? (
-            <div className="text-center py-20 bg-white border border-[#cbd5e1] rounded-2xl space-y-3 shadow-sm p-6">
+            <div className="text-center py-20 bg-white border border-[#cbd5e1] rounded-[20px] space-y-3 shadow-[0_8px_24px_-12px_rgba(0,53,127,0.18)] p-6">
               <div className="w-12 h-12 bg-[#f0f3ff] border border-[#cbd5e1] rounded-full flex items-center justify-center mx-auto text-[#00357f]">
                 <Info className="w-6 h-6" />
               </div>
@@ -1071,11 +1075,10 @@ function CatalogContent() {
                       layout
                       exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ duration: 0.3 }}
-                      whileHover={{ y: -4 }}
                       key={p.id}
                       onClick={() => handleOpenDetailModal(p)}
                       style={{ '--enter-delay': `${Math.min(index, 11) * 45}ms` } as React.CSSProperties}
-                      className={`anim-stagger-item cursor-pointer bg-white/95 border border-[#cbd5e1] rounded-3xl p-3 sm:p-4 flex flex-col justify-between gap-4 transition-all duration-300 shadow-sm hover:-translate-y-1 hover:border-[#00357f]/35 hover:shadow-[0_20px_45px_-20px_rgba(0,53,127,0.45)] hover:ring-4 hover:ring-[#00357f]/10 group relative overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
+                      className={`anim-stagger-item cursor-pointer bg-white border border-[#cbd5e1] rounded-[20px] p-4 flex flex-col justify-between gap-4 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,53,127,0.18)] hover:-translate-y-1 hover:border-[#00357f]/35 hover:shadow-[0_20px_40px_-16px_rgba(0,53,127,0.4)] group relative overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
                         layoutMode === 'list' ? 'sm:flex-row sm:items-center' : ''
                       }`}
                     >
@@ -1098,15 +1101,15 @@ function CatalogContent() {
 
                       {/* Promotion ribbon */}
                       {p.is_promo && !isCriticalStock && (
-                        <div className="anim-pulse-soft absolute top-3 left-3 z-20 bg-gradient-to-r from-emerald-500 to-[#2fbf71] text-white text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded shadow-md shadow-emerald-500/30">
-                          Promo
+                        <div className="anim-pulse-soft absolute top-3 left-3 z-20 flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-[#2fbf71] text-white text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-md shadow-emerald-500/30">
+                          <Tag className="w-2.5 h-2.5" /> Promo
                         </div>
                       )}
 
                       <div className={`space-y-3 ${layoutMode === 'list' ? 'flex flex-row items-center gap-4 w-full sm:w-auto' : ''}`}>
                         {/* Image Box */}
                         {getProductImages(p).length > 0 ? (
-                          <div className={`rounded-2xl overflow-hidden bg-gradient-to-br from-white to-[#eef4ff] border border-[#cbd5e1]/40 shrink-0 relative ${
+                          <div className={`rounded-[16px] overflow-hidden bg-gradient-to-br from-white via-[#eef4ff] to-[#dee8ff]/70 border border-[#cbd5e1]/40 shrink-0 relative ${
                             layoutMode === 'list' ? 'w-20 h-20 sm:w-24 sm:h-24' : 'w-full aspect-[4/3]'
                           }`}>
                             <img
@@ -1122,7 +1125,7 @@ function CatalogContent() {
                             </div>
                           </div>
                         ) : (
-                          <div className={`rounded-xl bg-[#f0f3ff] border border-[#cbd5e1]/40 shrink-0 flex items-center justify-center text-[#737784] relative ${
+                          <div className={`rounded-[16px] bg-[#eef4ff] border border-[#cbd5e1]/40 shrink-0 flex items-center justify-center text-[#737784] relative ${
                             layoutMode === 'list' ? 'w-16 h-16 sm:w-20 sm:h-20' : 'w-full h-32 sm:h-36'
                           }`}>
                             <Compass className="w-8 h-8 opacity-40 group-hover:scale-110 transition-transform" />
@@ -1147,7 +1150,7 @@ function CatalogContent() {
                             </span>
                           </div>
 
-                          <h3 className="font-bold text-sm sm:text-xs text-[#111c2d] group-hover:text-[#00357f] transition-colors line-clamp-2 max-w-full leading-tight">
+                          <h3 className="font-bold text-sm text-[#111c2d] group-hover:text-[#00357f] transition-colors line-clamp-2 max-w-full leading-snug">
                             {p.name}
                           </h3>
                           {getProductDetails(p).brand && (
@@ -1170,11 +1173,11 @@ function CatalogContent() {
                           <p className="text-[8px] text-[#737784] uppercase tracking-widest font-bold">
                             {isClient && priceOf(p) < p.price ? 'Precio cliente' : 'Precio sugerido'}
                           </p>
-                          <p className="font-black text-[#00357f] text-lg leading-tight font-mono">{formatPrice(priceOf(p))}</p>
+                          <p className="font-black text-[#00357f] text-lg leading-tight tabular-nums">{formatPrice(priceOf(p))}</p>
                           {isClient && priceOf(p) < p.price && (
-                            <p className="flex items-center gap-1.5 text-[9px] text-[#737784] font-mono">
+                            <p className="flex items-center gap-1.5 text-[9px] text-[#737784] tabular-nums">
                               <span className="line-through">{formatPrice(p.price)}</span>
-                              <span className="bg-[#49da9f]/20 text-[#00422b] font-sans font-black px-1.5 py-px rounded-full">
+                              <span className="bg-[#49da9f]/20 text-[#00422b] font-black px-1.5 py-px rounded-full">
                                 -{Math.round((1 - priceOf(p) / p.price) * 100)}%
                               </span>
                             </p>
@@ -1184,7 +1187,7 @@ function CatalogContent() {
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleOpenDetailModal(p); }}
-                          className="flex min-h-10 items-center justify-center gap-1.5 bg-[#dee8ff] hover:bg-[#c9d8ff] text-[#00357f] font-bold text-[11px] px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                          className="flex min-h-11 items-center justify-center gap-1.5 bg-[#dee8ff] hover:bg-[#c9d8ff] text-[#00357f] font-bold text-[11px] px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           <span>Ver</span>
@@ -1625,7 +1628,7 @@ function CatalogContent() {
 export default function CatalogPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-[#f9f9ff] text-[#111c2d] flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen bg-[#edf1fa] text-[#111c2d] flex flex-col items-center justify-center gap-4">
         <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
         <p className="text-xs text-[#737784] font-black">Cargando catálogo...</p>
       </div>
