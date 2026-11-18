@@ -51,12 +51,14 @@
 }
 
 /* ==========================================
-   Escala global de fuente (dictado del dueño, 2026-11-18):
-   «bájale la fuente unos dos puntos a todo, se ve muy grotesco».
-   La raíz pasa de 16px a 14px: todo lo medido en rem (textos,
-   espaciados, radios, alturas) baja ~12.5% en toda la app de una
-   sola vez. Va en la capa base para que las utilidades de Tailwind
-   sigan mandando donde un componente define su propio tamaño.
+   Escala global de fuente (dictados del dueño, 2026-11-18):
+   primero «bájale la fuente unos dos puntos a todo, se ve muy
+   grotesco» (16px → 14px) y después «súbele un puntito, quedó
+   muy pequeña»: la raíz queda en 15px. Todo lo medido en rem
+   (textos, espaciados, radios, alturas) escala en toda la app
+   de una sola vez. Va en la capa base para que las utilidades
+   de Tailwind sigan mandando donde un componente define su
+   propio tamaño.
    Excepción deliberada: los campos de formulario conservan 16px
    SOLO cuando no definen su tamaño con clases (las utilidades
    tienen prioridad sobre esta regla de elemento), para que iOS
@@ -64,7 +66,7 @@
    ========================================== */
 @layer base {
   html {
-    font-size: 14px;
+    font-size: 15px;
   }
 
   input,

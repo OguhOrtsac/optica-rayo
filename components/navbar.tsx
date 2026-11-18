@@ -41,7 +41,8 @@ export default async function Navbar() {
   // aplica por entrada, como siempre: un grupo solo se construye si trae
   // al menos una entrada visible para el rol (Ventas es de staff;
   // Finanzas, de administrador; en Configuración, Productos y Clientes
-  // son de staff y Usuarios y Mensajes solo del administrador).
+  // son de staff y Usuarios, Mensajes y Configurar horario solo del
+  // administrador).
   // La barra inferior móvil lleva el trabajo diario: Inicio · Realizar
   // Venta · Registrar Pago · Agenda · Perfil. «Agenda» (staff) y
   // «Agendar examen gratis» (pública) son destinos distintos, con
@@ -94,6 +95,7 @@ export default async function Navbar() {
         ...(isAdmin ? [{ label: 'Usuarios', href: '/dashboard/admin/users', icon: 'users' } as MainMenuLink] : []),
         { label: 'Clientes', href: '/customers', icon: 'clients' },
         ...(isAdmin ? [{ label: 'Mensajes', href: '/dashboard/admin/mensajes', icon: 'messages' } as MainMenuLink] : []),
+        ...(isAdmin ? [{ label: 'Configurar horario', href: '/dashboard/admin/horario', icon: 'calendarClock' } as MainMenuLink] : []),
       ]
       items.push({ label: 'Configuración', icon: 'settings', links: configLinks })
       if (isAdmin) {

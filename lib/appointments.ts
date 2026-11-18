@@ -65,6 +65,114 @@ const DEFAULT_AGENDA_SETTINGS: AgendaSettings = {
   openDays: [1, 2, 3, 4, 5, 6],
 }
 
+// ---------------------------------------------------------------
+// Per-day schedule («Configurar horario», owner's order 2026-11-18).
+//
+// The REAL source of the agenda's hours: ONE structured setting in
+// app_settings, key `agenda_schedule`, holding JSON:
+//   { slot_minutes: 30,
+//     days: { mon: {enabled, open, close}, tue: …, sun: … } }
+// Each day carries its OWN open/close (a Saturday may close earlier
+// than a Monday) and its own on/off switch. The free-text «Horario»
+// that used to be typed by hand in Datos de la óptica is gone: the
+// business schedule shown across the app is the summary GENERATED
+// from this structure (see formatScheduleSummary).
+//
+// Defaults when the key does not exist yet: lun–sáb 10:00–19:00,
+// domingo cerrado, 30-minute slots — the provisional schedule the
+// agenda has always run on, so nothing changes until an admin saves.
+// ---------------------------------------------------------------
+
+export type AgendaDayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+
+/** Monday-first order, matching agenda day numbers 1 (lunes) … 7 (domingo). */
+export const AGENDA_DAY_KEYS: AgendaDayKey[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+export const AGENDA_DAY_KEY_BY_NUMBER: Record<number, AgendaDayKey> = {
+  1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat', 7: 'sun',
+}
+
+export const AGENDA_DAY_LABELS: Record<AgendaDayKey, string> = {
+  mon: 'Lunes', tue: 'Martes', wed: 'Miércoles', thu: 'Jueves', fri: 'Viernes', sat: 'Sábado', sun: 'Domingo',
+}
+
+const AGENDA_DAY_ABBR: Record<AgendaDayKey, string> = {
+  mon: 'Lun', tue: 'Mar', wed: 'Mié', thu: 'Jue', fri: 'Vie', sat: 'Sáb', sun: 'Dom',
+}
+
+export interface AgendaDaySchedule {
+  enabled: boolean
+  /** 'HH:MM' */
+  open: string
+  /** 'HH:MM' */
+  close: string
+}
+
+export interface AgendaSchedule {
+  slotMinutes: number
+  days: Record<AgendaDayKey, AgendaDaySchedule>
+}
+
+export const AGENDA_SCHEDULE_KEY = 'agenda_schedule'
+
+export const DEFAULT_AGENDA_SCHEDULE: AgendaSchedule = {
+  slotMinutes: 30,
+  days: {
+    mon: { enabled: true, open: '10:00', close: '19:00' },
+    tue: { enabled: true, open: '10:00', close: '19:00' },
+    wed: { enabled: true, open: '10:00', close: '19:00' },
+    thu: { enabled: true, open: '10:00', close: '19:00' },
+    fri: { enabled: true, open: '10:00', close: '19:00' },
+    sat: { enabled: true, open: '10:00', close: '19:00' },
+    sun: { enabled: false, open: '10:00', close: '19:00' },
+  },
+}
+
+function cloneDefaultAgendaSchedule(): AgendaSchedule {
+  return {
+    slotMinutes: DEFAULT_AGENDA_SCHEDULE.slotMinutes,
+    days: Object.fromEntries(
+      AGENDA_DAY_KEYS.map(k => [k, { ...DEFAULT_AGENDA_SCHEDULE.days[k] }])
+    ) as AgendaSchedule['days'],
+  }
+}
+
+/** Accepts only a sane 'HH:MM' (00:00–23:59); anything else -> fallback. */
+function sanitizeTime(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+  if (!m) return fallback
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (h > 23 || min > 59) return fallback
+  return `${String(h).padStart(2, '0')}:${m[2]}`
+}
+
+function sanitizeDaySchedule(raw: unknown, fallback: AgendaDaySchedule): AgendaDaySchedule {
+  if (!raw || typeof raw !== 'object') return { ...fallback }
+  const r = raw as Record<string, unknown>
+  const open = sanitizeTime(r.open, fallback.open)
+  const close = sanitizeTime(r.close, fallback.close)
+  // A day whose close is not after its open would generate no slots and
+  // confuse the form; fall back to that day's default hours instead.
+  if (timeToMinutes(close) <= timeToMinutes(open)) return { ...fallback }
+  return { enabled: typeof r.enabled === 'boolean' ? r.enabled : fallback.enabled, open, close }
+}
+
+function sanitizeAgendaSchedule(raw: unknown): AgendaSchedule | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const rawDays = (r.days && typeof r.days === 'object') ? (r.days as Record<string, unknown>) : {}
+  const days = Object.fromEntries(
+    AGENDA_DAY_KEYS.map(k => [k, sanitizeDaySchedule(rawDays[k], DEFAULT_AGENDA_SCHEDULE.days[k])])
+  ) as AgendaSchedule['days']
+  const slot = typeof r.slot_minutes === 'number' ? r.slot_minutes : Number(r.slot_minutes)
+  return {
+    slotMinutes: Number.isFinite(slot) && slot > 0 ? Math.floor(slot) : DEFAULT_AGENDA_SCHEDULE.slotMinutes,
+    days,
+  }
+}
+
 function isSupabaseConfigured(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -150,11 +258,14 @@ function friendlyInsertError(error: any): Error {
 }
 
 /**
- * Reads the agenda schedule (agenda_* keys in app_settings). When a key
- * is missing or unreadable, the owner's defaults apply (10:00–19:00,
- * 30-minute slots, lunes a sábado) — configuration defaults, not data.
+ * The ORIGINAL flat agenda keys (agenda_start / agenda_end /
+ * agenda_slot_minutes / agenda_open_days): one schedule for every day.
+ * Kept ONLY as the fallback that seeds the per-day structure when
+ * `agenda_schedule` has never been saved, so a value an admin may have
+ * stored under the old keys keeps its effect until «Configurar
+ * horario» is used for the first time.
  */
-export async function getAgendaSettings(): Promise<AgendaSettings> {
+async function getLegacyAgendaSettings(): Promise<AgendaSettings> {
   if (!isSupabaseConfigured()) return DEFAULT_AGENDA_SETTINGS
   try {
     const supabase = createBrowserClient()
@@ -183,6 +294,126 @@ export async function getAgendaSettings(): Promise<AgendaSettings> {
 }
 
 /**
+ * The per-day schedule («Configurar horario»). Reads the structured
+ * `agenda_schedule` setting; when it does not exist yet, derives the
+ * SAME effective schedule from the legacy flat keys (or the defaults),
+ * so the agenda behaves exactly as today until an admin saves here.
+ */
+export async function getAgendaSchedule(): Promise<AgendaSchedule> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', AGENDA_SCHEDULE_KEY)
+        .maybeSingle()
+      if (!error && data?.value) {
+        try {
+          const parsed = sanitizeAgendaSchedule(JSON.parse(data.value as string))
+          if (parsed) return parsed
+        } catch {
+          // fall through to the legacy derivation
+        }
+      }
+    } catch {
+      // fall through to the legacy derivation
+    }
+  }
+  const legacy = await getLegacyAgendaSettings()
+  const derived = cloneDefaultAgendaSchedule()
+  derived.slotMinutes = legacy.slotMinutes
+  for (const key of AGENDA_DAY_KEYS) {
+    const dayNumber = AGENDA_DAY_KEYS.indexOf(key) + 1
+    derived.days[key] = {
+      enabled: legacy.openDays.includes(dayNumber),
+      open: legacy.start,
+      close: legacy.end,
+    }
+  }
+  return derived
+}
+
+/**
+ * Saves the per-day schedule to the `agenda_schedule` setting. A failed
+ * save THROWS (same honesty rule as lib/services' setAppSetting): the
+ * admin must never see «Guardado» for a schedule that is not stored.
+ */
+export async function saveAgendaSchedule(schedule: AgendaSchedule): Promise<void> {
+  const clean = sanitizeAgendaSchedule({
+    slot_minutes: schedule.slotMinutes,
+    days: schedule.days,
+  }) ?? cloneDefaultAgendaSchedule()
+  const value = JSON.stringify({
+    slot_minutes: clean.slotMinutes,
+    days: clean.days,
+  })
+  if (!isSupabaseConfigured()) {
+    throw new Error('La agenda no está disponible en este momento. Inténtalo más tarde.')
+  }
+  const supabase = createBrowserClient()
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key: AGENDA_SCHEDULE_KEY, value }, { onConflict: 'key' })
+  if (error) throw new Error(error.message)
+}
+
+/**
+ * Compatibility view of the per-day schedule in the old flat shape
+ * (one start/end + open day numbers). Screens that only need to know
+ * WHICH days are worked (day strips, closed-day marks) read this;
+ * slot generation reads the per-day structure directly. start/end are
+ * the first worked day's hours, Monday-first.
+ */
+export async function getAgendaSettings(): Promise<AgendaSettings> {
+  const schedule = await getAgendaSchedule()
+  const openDays: number[] = []
+  let start = DEFAULT_AGENDA_SETTINGS.start
+  let end = DEFAULT_AGENDA_SETTINGS.end
+  AGENDA_DAY_KEYS.forEach((key, i) => {
+    const day = schedule.days[key]
+    if (day.enabled) {
+      openDays.push(i + 1)
+      if (openDays.length === 1) {
+        start = day.open
+        end = day.close
+      }
+    }
+  })
+  return { start, end, slotMinutes: schedule.slotMinutes, openDays }
+}
+
+/**
+ * Human summary of the per-day schedule, GENERATED (never typed):
+ * consecutive days with identical hours collapse into one range, e.g.
+ * «Lun–Vie 10:00–19:00 · Sáb 10:00–14:00 · Dom: Cerrado». This is the
+ * «Horario» shown in Datos de la óptica and in the Users table.
+ */
+export function formatScheduleSummary(schedule: AgendaSchedule): string {
+  const groups: { from: AgendaDayKey; to: AgendaDayKey; day: AgendaDaySchedule }[] = []
+  for (const key of AGENDA_DAY_KEYS) {
+    const day = schedule.days[key]
+    const last = groups[groups.length - 1]
+    if (last && last.day.enabled === day.enabled && last.day.open === day.open && last.day.close === day.close) {
+      last.to = key
+    } else {
+      groups.push({ from: key, to: key, day })
+    }
+  }
+  return groups
+    .map(g => {
+      const label = g.from === g.to ? AGENDA_DAY_ABBR[g.from] : `${AGENDA_DAY_ABBR[g.from]}–${AGENDA_DAY_ABBR[g.to]}`
+      return g.day.enabled ? `${label} ${g.day.open}–${g.day.close}` : `${label}: Cerrado`
+    })
+    .join(' · ')
+}
+
+/** The generated business-hours summary for display across the app. */
+export async function getAgendaScheduleSummary(): Promise<string> {
+  return formatScheduleSummary(await getAgendaSchedule())
+}
+
+/**
  * Booked times ('HH:MM') for a day, via the get_booked_slots RPC — the
  * only occupancy data the public may see (no names or phones leak).
  */
@@ -194,20 +425,24 @@ export async function getBookedTimes(dateISO: string): Promise<string[]> {
 }
 
 /**
- * All slots for a day with availability. A closed day (not in
- * agenda_open_days, e.g. Sunday) returns an empty array.
+ * All slots for a day with availability, generated from the PER-DAY
+ * schedule («Configurar horario»): a day that is not worked returns an
+ * empty array; a worked day yields slots from ITS OWN open to close
+ * every slotMinutes, with the same generation rule as always (a slot
+ * must fit whole before closing time).
  */
 export async function getDaySlots(dateISO: string): Promise<DaySlot[]> {
-  const settings = await getAgendaSettings()
+  const schedule = await getAgendaSchedule()
   const date = parseLocalDate(dateISO)
-  if (!settings.openDays.includes(agendaDayNumber(date))) return []
+  const day = schedule.days[AGENDA_DAY_KEY_BY_NUMBER[agendaDayNumber(date)]]
+  if (!day || !day.enabled) return []
 
   const booked = new Set(await getBookedTimes(dateISO))
-  const start = timeToMinutes(settings.start)
-  const end = timeToMinutes(settings.end)
+  const start = timeToMinutes(day.open)
+  const end = timeToMinutes(day.close)
 
   const slots: DaySlot[] = []
-  for (let t = start; t + settings.slotMinutes <= end; t += settings.slotMinutes) {
+  for (let t = start; t + schedule.slotMinutes <= end; t += schedule.slotMinutes) {
     const time = minutesToTime(t)
     slots.push({ time, available: !booked.has(time) })
   }

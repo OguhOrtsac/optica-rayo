@@ -269,7 +269,7 @@ export default function NotificationBell({ role }: { role: string | null }) {
       </button>
 
       {open && (
-        <div className="fixed top-[64px] right-2 z-50 flex max-h-[70dvh] w-[min(92vw,360px)] flex-col overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white shadow-xl md:absolute md:top-[calc(100%+8px)] md:right-0 md:w-[360px]">
+        <div className="fixed top-[68px] right-2 z-50 flex max-h-[70dvh] w-[min(92vw,360px)] flex-col overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white shadow-xl md:absolute md:top-[calc(100%+8px)] md:right-0 md:w-[360px]">
           <div className="flex shrink-0 items-center gap-2 border-b border-[#cbd5e1]/60 px-3 py-2.5">
             <h3 className="text-sm font-semibold text-[#111c2d]">Avisos</h3>
             {unreadCount > 0 && (

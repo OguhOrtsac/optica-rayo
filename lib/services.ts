@@ -17,6 +17,7 @@ import {
   type MessageTemplateKey,
 } from './message-templates'
 import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT, effectiveClientPrice } from './pricing'
+import { getAgendaScheduleSummary } from './appointments'
 import { getPeriodPayments } from './expenses'
 import {
   PRODUCT_IMAGE_BUCKET,
@@ -1620,7 +1621,11 @@ export const BUSINESS_SCHEDULE_KEY = 'business_schedule'
 export const BUSINESS_WHATSAPP_KEY = 'business_whatsapp'
 
 export const DEFAULT_BUSINESS_NAME = 'Óptica Rayo'
-export const DEFAULT_BUSINESS_SCHEDULE = 'Lun - Sáb, 10:00 - 19:00'
+// LEGACY: the hand-typed opening-hours text ('business_schedule' key /
+// this default). Since «Configurar horario» (2026-11-18) the real
+// schedule is the per-day structure in lib/appointments
+// (`agenda_schedule`), and BusinessSettings.schedule is the summary
+// GENERATED from it — the old key is no longer read nor written.
 
 export interface BusinessSettings {
   name: string
@@ -1646,7 +1651,10 @@ export async function getBusinessSettings(): Promise<BusinessSettings> {
       getAppSetting(BUSINESS_PHONE_KEY),
       getAppSetting(BUSINESS_WHATSAPP_KEY),
       getAppSetting(BUSINESS_EMAIL_KEY),
-      getAppSetting(BUSINESS_SCHEDULE_KEY),
+      // The opening hours are NOT a business field anymore: they are the
+      // summary generated from «Configurar horario» (per-day schedule),
+      // so every screen of the app states the same hours.
+      getAgendaScheduleSummary().catch(() => ''),
     ])
   return {
     name: name || DEFAULT_BUSINESS_NAME,
@@ -1657,7 +1665,7 @@ export async function getBusinessSettings(): Promise<BusinessSettings> {
     phone: phone || '',
     whatsapp: whatsapp || '',
     email: email || '',
-    schedule: schedule || DEFAULT_BUSINESS_SCHEDULE,
+    schedule: schedule || '',
   }
 }
 
@@ -1671,7 +1679,9 @@ export async function updateBusinessSettings(data: BusinessSettings): Promise<vo
   await setAppSetting(BUSINESS_PHONE_KEY, data.phone.trim())
   await setAppSetting(BUSINESS_WHATSAPP_KEY, data.whatsapp.trim())
   await setAppSetting(BUSINESS_EMAIL_KEY, data.email.trim())
-  await setAppSetting(BUSINESS_SCHEDULE_KEY, data.schedule.trim())
+  // data.schedule is NOT saved: the opening hours live in «Configurar
+  // horario» (per-day `agenda_schedule`) and this field is only the
+  // generated summary for display.
 }
 
 // ----------------------------------------------------
