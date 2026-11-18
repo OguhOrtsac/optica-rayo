@@ -649,7 +649,7 @@ export default function AdminProductsPage() {
   }, [filteredProducts, productSort])
 
   return (
-    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
+    <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 space-y-4 md:space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
       
       {/* Page Header & Actions: en móvil solo la etiqueta + volver +
           el botón de subir, compacto bajo la etiqueta (PageHeader) */}

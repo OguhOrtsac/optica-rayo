@@ -217,12 +217,13 @@ export default async function Navbar() {
             <div className="w-8 h-8 rounded-full bg-[#d9e2ff] flex items-center justify-center text-[#00357f] font-bold overflow-hidden">
               {initials || "OR"}
             </div>
-            {/* Logo oficial (ojo) a la altura de la letra del nombre: h-6 no
-                crece el alto de la barra ni el tamaño del texto. */}
-            <img src="/logo-eye.png" alt="" aria-hidden className="h-6 w-auto shrink-0" />
             <span className="text-xl font-extrabold tracking-tight text-[#00357f] transition-colors">
               Óptica <span className="text-[#0899c9]">Rayo</span>
             </span>
+            {/* Logo oficial (ojo) DESPUÉS del nombre (orden del dueño
+                2026-11-18), a la altura de la letra: h-6 no crece el
+                alto de la barra ni el tamaño del texto. */}
+            <img src="/logo-eye.png" alt="" aria-hidden className="h-6 w-auto shrink-0" />
           </Link>
 
           {/* Links */}
@@ -290,12 +291,14 @@ export default async function Navbar() {
         </div>
 
         <Link href="/" className="flex min-h-11 items-center justify-center gap-2 justify-self-center rounded-xl px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
-          {/* Logo oficial (ojo) a la altura de la letra del nombre: h-6 no
-              crece el alto de la barra ni el tamaño del texto. */}
-          <img src="/logo-eye.png" alt="" aria-hidden className="h-6 w-auto shrink-0" />
           <span className="text-xl font-extrabold tracking-tight text-[#00357f]">
             Óptica <span className="text-[#0899c9]">Rayo</span>
           </span>
+          {/* Logo oficial (ojo) DESPUÉS del nombre (orden del dueño
+              2026-11-18), a la altura de la letra: h-6 no crece el
+              alto de la barra ni el tamaño del texto. El conjunto
+              nombre+ojo sigue centrado (justify-center). */}
+          <img src="/logo-eye.png" alt="" aria-hidden className="h-6 w-auto shrink-0" />
         </Link>
 
         <div className="flex items-center justify-end">

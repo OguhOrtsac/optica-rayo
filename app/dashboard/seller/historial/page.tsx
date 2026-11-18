@@ -134,7 +134,7 @@ export default function SalesHistoryPage() {
   }
 
   return (
-    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 space-y-4 md:space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
 
       {/* Header chico del sistema, como Reportes y Mensajes.
           En móvil: solo la etiqueta + el volver compacto (PageHeader). */}

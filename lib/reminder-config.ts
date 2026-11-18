@@ -1,7 +1,9 @@
 /**
  * Shared configuration for the Exam Review Reminders module.
- * The administrator can edit both values from the dashboard; they are
- * stored in the `app_settings` table (with a local fallback in demo mode).
+ * The administrator edits both values ONLY from «Mensajes»
+ * (/dashboard/admin/mensajes); the panel's Reminders tray only reads
+ * them to send. They are stored in the `app_settings` table (with a
+ * local fallback in demo mode).
  * These constants are the defaults used when nothing has been saved yet.
  */
 
@@ -13,7 +15,7 @@ export const DEFAULT_REMINDER_MONTHS = 6
 
 /**
  * Default WhatsApp message. Placeholders: {nombre} and {meses}.
- * Editable by the administrator from the Reminders tray.
+ * Editable by the administrator from «Mensajes» (only there).
  */
 export const DEFAULT_REMINDER_TEMPLATE =
   'Hola {nombre}, te saludamos de Óptica Rayo. Han pasado {meses} meses desde tu última revisión de la vista y queremos invitarte a realizarte un nuevo examen. Recuerda que el examen es GRATIS y te ayuda a cuidar tu salud visual. Además, nos llegaron NUEVOS MODELOS de armazones que te pueden encantar. ¿Te agendamos una cita? ¡Esperamos verte pronto!'

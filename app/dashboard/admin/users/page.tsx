@@ -330,7 +330,7 @@ export default function RegisterUsersPage() {
   }
 
   return (
-    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-7xl mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 space-y-4 md:space-y-6 max-w-7xl mx-auto pb-24 md:pb-8 text-left">
       
       {/* Header: en móvil solo la etiqueta «Usuarios» + volver (PageHeader) */}
       <PageHeader

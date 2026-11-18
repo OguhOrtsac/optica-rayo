@@ -353,7 +353,7 @@ export default function StaffAppointmentsPage() {
   const liveCount = appointments.filter(a => a.status !== 'cancelled').length
 
   return (
-    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-4xl mx-auto pb-24 md:pb-8 text-left space-y-5">
+    <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 max-w-4xl mx-auto pb-24 md:pb-8 text-left space-y-4 md:space-y-5">
       {/* Header: en móvil solo la etiqueta chiquita (PageHeader) */}
       <PageHeader title="Agenda de Exámenes">
         <header className="anim-fade-up">

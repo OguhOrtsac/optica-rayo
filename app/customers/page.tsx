@@ -349,13 +349,13 @@ export default function CustomersPage() {
   )
 
   return (
-    <main className="min-h-screen text-[#111c2d] pt-4 pb-24 md:pb-0">
+    <main className="min-h-screen text-[#111c2d] pt-2 pb-24 md:pb-0">
       <div className="max-w-[1440px] mx-auto px-4 md:px-8 h-[calc(100dvh-2rem)]">
 
         {/* Header: en móvil solo la etiqueta + el botón de nuevo (PageHeader) */}
         <PageHeader
           title="Clientes"
-          mobileClassName="mb-6"
+          mobileClassName="mb-4"
           mobileExtra={
             <div className="mt-3">
               <Link href="/customers/new"

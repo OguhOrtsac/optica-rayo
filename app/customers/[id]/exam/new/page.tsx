@@ -37,7 +37,7 @@ export default function NewExamPage({ params }: PageProps) {
 
   if (loading) {
     return (
-      <main className="min-h-screen text-[#111c2d] p-4 md:p-8 flex flex-col items-center justify-center space-y-4">
+      <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 flex flex-col items-center justify-center space-y-4">
         <div className="w-10 h-10 border-2 border-[#00357f] border-t-transparent rounded-full animate-spin" />
         <p className="text-sm text-[#737784] font-medium">Cargando expediente del cliente...</p>
       </main>
@@ -46,7 +46,7 @@ export default function NewExamPage({ params }: PageProps) {
 
   if (!customer) {
     return (
-      <main className="min-h-screen text-[#111c2d] p-4 md:p-8">
+      <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8">
         <div className="max-w-2xl mx-auto space-y-6 text-center py-20">
           <div className="w-16 h-16 bg-[#ffdad6] rounded-full flex items-center justify-center mx-auto text-[#ba1a1a]">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -63,8 +63,8 @@ export default function NewExamPage({ params }: PageProps) {
   }
 
   return (
-    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 pb-24">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 pb-24">
+      <div className="max-w-2xl mx-auto space-y-4 md:space-y-6">
         {/* Header: en móvil solo la etiqueta + volver, y el cliente
             como línea compacta de contexto (PageHeader) */}
         <PageHeader
