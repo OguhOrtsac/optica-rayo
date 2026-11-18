@@ -573,7 +573,7 @@ function CatalogContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[#edf1fa] text-[#111c2d] px-4 py-4 sm:p-6 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] px-4 py-4 sm:p-6 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
       <style>{`
         @keyframes gradient-x {
           0%, 100% { background-position: 0% 50%; }
@@ -1628,7 +1628,7 @@ function CatalogContent() {
 export default function CatalogPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-[#edf1fa] text-[#111c2d] flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen text-[#111c2d] flex flex-col items-center justify-center gap-4">
         <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
         <p className="text-xs text-[#737784] font-black">Cargando catálogo...</p>
       </div>

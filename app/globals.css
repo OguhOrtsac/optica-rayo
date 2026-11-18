@@ -8,7 +8,7 @@
                                     (UN solo color para todo lo tocable)
      --or-primary-support  #00509e  apoyo del primario
      --or-accent           #0899c9  celeste: detalles, iconos, cifras
-     --or-bg               #edf1fa  fondo de la app, teñido de marca
+     --or-bg               #f2f5fa  fondo de la app, teñido de marca
      --or-surface          #ffffff  tarjetas flotando sobre el fondo
      --or-ok-bg / --or-ok-text         #e2f9ee / #00422b  pagado, cobrado
      --or-warn-bg / --or-warn-text     #fef3c7 / #92400e  pendiente
@@ -18,12 +18,12 @@
    ========================================== */
 :root {
   color-scheme: light;
-  --background: #edf1fa;
+  --background: #f2f5fa;
   --foreground: #111c2d;
   --or-primary: #00357f;
   --or-primary-support: #00509e;
   --or-accent: #0899c9;
-  --or-bg: #edf1fa;
+  --or-bg: #f2f5fa;
   --or-surface: #ffffff;
   --or-ok-bg: #e2f9ee;
   --or-ok-text: #00422b;

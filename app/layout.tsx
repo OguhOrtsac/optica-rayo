@@ -22,13 +22,15 @@ const jakartaSans = Plus_Jakarta_Sans({
   weight: ["400", "500", "600", "700", "800"],
 });
 
-// Viewport setup for responsive scaling and theme color formatting
+// Viewport: escalado responsivo móvil-primero. El zoom del usuario queda
+// LIBRE (sin maximumScale ni userScalable: bloquearlo es una falla de
+// accesibilidad) y viewportFit 'cover' activa las áreas seguras para que
+// el pb-safe de la navegación funcione en teléfonos con notch.
 export const viewport: Viewport = {
   themeColor: '#00357f', // Óptica Rayo brand blue
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false, // Prevents unintended scaling to simulate native app feel
+  viewportFit: 'cover',
 };
 
 // Global PWA and iOS/Android device meta configurations

@@ -173,7 +173,7 @@ export default function AgendarPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white via-[#f9f9ff] to-[#eef4ff] text-[#111c2d] px-3 py-4 sm:p-5 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] px-3 py-4 sm:p-5 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
       {/* Header */}
       <section className="anim-fade-up relative overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white px-4 py-5 shadow-sm sm:px-6 md:rounded-3xl md:border-0 md:bg-gradient-to-br md:from-[#00357f] md:via-[#00509e] md:to-[#00668a] md:px-8 md:py-9 md:shadow-lg md:shadow-[#00357f]/20 md:text-white">
         <div className="flex items-start gap-3.5">
@@ -317,7 +317,7 @@ export default function AgendarPage() {
                       type="button"
                       disabled={!slot.available}
                       onClick={() => setSelectedTime(slot.time)}
-                      className={`rounded-xl border px-2 py-2.5 text-sm font-bold transition-all ${
+                      className={`rounded-xl border px-2 py-3 text-sm font-bold transition-all ${
                         !slot.available
                           ? 'border-[#cbd5e1]/40 bg-[#f0f3ff]/50 text-[#737784]/50 line-through cursor-not-allowed'
                           : isSelected

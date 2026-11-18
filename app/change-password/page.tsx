@@ -12,7 +12,7 @@ export default function ChangePasswordPage() {
   const [state, formAction, isPending] = useActionState(changePassword, initialState)
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-[#f9f9ff] text-[#111c2d] p-4 relative overflow-hidden">
+    <main className="min-h-screen flex flex-col items-center justify-center text-[#111c2d] p-4 relative overflow-hidden">
       
       {/* Light soft ambient shapes */}
       <div className="absolute top-10 right-10 w-72 h-72 bg-[#dee8ff] rounded-full blur-3xl -z-10 pointer-events-none" />

@@ -117,7 +117,7 @@ export default function CustomersPage() {
 
   return (
     <main className="min-h-screen bg-[#f9f9ff] text-[#111c2d] pt-4 pb-24 md:pb-0">
-      <div className="max-w-[1440px] mx-auto px-4 md:px-8 h-[calc(100vh-2rem)]">
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 h-[calc(100dvh-2rem)]">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-5 pb-4 border-b border-[#e7eeff]">
@@ -137,7 +137,7 @@ export default function CustomersPage() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-5 h-full">
 
           {/* ===== LEFT: Patient directory ===== */}
-          <div className="md:col-span-4 flex flex-col bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-10rem)]">
+          <div className="md:col-span-4 flex flex-col bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden h-[calc(100dvh-10rem)]">
 
             {/* Search bar */}
             <div className="p-4 border-b border-[#cbd5e1]">
@@ -338,7 +338,7 @@ export default function CustomersPage() {
           </div>
 
           {/* ===== RIGHT: Patient detail panel ===== */}
-          <div className="hidden md:flex md:col-span-8 flex-col gap-4 overflow-y-auto pb-8 h-[calc(100vh-10rem)]">
+          <div className="hidden md:flex md:col-span-8 flex-col gap-4 overflow-y-auto pb-8 h-[calc(100dvh-10rem)]">
             {!selectedCustomer ? (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
                 <div className="w-16 h-16 bg-[#f0f3ff] rounded-full flex items-center justify-center">
