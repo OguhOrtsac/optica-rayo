@@ -2,14 +2,24 @@
 
 import { useActionState, useEffect, useState } from 'react'
 import { updateProfile, logout, getProfileData } from '@/app/auth/actions'
-import { User, Shield, ShieldAlert, Key, LogOut, CheckCircle, ArrowLeft } from 'lucide-react'
+import { User, Shield, ShieldAlert, Store, LogOut, CheckCircle, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
-import { dashboardHrefForRole, isAdminRole, roleLabel } from '@/lib/roles'
+import { dashboardHrefForRole, isAdminRole, normalizeRole, roleLabel } from '@/lib/roles'
+import {
+  getBusinessSettings,
+  updateBusinessSettings,
+  type BusinessSettings,
+} from '@/lib/services'
 
 const initialState = {
   error: null as string | null,
   success: null as string | null,
 }
+
+const inputClasses =
+  'w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-3 min-h-[44px] text-sm text-[#111c2d] placeholder-[#737784]/70 focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none transition-all disabled:opacity-50'
+
+const labelClasses = 'block text-[13px] font-semibold text-[#434653] mb-2'
 
 export default function ProfilePage() {
   const [state, formAction, isPending] = useActionState(updateProfile, initialState)
@@ -22,6 +32,14 @@ export default function ProfilePage() {
     bg_theme: 'dark' | 'light'
   } | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
+
+  // Business data (admin only): loaded once the profile role is known.
+  const [business, setBusiness] = useState<BusinessSettings | null>(null)
+  const [savingBusiness, setSavingBusiness] = useState(false)
+  const [businessFeedback, setBusinessFeedback] = useState<{
+    type: 'success' | 'error'
+    text: string
+  } | null>(null)
 
   useEffect(() => {
     async function loadProfile() {
@@ -52,17 +70,71 @@ export default function ProfilePage() {
     }
   }, [state?.success])
 
+  useEffect(() => {
+    if (!profileData || !isAdminRole(profileData.role)) return
+    let cancelled = false
+    async function loadBusiness() {
+      try {
+        const data = await getBusinessSettings()
+        if (!cancelled) setBusiness(data)
+      } catch {
+        if (!cancelled) {
+          setBusinessFeedback({
+            type: 'error',
+            text: 'No se pudieron cargar los datos de la óptica.',
+          })
+        }
+      }
+    }
+    loadBusiness()
+    return () => {
+      cancelled = true
+    }
+  }, [profileData])
+
+  const handleSaveBusiness = async (e: React.FormEvent) => {
+    e.preventDefault()
+    // Hard permission check: only owner / super_admin may save, verified
+    // again here in the handler — hiding the form is not the control.
+    if (!profileData || !isAdminRole(profileData.role) || !business) {
+      setBusinessFeedback({
+        type: 'error',
+        text: 'Solo un administrador puede modificar los datos de la óptica.',
+      })
+      return
+    }
+    setSavingBusiness(true)
+    setBusinessFeedback(null)
+    try {
+      await updateBusinessSettings(business)
+      setBusinessFeedback({
+        type: 'success',
+        text: 'Datos de la óptica guardados correctamente.',
+      })
+    } catch (err) {
+      setBusinessFeedback({
+        type: 'error',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'No se pudieron guardar los datos de la óptica.',
+      })
+    } finally {
+      setSavingBusiness(false)
+    }
+  }
+
   const getRoleBadgeLabel = (role: string) => roleLabel(role)
 
   const getRoleBadgeColor = (role: string) => {
     const colors: Record<string, string> = {
-      dev: 'bg-[#dee8ff]/80 text-[#00668a]',
+      super_admin: 'bg-[#ffdad6] text-[#ba1a1a]',
       owner: 'bg-[#dee8ff] text-[#00357f]',
-      seller: 'bg-[#dee8ff]/60 text-[#00668a]',
-      customer: 'bg-[#dee8ff]/40 text-[#00668a]',
-      superadmin: 'bg-[#ffdad6] text-[#ba1a1a]',
+      optometrist: 'bg-[#e2f9ee] text-[#00422b]',
+      seller: 'bg-[#dee8ff] text-[#00509e]',
+      customer: 'bg-[#f0f3ff] text-[#434653]',
     }
-    return colors[role] || 'bg-slate-100 text-slate-655'
+    return colors[normalizeRole(role)] || 'bg-[#f0f3ff] text-[#434653]'
   }
 
   const getInitials = (name: string) => {
@@ -89,12 +161,12 @@ export default function ProfilePage() {
   if (!profileData) {
     return (
       <main className="min-h-screen flex items-center justify-center text-[#111c2d] p-4">
-        <div className="text-center space-y-4 max-w-sm w-full bg-white border border-[#cbd5e1] p-6 rounded-2xl shadow-sm">
-          <p className="text-[#737784] font-semibold text-xs">No se pudo cargar el perfil.</p>
+        <div className="text-center space-y-4 max-w-sm w-full bg-white p-6 rounded-[20px] or-shadow-card">
+          <p className="text-[#434653] font-semibold text-sm">No se pudo cargar el perfil.</p>
           <form action={logout}>
             <button
               type="submit"
-              className="w-full bg-[#ba1a1a] hover:bg-[#93000a] text-white py-2.5 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm"
+              className="w-full bg-[#ba1a1a] hover:bg-[#93000a] text-white px-4 min-h-[44px] rounded-xl text-sm font-bold transition-colors cursor-pointer"
             >
               Cerrar Sesión
             </button>
@@ -104,6 +176,24 @@ export default function ProfilePage() {
     )
   }
 
+  const businessFields: {
+    key: keyof BusinessSettings
+    label: string
+    type: 'text' | 'tel' | 'email'
+    placeholder: string
+    fullWidth?: boolean
+  }[] = [
+    { key: 'name', label: 'Nombre de la óptica', type: 'text', placeholder: 'Óptica Rayo' },
+    { key: 'schedule', label: 'Horario de atención', type: 'text', placeholder: 'Lun - Sáb, 10:00 - 19:00' },
+    { key: 'address', label: 'Dirección', type: 'text', placeholder: 'Calle, número y colonia', fullWidth: true },
+    { key: 'city', label: 'Ciudad', type: 'text', placeholder: 'Ciudad' },
+    { key: 'state', label: 'Estado', type: 'text', placeholder: 'Estado' },
+    { key: 'country', label: 'País', type: 'text', placeholder: 'País' },
+    { key: 'phone', label: 'Teléfono', type: 'tel', placeholder: 'Teléfono de la óptica' },
+    { key: 'whatsapp', label: 'WhatsApp', type: 'tel', placeholder: 'Número de WhatsApp' },
+    { key: 'email', label: 'Correo', type: 'email', placeholder: 'correo@optica.com' },
+  ]
+
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
 
@@ -111,7 +201,7 @@ export default function ProfilePage() {
       <div>
         <Link
           href={dashboardHrefForRole(profileData.role)}
-          className="inline-flex items-center gap-2 text-xs font-bold text-[#737784] hover:text-[#00357f] transition-colors"
+          className="inline-flex items-center gap-2 min-h-[44px] text-sm font-semibold text-[#434653] hover:text-[#00357f] transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           Volver al Panel Principal
@@ -121,26 +211,26 @@ export default function ProfilePage() {
       <div className="space-y-6">
 
         {/* Profile Header Card */}
-        <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-5 text-center">
+        <div className="bg-white rounded-[20px] or-shadow-card p-6 md:p-8 space-y-4 text-center">
           {/* Avatar */}
           <div className="flex justify-center">
-            <div className="w-18 h-18 bg-[#dee8ff] text-[#00357f] rounded-full flex items-center justify-center font-black text-xl select-none">
+            <div className="w-16 h-16 bg-[#00357f] text-white rounded-full flex items-center justify-center font-extrabold text-xl select-none">
               {getInitials(profileData.fullName || profileData.username)}
             </div>
           </div>
 
           {/* Name & Role */}
           <div>
-            <h1 className="text-xl font-extrabold text-[#111c2d]">
+            <h1 className="text-2xl font-extrabold text-[#111c2d]">
               {profileData.fullName || profileData.username}
             </h1>
-            <p className="text-xs text-[#737784] font-medium mt-0.5">
+            <p className="text-sm text-[#434653] font-medium mt-1">
               @{profileData.username}
             </p>
           </div>
 
           <div className="flex justify-center">
-            <span className={`px-3 py-0.5 rounded text-[10px] font-black border uppercase tracking-wider ${getRoleBadgeColor(profileData.role)}`}>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold ${getRoleBadgeColor(profileData.role)}`}>
               {getRoleBadgeLabel(profileData.role)}
             </span>
           </div>
@@ -148,27 +238,27 @@ export default function ProfilePage() {
         </div>
 
         {/* Edit Profile Form */}
-        <div className="bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm space-y-5">
-          <div className="flex items-center gap-2 border-b border-[#f0f3ff] pb-3">
+        <div className="bg-white rounded-[20px] or-shadow-card p-6 space-y-5">
+          <div className="flex items-center gap-2 border-b border-[#e7eeff] pb-3">
             <User className="w-5 h-5 text-[#00357f]" />
-            <h2 className="text-xs font-bold text-[#00357f] uppercase tracking-wider">
+            <h2 className="text-base font-bold text-[#111c2d]">
               Editar Datos de Cuenta
             </h2>
           </div>
 
           {/* Feedback Messages */}
           {state?.success && (
-            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3.5 flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-              <p className="text-xs font-semibold text-emerald-600 leading-normal">
+            <div className="bg-[#e2f9ee] rounded-xl p-4 flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-[#00422b] shrink-0" />
+              <p className="text-sm font-semibold text-[#00422b] leading-normal">
                 {state.success}
               </p>
             </div>
           )}
           {state?.error && (
-            <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3.5 flex items-center gap-3">
-              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
-              <p className="text-xs font-semibold text-rose-600 leading-normal">
+            <div className="bg-[#ffdad6] rounded-xl p-4 flex items-center gap-3">
+              <ShieldAlert className="w-5 h-5 text-[#ba1a1a] shrink-0" />
+              <p className="text-sm font-semibold text-[#ba1a1a] leading-normal">
                 {state.error}
               </p>
             </div>
@@ -177,7 +267,7 @@ export default function ProfilePage() {
           <form action={formAction} className="space-y-4">
             {/* Full Name */}
             <div>
-              <label htmlFor="fullName" className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">
+              <label htmlFor="fullName" className={labelClasses}>
                 Nombre Completo
               </label>
               <input
@@ -187,13 +277,13 @@ export default function ProfilePage() {
                 defaultValue={profileData.fullName}
                 disabled={isPending || profileData.isSuperAdmin}
                 placeholder="Tu nombre completo"
-                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
+                className={inputClasses}
               />
             </div>
 
             {/* Username */}
             <div>
-              <label htmlFor="username" className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">
+              <label htmlFor="username" className={labelClasses}>
                 Nombre de Usuario
               </label>
               <input
@@ -203,23 +293,23 @@ export default function ProfilePage() {
                 defaultValue={profileData.username}
                 disabled={isPending || profileData.isSuperAdmin}
                 placeholder="nombre_usuario"
-                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
+                className={inputClasses}
               />
-              <p className="text-[10px] text-[#737784] mt-1.5 font-semibold">
+              <p className="text-xs text-[#737784] mt-2 font-medium">
                 Se usa para iniciar sesión en la plataforma óptica.
               </p>
             </div>
 
             {/* Separator */}
             <div className="flex items-center gap-3 py-2">
-              <div className="h-px flex-1 bg-[#f0f3ff]" />
-              <span className="text-[9px] text-[#737784] font-black uppercase tracking-wider">Cambiar Contraseña</span>
-              <div className="h-px flex-1 bg-[#f0f3ff]" />
+              <div className="h-px flex-1 bg-[#e7eeff]" />
+              <span className="text-xs text-[#737784] font-semibold">Cambiar Contraseña</span>
+              <div className="h-px flex-1 bg-[#e7eeff]" />
             </div>
 
             {/* New Password */}
             <div>
-              <label htmlFor="newPassword" className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">
+              <label htmlFor="newPassword" className={labelClasses}>
                 Nueva Contraseña
               </label>
               <input
@@ -229,13 +319,13 @@ export default function ProfilePage() {
                 disabled={isPending || profileData.isSuperAdmin}
                 placeholder="Dejar vacío para no cambiar"
                 minLength={6}
-                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
+                className={inputClasses}
               />
             </div>
 
             {/* Confirm Password */}
             <div>
-              <label htmlFor="confirmNewPassword" className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">
+              <label htmlFor="confirmNewPassword" className={labelClasses}>
                 Confirmar Nueva Contraseña
               </label>
               <input
@@ -245,7 +335,7 @@ export default function ProfilePage() {
                 disabled={isPending || profileData.isSuperAdmin}
                 placeholder="Repite la nueva contraseña"
                 minLength={6}
-                className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
+                className={inputClasses}
               />
             </div>
 
@@ -254,7 +344,7 @@ export default function ProfilePage() {
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full bg-[#00357f] hover:bg-[#004aad] text-white font-bold py-3 px-4 rounded-lg shadow-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer text-xs uppercase"
+                className="w-full bg-[#00357f] hover:bg-[#00509e] text-white font-bold px-4 min-h-[48px] rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer text-sm"
               >
                 {isPending ? (
                   <>
@@ -271,8 +361,8 @@ export default function ProfilePage() {
             )}
 
             {profileData.isSuperAdmin && (
-              <div className="bg-[#ffdad6] border border-[#ba1a1a]/20 rounded-xl p-3 text-center">
-                <p className="text-xs font-black text-[#ba1a1a] uppercase tracking-wider">
+              <div className="bg-[#ffdad6] rounded-xl p-4 text-center">
+                <p className="text-sm font-semibold text-[#ba1a1a]">
                   El perfil de Super Admin no se puede modificar.
                 </p>
               </div>
@@ -282,74 +372,134 @@ export default function ProfilePage() {
 
         {/* Staff Management Quick Link (admin only) */}
         {isAdminRole(profileData.role) && (
-          <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-[#f0f3ff] pb-3">
-              <h2 className="text-xs font-bold text-[#00357f] uppercase tracking-wider flex items-center gap-1.5">
-                <User className="w-4 h-4" />
+          <div className="bg-white rounded-[20px] or-shadow-card p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#e7eeff] pb-3">
+              <h2 className="text-base font-bold text-[#111c2d] flex items-center gap-2">
+                <User className="w-5 h-5 text-[#00357f]" />
                 Gestión de Personal
               </h2>
               <Link href="/dashboard/admin/users"
-                className="text-xs font-bold text-[#00357f] hover:underline">Ver todo</Link>
+                className="inline-flex items-center min-h-[44px] text-sm font-bold text-[#00357f] hover:underline">Ver todo</Link>
             </div>
-            <p className="text-xs text-[#737784] font-medium">
+            <p className="text-sm text-[#434653] font-medium">
               Administra los empleados, sus roles y accesos al sistema desde el panel de gestión de personal.
             </p>
             <Link href="/dashboard/admin/users"
-              className="w-full flex items-center justify-center gap-2 bg-[#f0f3ff] hover:bg-[#dee8ff] border border-[#cbd5e1] text-[#00357f] py-2.5 rounded-xl font-bold text-xs transition-colors">
+              className="w-full flex items-center justify-center gap-2 min-h-[44px] bg-[#f0f3ff] hover:bg-[#dee8ff] text-[#00357f] px-4 py-3 rounded-xl font-bold text-sm transition-colors">
               <Shield className="w-4 h-4" />
               Ir a Gestión de Personal
             </Link>
           </div>
         )}
 
-        {/* Clinic Settings Summary (admin only) */}
+        {/* Business data (admin only, editable) */}
         {isAdminRole(profileData.role) && (
-          <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-[#cbd5e1] bg-[#f9f9ff] flex justify-between items-center">
-              <h2 className="text-xs font-bold text-[#00357f] uppercase tracking-wider flex items-center gap-1.5">
-                <Key className="w-4 h-4" />
-                Resumen del Sistema
+          <div className="bg-white rounded-[20px] or-shadow-card p-6 space-y-5">
+            <div className="flex items-center gap-2 border-b border-[#e7eeff] pb-3">
+              <Store className="w-5 h-5 text-[#00357f]" />
+              <h2 className="text-base font-bold text-[#111c2d]">
+                Datos de la óptica
               </h2>
             </div>
-            <table className="w-full text-left text-xs">
-              <tbody className="divide-y divide-[#f0f3ff]">
-                <tr className="hover:bg-[#f9f9ff] transition-colors">
-                  <td className="py-3 px-5 text-[#737784] font-bold w-1/2">Plataforma</td>
-                  <td className="py-3 px-5 text-[#111c2d] font-bold">OpticaRayo — OptiGest</td>
-                </tr>
-                <tr className="hover:bg-[#f9f9ff] transition-colors">
-                  <td className="py-3 px-5 text-[#737784] font-bold">Rol de cuenta</td>
-                  <td className="py-3 px-5 text-[#111c2d] font-bold">{getRoleBadgeLabel(profileData.role)}</td>
-                </tr>
-                <tr className="hover:bg-[#f9f9ff] transition-colors">
-                  <td className="py-3 px-5 text-[#737784] font-bold">Moneda</td>
-                  <td className="py-3 px-5 text-[#111c2d] font-bold">MXN ($)</td>
-                </tr>
-                <tr className="hover:bg-[#f9f9ff] transition-colors">
-                  <td className="py-3 px-5 text-[#737784] font-bold">Base de datos</td>
-                  <td className="py-3 px-5 text-[#111c2d] font-bold flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
-                    Supabase (en línea)
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+
+            <p className="text-sm text-[#434653] font-medium">
+              Estos datos identifican a la óptica en el sistema. Solo los administradores pueden modificarlos.
+            </p>
+
+            {businessFeedback && (
+              <div
+                className={`rounded-xl p-4 flex items-center gap-3 ${
+                  businessFeedback.type === 'success' ? 'bg-[#e2f9ee]' : 'bg-[#ffdad6]'
+                }`}
+              >
+                {businessFeedback.type === 'success' ? (
+                  <CheckCircle className="w-5 h-5 text-[#00422b] shrink-0" />
+                ) : (
+                  <ShieldAlert className="w-5 h-5 text-[#ba1a1a] shrink-0" />
+                )}
+                <p
+                  className={`text-sm font-semibold leading-normal ${
+                    businessFeedback.type === 'success' ? 'text-[#00422b]' : 'text-[#ba1a1a]'
+                  }`}
+                >
+                  {businessFeedback.text}
+                </p>
+              </div>
+            )}
+
+            {business ? (
+              <form onSubmit={handleSaveBusiness} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {businessFields.map((field) => (
+                    <div key={field.key} className={field.fullWidth ? 'sm:col-span-2' : undefined}>
+                      <label htmlFor={`business-${field.key}`} className={labelClasses}>
+                        {field.label}
+                      </label>
+                      <input
+                        id={`business-${field.key}`}
+                        type={field.type}
+                        value={business[field.key]}
+                        onChange={(e) =>
+                          setBusiness({ ...business, [field.key]: e.target.value })
+                        }
+                        disabled={savingBusiness}
+                        placeholder={field.placeholder}
+                        className={inputClasses}
+                      />
+                    </div>
+                  ))}
+
+                  {/* Currency is fixed for now (not editable in this pass) */}
+                  <div>
+                    <span className={labelClasses}>Moneda</span>
+                    <div className="w-full bg-[#f0f3ff] rounded-xl px-4 py-3 min-h-[44px] flex items-center text-sm font-semibold text-[#434653]">
+                      Peso Mexicano (MXN)
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingBusiness}
+                  className="w-full bg-[#00357f] hover:bg-[#00509e] text-white font-bold px-4 min-h-[48px] rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer text-sm"
+                >
+                  {savingBusiness ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Guardar datos de la óptica</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            ) : (
+              !businessFeedback && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#00357f] border-t-transparent" />
+                  <p className="text-sm text-[#737784] font-medium">Cargando datos de la óptica...</p>
+                </div>
+              )
+            )}
           </div>
         )}
 
         {/* Logout Section */}
-        <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-[20px] or-shadow-card p-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-center sm:text-left">
-              <h3 className="text-sm font-bold text-[#111c2d]">Cerrar Sesión</h3>
-              <p className="text-xs text-[#737784] mt-0.5 font-medium">
+              <h3 className="text-base font-bold text-[#111c2d]">Cerrar Sesión</h3>
+              <p className="text-sm text-[#434653] mt-1 font-medium">
                 Finalizar la sesión activa y volver al inicio.
               </p>
             </div>
             <form action={logout}>
               <button
                 type="submit"
-                className="bg-[#ffdad6] hover:bg-[#ffcdd0] text-[#ba1a1a] hover:text-[#93000a] border border-[#ba1a1a]/20 px-6 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2"
+                className="bg-[#ffdad6] hover:bg-[#ffcdd0] text-[#ba1a1a] hover:text-[#93000a] px-6 min-h-[44px] rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center gap-2"
               >
                 <LogOut className="w-4 h-4" />
                 Cerrar Sesión

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import { getAllProfiles } from '@/lib/services'
+import { getAllProfiles, getBusinessSettings, type BusinessSettings } from '@/lib/services'
 import {
   createUserAction,
   adminUpdateUserAction,
@@ -64,6 +64,7 @@ function ToggleSwitch({ checked, onChange, label, description }: ToggleSwitchPro
 export default function RegisterUsersPage() {
   const [loading, setLoading] = useState(true)
   const [users, setUsers] = useState<Profile[]>([])
+  const [business, setBusiness] = useState<BusinessSettings | null>(null)
   const [userSearch, setUserSearch] = useState('')
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -141,6 +142,15 @@ export default function RegisterUsersPage() {
       showFeedback('error', 'Error al cargar los usuarios del sistema.')
     } finally {
       setLoading(false)
+    }
+    // Business data for the "Configuración de Óptica" tab (read-only here;
+    // it is edited from the profile page). A failure here must not break
+    // the staff list, so it is loaded separately.
+    try {
+      const settings = await getBusinessSettings()
+      setBusiness(settings)
+    } catch (e) {
+      // The table falls back to "—" placeholders.
     }
   }
 
@@ -514,7 +524,7 @@ export default function RegisterUsersPage() {
                   <tbody className="divide-y divide-[#f0f3ff]">
                     <tr className="hover:bg-[#f9f9ff] transition-colors">
                       <td className="py-3.5 px-4 text-[#737784] font-bold w-1/3">Nombre de la Óptica</td>
-                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">Óptica Rayo Centro</td>
+                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">{business?.name || '—'}</td>
                     </tr>
                     <tr className="hover:bg-[#f9f9ff] transition-colors">
                       <td className="py-3.5 px-4 text-[#737784] font-bold">Moneda Principal</td>
@@ -522,11 +532,11 @@ export default function RegisterUsersPage() {
                     </tr>
                     <tr className="hover:bg-[#f9f9ff] transition-colors">
                       <td className="py-3.5 px-4 text-[#737784] font-bold">Horario de Atención</td>
-                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">Lun - Sáb, 10:00 - 20:00</td>
+                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">{business?.schedule || '—'}</td>
                     </tr>
                     <tr className="hover:bg-[#f9f9ff] transition-colors">
                       <td className="py-3.5 px-4 text-[#737784] font-bold">Ciudad / Sede</td>
-                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">México D.F.</td>
+                      <td className="py-3.5 px-4 text-[#111c2d] font-bold">{business?.city || '—'}</td>
                     </tr>
                   </tbody>
                 </table>

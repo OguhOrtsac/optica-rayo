@@ -1,16 +1,17 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { 
-  getProducts, 
-  createSale, 
-  getReminders, 
-  searchCustomers, 
-  getCoupons, 
-  getSales, 
+import {
+  getProducts,
+  createSale,
+  getReminders,
+  searchCustomers,
+  getCoupons,
+  getSales,
   updateSaleStatus,
   getMemberDiscountPercent
 } from '@/lib/services'
+import { registerCustomerAction } from '@/app/customers/actions'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { Database } from '@/types/database.types'
 import { 
@@ -24,6 +25,7 @@ import {
   ShoppingCart, 
   Tag, 
   User, 
+  UserPlus,
   ArrowRight,
   TrendingDown
 } from 'lucide-react'
@@ -69,6 +71,17 @@ export default function SellerDashboard() {
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerProfile | null>(null)
+
+  // Quick-add customer (from the empty state of the customer dropdown):
+  // mini form + the persistent walk-in warning shown when the seller
+  // chooses to continue with a name that is not registered.
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [quickName, setQuickName] = useState('')
+  const [quickPhone, setQuickPhone] = useState('')
+  const [quickEmail, setQuickEmail] = useState('')
+  const [quickError, setQuickError] = useState('')
+  const [quickCreating, setQuickCreating] = useState(false)
+  const [showWalkInWarning, setShowWalkInWarning] = useState(false)
   
   // Cart & Checkout states
   const [cart, setCart] = useState<CartItem[]>([])
@@ -222,11 +235,91 @@ export default function SellerDashboard() {
     }
   }
 
+  // Username suggestion with the EXACT convention of /customers/new:
+  // lowercase, accents stripped, non-alphanumerics become '_', first two
+  // words joined by '_'. registerCustomerAction turns it into the account
+  // email (username@opticarayo.com) unless the value already contains '@',
+  // in which case it is used as the email as-is.
+  const suggestUsername = (name: string) =>
+    name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '_')
+      .split('_')
+      .filter(Boolean)
+      .slice(0, 2)
+      .join('_')
+
+  // Creates a customer through the SAME path as /customers/new
+  // (registerCustomerAction: Auth account + profile role 'customer' +
+  // customer_profile). Only username and fullName are required there;
+  // every other field the action receives empty is stored as null.
+  const createCustomerViaOfficialPath = async (fullName: string, phone?: string, email?: string) => {
+    const formData = new FormData()
+    formData.set('fullName', fullName)
+    formData.set('username', email?.trim() ? email.trim() : suggestUsername(fullName))
+    if (phone?.trim()) formData.set('phone', phone.trim())
+    return registerCustomerAction({ error: null, success: null, customerId: null }, formData)
+  }
+
+  const openQuickAdd = () => {
+    setQuickName(customerSearch.trim())
+    setQuickPhone('')
+    setQuickEmail('')
+    setQuickError('')
+    setShowQuickAdd(true)
+  }
+
+  // Quick-add from the dropdown: create, reload the directory, select the
+  // new customer and close the panel. Errors stay inside the panel.
+  const handleQuickCreateCustomer = async () => {
+    const name = quickName.trim()
+    if (!name) {
+      setQuickError('Escribe el nombre del cliente.')
+      return
+    }
+    setQuickCreating(true)
+    setQuickError('')
+    try {
+      const result = await createCustomerViaOfficialPath(name, quickPhone, quickEmail)
+      if (result.error || !result.customerId) {
+        setQuickError(result.error || 'No se pudo crear el cliente.')
+        return
+      }
+      const freshCustomers = await searchCustomers('')
+      setCustomers(freshCustomers)
+      const created = freshCustomers.find((c: any) => c.id === result.customerId)
+      if (created) {
+        setSelectedCustomer(created)
+      } else {
+        setSelectedCustomer({
+          id: result.customerId,
+          full_name: name,
+          email: quickEmail.trim() || `${suggestUsername(name)}@opticarayo.com`,
+          role: 'customer',
+          customer_profiles: { phone: quickPhone.trim() || null }
+        })
+      }
+      setCustomerSearch('')
+      setShowCustomerSuggestions(false)
+      setShowQuickAdd(false)
+      setShowWalkInWarning(false)
+      showFeedback('success', 'Cliente creado y seleccionado')
+    } catch {
+      setQuickError('No se pudo crear el cliente. Inténtalo de nuevo.')
+    } finally {
+      setQuickCreating(false)
+    }
+  }
+
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Validation
-    const nameToRegister = selectedCustomer ? selectedCustomer.full_name : customerSearch.trim()
+    const typedName = customerSearch.trim()
+    let buyer: CustomerProfile | null = selectedCustomer
+    let nameToRegister = buyer ? buyer.full_name : typedName
     if (!nameToRegister) {
       showFeedback('error', 'Debes ingresar el nombre o buscar un cliente registrado.')
       return
@@ -242,6 +335,42 @@ export default function SellerDashboard() {
 
     setSubmitting(true)
     try {
+      // Free-typed name with no selected customer: resolve who the buyer is
+      // BEFORE registering, so the purchase lands in a real history.
+      // 1) An exact name match against the loaded directory links the sale
+      //    to that customer instead of creating a duplicate profile.
+      // 2) No match: create the minimal profile first (name only, through
+      //    the same path as /customers/new) and link the sale to it.
+      // 3) If creation fails, keep the previous behaviour — sale under the
+      //    free-typed name — and warn that no profile was created.
+      let profileCreationFailed = false
+      if (!buyer && typedName) {
+        const exactMatch = customers.find(
+          c => c.full_name.trim().toLowerCase() === typedName.toLowerCase()
+        )
+        if (exactMatch) {
+          buyer = exactMatch
+          nameToRegister = exactMatch.full_name
+        } else {
+          try {
+            const created = await createCustomerViaOfficialPath(typedName)
+            if (!created.error && created.customerId) {
+              buyer = {
+                id: created.customerId,
+                full_name: typedName,
+                email: `${suggestUsername(typedName)}@opticarayo.com`,
+                role: 'customer',
+                customer_profiles: null
+              }
+            } else {
+              profileCreationFailed = true
+            }
+          } catch {
+            profileCreationFailed = true
+          }
+        }
+      }
+
       const items = cart.map(item => ({
         productId: item.product.id,
         quantity: item.quantity
@@ -250,18 +379,27 @@ export default function SellerDashboard() {
       // Register sale with everything captured on screen: the registered
       // customer (when one was selected), the applied coupon and the note.
       await createSale(nameToRegister, items, paidAmount || total, paymentMethod, {
-        customerId: selectedCustomer?.id || null,
+        customerId: buyer?.id || null,
         couponId: activeCoupon?.id || null,
         discountApplied: discount,
         notes: saleNotes.trim() || undefined,
+        // The buyer was resolved from the typed name at checkout (exact
+        // match or minimal profile just created): the screen charged
+        // visitor prices, so the recorded sale keeps those prices.
+        chargeAsWalkIn: !selectedCustomer && !!buyer,
       })
-      
+
       showFeedback('success', '¡Venta registrada exitosamente! El inventario se actualizó y se programó la cita de revisión.')
-      
+      if (profileCreationFailed) {
+        showFeedback('error', 'La venta se registró con el nombre escrito, pero no se pudo crear el perfil del cliente. Agrégalo después en Clientes.')
+      }
+
       // Clear POS state
       setCart([])
       setCustomerSearch('')
       setSelectedCustomer(null)
+      setShowWalkInWarning(false)
+      setShowQuickAdd(false)
       setPaidAmountInput('')
       setCouponCode('')
       setActiveCoupon(null)
@@ -532,6 +670,9 @@ export default function SellerDashboard() {
                               setCustomerSearch(e.target.value)
                               setSelectedCustomer(null)
                               setShowCustomerSuggestions(true)
+                              setShowQuickAdd(false)
+                              setQuickError('')
+                              if (!e.target.value.trim()) setShowWalkInWarning(false)
                             }}
                             onFocus={() => setShowCustomerSuggestions(true)}
                             className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
@@ -539,7 +680,7 @@ export default function SellerDashboard() {
                           {selectedCustomer && (
                             <button 
                               type="button" 
-                              onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); }}
+                              onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); setShowWalkInWarning(false); }}
                               className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-600 hover:text-rose-800 text-[10px] font-bold cursor-pointer"
                             >
                               Limpiar
@@ -548,10 +689,106 @@ export default function SellerDashboard() {
                         </div>
 
                         {showCustomerSuggestions && customerSearch.trim() && !selectedCustomer && (
-                          <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-[#cbd5e1] rounded-lg max-h-[160px] overflow-y-auto shadow-lg divide-y divide-[#f0f3ff]">
+                          <div className={`absolute left-0 right-0 z-30 mt-1 bg-white border border-[#cbd5e1] rounded-lg overflow-y-auto shadow-lg divide-y divide-[#f0f3ff] ${filteredCustomers.length === 0 ? 'max-h-[380px]' : 'max-h-[160px]'}`}>
                             {filteredCustomers.length === 0 ? (
-                              <div className="p-3 text-[10px] text-[#737784] font-semibold">
-                                No hay clientes registrados con ese nombre.
+                              <div className="p-3 space-y-3 text-left">
+                                {!showQuickAdd ? (
+                                  <>
+                                    <p className="text-xs text-[#434653] font-semibold">
+                                      &ldquo;{customerSearch.trim()}&rdquo; no está registrado.
+                                    </p>
+                                    <div className="space-y-2">
+                                      <button
+                                        type="button"
+                                        onClick={openQuickAdd}
+                                        className="w-full min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white text-xs font-bold rounded-lg px-3 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                                      >
+                                        <UserPlus className="w-4 h-4" />
+                                        Agregar cliente rápido
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setShowCustomerSuggestions(false)
+                                          setShowWalkInWarning(true)
+                                        }}
+                                        className="w-full min-h-[44px] bg-white border border-[#cbd5e1] text-[#00357f] text-xs font-bold rounded-lg px-3 hover:bg-[#dee8ff]/30 flex items-center justify-center cursor-pointer transition-colors"
+                                      >
+                                        Continuar solo con el nombre
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <p className="text-xs font-bold text-[#00357f]">Agregar cliente rápido</p>
+                                    <div>
+                                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#434653] mb-1">
+                                        Nombre *
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={quickName}
+                                        onChange={(e) => setQuickName(e.target.value)}
+                                        placeholder="Nombre completo del cliente"
+                                        className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-3 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#434653] mb-1">
+                                        Teléfono (opcional)
+                                      </label>
+                                      <input
+                                        type="tel"
+                                        value={quickPhone}
+                                        onChange={(e) => setQuickPhone(e.target.value)}
+                                        placeholder="Ej. (555) 123-4567"
+                                        className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-3 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#434653] mb-1">
+                                        Correo (opcional)
+                                      </label>
+                                      <input
+                                        type="email"
+                                        value={quickEmail}
+                                        onChange={(e) => setQuickEmail(e.target.value)}
+                                        placeholder="cliente@correo.com"
+                                        className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-3 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                                      />
+                                    </div>
+                                    {quickError && (
+                                      <p className="bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]/25 rounded-lg px-3 py-2 text-xs font-semibold">
+                                        {quickError}
+                                      </p>
+                                    )}
+                                    <div className="flex gap-2 pt-1">
+                                      <button
+                                        type="button"
+                                        onClick={handleQuickCreateCustomer}
+                                        disabled={quickCreating}
+                                        className="flex-1 min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white text-xs font-bold rounded-lg px-3 flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                                      >
+                                        {quickCreating ? (
+                                          <>
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            Creando...
+                                          </>
+                                        ) : (
+                                          'Crear y seleccionar'
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { setShowQuickAdd(false); setQuickError('') }}
+                                        disabled={quickCreating}
+                                        className="min-h-[44px] bg-white border border-[#cbd5e1] text-[#737784] text-xs font-bold rounded-lg px-4 hover:bg-[#dee8ff]/30 cursor-pointer transition-colors disabled:opacity-50"
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               filteredCustomers.map(c => (
@@ -561,6 +798,7 @@ export default function SellerDashboard() {
                                   onClick={() => {
                                     setSelectedCustomer(c)
                                     setShowCustomerSuggestions(false)
+                                    setShowWalkInWarning(false)
                                   }}
                                   className="w-full text-left p-3 hover:bg-[#dee8ff]/30 transition-colors flex justify-between items-center text-xs cursor-pointer"
                                 >
@@ -574,6 +812,13 @@ export default function SellerDashboard() {
                           </div>
                         )}
                       </div>
+
+                      {showWalkInWarning && !selectedCustomer && customerSearch.trim() && (
+                        <p className="bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]/25 rounded-lg px-3 py-2 text-xs font-semibold text-left flex items-start gap-2">
+                          <ShieldAlert className="w-4 h-4 shrink-0 mt-px" />
+                          Ese cliente no existe: al registrar la venta se creará un perfil básico solo con el nombre, para que lo completes después en Clientes.
+                        </p>
+                      )}
 
                       {isClientBuyer && (
                         <p className="text-[10px] font-bold text-[#005c3e] bg-[#49da9f]/10 border border-[#49da9f]/30 rounded-lg px-3 py-2 text-left">
