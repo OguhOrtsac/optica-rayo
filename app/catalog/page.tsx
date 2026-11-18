@@ -1028,7 +1028,7 @@ function CatalogContent() {
             type="text"
             value={searchTerm}
             onChange={e => updateFilter('search', e.target.value)}
-            placeholder="Busca tu próximo armazón: modelo, marca, color…"
+            placeholder="Buscar lentes, marcas…"
             aria-label="Buscar en el catálogo"
             className="w-full rounded-2xl border border-[#cbd5e1]/70 bg-white text-[#111c2d] placeholder-[#737784] text-sm font-medium pl-12 pr-4 py-3.5 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.35)] outline-none focus:border-[#00357f]/40 focus:ring-4 focus:ring-[#00357f]/15 transition min-h-[52px]"
           />
@@ -1136,18 +1136,26 @@ function CatalogContent() {
       {/* Sticky filter deck: categories + brand chips travel together
           under the site nav while scrolling — one deck, no extra
           floating bar competing with the search field. */}
-      <div className="anim-fade-up sticky top-[61px] md:top-16 z-30 -mx-4 px-4 py-2 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 bg-[#e9f0fd]/90 backdrop-blur-md space-y-2">
+      <div className="anim-fade-up sticky top-[61px] md:top-16 z-40 -mx-4 px-4 py-1.5 sm:py-2 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 bg-[#e9f0fd]/95 backdrop-blur-md space-y-1.5 sm:space-y-2">
       {/* Filter rows (dictado del dueño 2026-11-18: «eso de marca y
           eso como que hay que darle mejor orden»): dos renglones con
           la MISMA estructura — etiqueta alineada a la izquierda
           («Categoría» / «Marca»), pastillas de la misma altura y
-          estilo con el conteo en el mismo formato de pastilla, y
-          desplazamiento horizontal suave que deja siempre visible la
-          pastilla activa. Mismos valores y mismo filtrado de antes. */}
-      <div className="flex items-center gap-2">
-        <span className="w-16 shrink-0 text-[11px] font-semibold text-[#434653]">Categoría</span>
+          estilo con el conteo en el mismo formato de pastilla.
+          Corrección del mismo día: SIN desplazamiento horizontal
+          (orden expresa del dueño) — los renglones se envuelven
+          (flex-wrap) y TODAS las pastillas se leen completas, con la
+          letra un punto menor en móvil. Mismos valores y filtrado.
+          Compactación posterior del mismo día (el dueño: los filtros
+          sin scroll «se ve bien mal» si ocupan tanto alto): en móvil
+          las pastillas miden 30px con texto de 10px y huecos de 4px,
+          y las etiquetas van como letrita de 10px ENCIMA de cada
+          grupo para liberar todo el ancho; en escritorio el renglón
+          conserva etiqueta a la izquierda y pastillas de 40px. */}
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[#737784] sm:w-16 sm:shrink-0 sm:text-[11px] sm:font-semibold sm:normal-case sm:tracking-normal sm:text-[#434653]">Categoría</span>
         <div className="relative min-w-0 flex-1">
-          <div ref={categoryRowRef} className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Categorías del catálogo">
+          <div ref={categoryRowRef} className="flex flex-wrap gap-1 sm:gap-2" role="group" aria-label="Categorías del catálogo">
             {categories.map(cat => {
               const Icon = cat.icon
               const isSelected = cat.value === 'all'
@@ -1162,22 +1170,21 @@ function CatalogContent() {
                   type="button"
                   onClick={() => toggleCategoryFilter(cat.value)}
                   aria-pressed={isSelected}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-bold min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
+                  className={`flex shrink-0 items-center gap-1 sm:gap-1.5 rounded-full border px-2 sm:px-3.5 text-[10px] sm:text-xs font-bold whitespace-nowrap min-h-[30px] sm:min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
                     isSelected
                       ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
                       : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   <span>{cat.label}</span>
-                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${isSelected ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>
+                  <span className={`rounded-full px-1 py-px text-[9px] sm:px-1.5 sm:py-0.5 sm:text-[10px] font-black ${isSelected ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>
                     {count}
                   </span>
                 </button>
               )
             })}
           </div>
-          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#e9f0fd] to-transparent" />
         </div>
       </div>
 
@@ -1186,22 +1193,22 @@ function CatalogContent() {
           every other filter. Only rendered when the catalog really
           carries 2+ brands. */}
       {brandOptions.length >= 2 && (
-        <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[11px] font-semibold text-[#434653]">Marca</span>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#737784] sm:w-16 sm:shrink-0 sm:text-[11px] sm:font-semibold sm:normal-case sm:tracking-normal sm:text-[#434653]">Marca</span>
           <div className="relative min-w-0 flex-1">
-            <div ref={brandRowRef} className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filtrar por marca">
+            <div ref={brandRowRef} className="flex flex-wrap gap-1 sm:gap-2" role="group" aria-label="Filtrar por marca">
               <button
                 type="button"
                 onClick={() => updateFilter('brand', null)}
                 aria-pressed={brandFilter === 'all'}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-bold min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
+                className={`flex shrink-0 items-center gap-1 sm:gap-1.5 rounded-full border px-2 sm:px-3.5 text-[10px] sm:text-xs font-bold whitespace-nowrap min-h-[30px] sm:min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
                   brandFilter === 'all'
                     ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
                     : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
                 }`}
               >
                 <span>Todas</span>
-                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${brandFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>{products.length}</span>
+                <span className={`rounded-full px-1 py-px text-[9px] sm:px-1.5 sm:py-0.5 sm:text-[10px] font-black ${brandFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>{products.length}</span>
               </button>
               {brandOptions.map(({ brand, count }) => {
                 const isActive = brandFilter === brand
@@ -1211,20 +1218,19 @@ function CatalogContent() {
                     type="button"
                     onClick={() => updateFilter('brand', isActive ? null : brand)}
                     aria-pressed={isActive}
-                    className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-bold min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
+                    className={`flex shrink-0 items-center gap-1 sm:gap-1.5 rounded-full border px-2 sm:px-3.5 text-[10px] sm:text-xs font-bold whitespace-nowrap min-h-[30px] sm:min-h-[40px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
                       isActive
                         ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
                         : 'bg-white border-[#cbd5e1] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f] shadow-sm'
                     }`}
                   >
                     <span>{brand}</span>
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>{count}</span>
+                    <span className={`rounded-full px-1 py-px text-[9px] sm:px-1.5 sm:py-0.5 sm:text-[10px] font-black ${isActive ? 'bg-white/20 text-white' : 'bg-[#f0f3ff] text-[#737784]'}`}>{count}</span>
                   </button>
                 )
               })}
             </div>
-            <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#e9f0fd] to-transparent" />
-          </div>
+            </div>
         </div>
       )}
       </div>
@@ -1583,6 +1589,13 @@ function CatalogContent() {
                     else cardRefs.current.delete(p.id)
                   }
 
+                  // OJO apilamiento: la raíz de la tarjeta lleva
+                  // `isolate` + z-0 (z-40 solo mientras se arrastra).
+                  // Sin ese contexto propio, el z-30 interno del
+                  // corazón y del asa se escapaba al contexto de la
+                  // página, empataba con la barra pegajosa de filtros
+                  // y la tapaba al hacer scroll (foto del dueño,
+                  // 2026-11-18). No quitar el `isolate`.
                   if (layoutMode === 'list') {
                     const colorMaterial = [details.color, details.material].filter(Boolean).join(' · ')
                     return (
@@ -1594,7 +1607,7 @@ function CatalogContent() {
                         key={p.id}
                         onClick={() => handleCardClick(p)}
                         style={enterStyle}
-                        className={`anim-stagger-item or-shadow-card group relative flex cursor-pointer items-center gap-3 rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3 ${isDraggingThis ? 'z-40 shadow-[0_24px_48px_-12px_rgba(0,53,127,0.45)]' : ''}`}
+                        className={`anim-stagger-item or-shadow-card group relative isolate flex cursor-pointer items-center gap-3 rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3 ${isDraggingThis ? 'z-40 shadow-[0_24px_48px_-12px_rgba(0,53,127,0.45)]' : 'z-0'}`}
                       >
                         {dragHandle}
                         <span className="relative block h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[14px] bg-[#f8faff]">
@@ -1650,7 +1663,7 @@ function CatalogContent() {
                       key={p.id}
                       onClick={() => handleCardClick(p)}
                       style={enterStyle}
-                      className={`anim-stagger-item or-shadow-card group relative flex cursor-pointer flex-col rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3 ${isDraggingThis ? 'z-40 shadow-[0_24px_48px_-12px_rgba(0,53,127,0.45)]' : ''}`}
+                      className={`anim-stagger-item or-shadow-card group relative isolate flex cursor-pointer flex-col rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3 ${isDraggingThis ? 'z-40 shadow-[0_24px_48px_-12px_rgba(0,53,127,0.45)]' : 'z-0'}`}
                     >
                       {renderCardFace(p, (
                         <>

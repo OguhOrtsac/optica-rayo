@@ -16,14 +16,26 @@
  *
  * La clasificación vive en lib/face-shape.ts (lógica pura, probada
  * con caras sintéticas); aquí solo se captura, se guía al cliente
- * (posición/frontalidad) y se promedian ~30 cuadros estables para
+ * (posición/frontalidad) y se promedian los cuadros estables para
  * que una sola detección ruidosa no decida el resultado.
+ *
+ * PRESENTACIÓN POR FASES (dictado del dueño, 2026-11-18): para que
+ * el cliente SIENTA el proceso, la ruta de cámara se presenta en
+ * tres fases (~9 s en total): ESCANEO (~4 s — es la ventana real de
+ * captura y promediado: los puntos reales aparecen poco a poco sobre
+ * el video, con un barrido), ANÁLISIS (~4 s — la forma ya salió del
+ * promedio real, pero la tarjeta se retiene mientras las medidas se
+ * resaltan por turnos) y REVELADO (~1 s — palomita de marca) antes
+ * de mostrar el resultado. La elección manual espera ~2.5 s con un
+ * «buscando armazones». El teatro va SOBRE la captura real, nunca
+ * la sustituye; con movimiento reducido todo se acorta al mínimo.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Camera,
+  Check,
   CheckCircle2,
   Eye,
   RotateCcw,
@@ -53,11 +65,66 @@ const MODEL_URL =
 
 // Índices que promedia la captura (los mismos que mide el clasificador).
 const KEY_INDICES = [10, 152, 234, 454, 172, 397, 71, 301] as const
-const STABLE_MS = 1000
 const MIN_SAMPLES = 20
 
-type Step = 'intro' | 'loading' | 'camera' | 'manual' | 'result' | 'error'
+// Tiempos de la presentación por fases. La ventana de escaneo ES la
+// ventana real de promediado de cuadros (antes 1 s; ahora ~4 s, así
+// el promedio incluso sale de más cuadros). Con movimiento reducido
+// las fases se acortan a lo mínimo y no hay barridos.
+const SCAN_MS = 4000
+const ANALYSIS_MS = 4000
+const REVEAL_MS = 1000
+const SCAN_MS_REDUCED = 1000
+const ANALYSIS_MS_REDUCED = 800
+const REVEAL_MS_REDUCED = 300
+const MANUAL_WAIT_MS = 2500
+const MANUAL_WAIT_MS_REDUCED = 400
+
+const SCAN_TEXTS = ['Detectando su rostro…', 'Marcando puntos de referencia…'] as const
+const ANALYSIS_TEXTS = [
+  'Midiendo el ancho de sus pómulos…',
+  'Analizando su mandíbula…',
+  'Midiendo su frente…',
+  'Calculando las proporciones…',
+] as const
+// Líneas de medida que se resaltan por turnos durante el análisis,
+// en el mismo orden que ANALYSIS_TEXTS.
+const MEASURE_LINES = [
+  [234, 454],
+  [172, 397],
+  [71, 301],
+  [10, 152],
+] as const
+
+// Contorno del rostro (anillo oval de MediaPipe, en orden) y puntos
+// visibles del escaneo: ~71 landmarks de contorno, cejas, ojos, nariz,
+// labios y los puntos de medida del clasificador.
+const OVAL_POINTS = [
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400,
+  377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67,
+  109,
+]
+const FEATURE_POINTS = [
+  70, 63, 105, 66, 107, 336, 296, 334, 293, 300, 33, 133, 159, 145, 263, 362, 386, 374,
+  168, 197, 195, 5, 4, 1, 94, 2, 61, 291, 78, 308, 13, 14, 17, 71, 301,
+]
+const DRAW_POINTS = Array.from(new Set([...OVAL_POINTS, ...FEATURE_POINTS]))
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+type Step =
+  | 'intro'
+  | 'loading'
+  | 'camera'
+  | 'manual'
+  | 'manualWait'
+  | 'result'
+  | 'error'
 type LiveStatus = 'searching' | 'tooFar' | 'tooClose' | 'offCenter' | 'turned' | 'perfect'
+type CamPhase = 'guide' | 'scan' | 'analysis' | 'reveal'
 
 const STATUS_TEXT: Record<LiveStatus, string> = {
   searching: 'Buscando su rostro…',
@@ -124,6 +191,9 @@ export default function FaceScanner({
   const [errorText, setErrorText] = useState('')
   const [liveStatus, setLiveStatus] = useState<LiveStatus>('searching')
   const [progress, setProgress] = useState(0)
+  const [camPhase, setCamPhase] = useState<CamPhase>('guide')
+  const [phaseText, setPhaseText] = useState<string | null>(null)
+  const [percent, setPercent] = useState(0)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -138,9 +208,46 @@ export default function FaceScanner({
   const statusRef = useRef<LiveStatus>('searching')
   const progressRef = useRef(0)
   const detectErrorsRef = useRef(0)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const latestLandmarksRef = useRef<LandmarkPoint[] | null>(null)
+  const camPhaseRef = useRef<CamPhase>('guide')
+  const phaseStartRef = useRef(0)
+  const analysisSegRef = useRef(0)
+  const pendingShapeRef = useRef<FaceShape | null>(null)
+  const reducedMotionRef = useRef(false)
+  const scanMsRef = useRef(SCAN_MS)
+  const analysisMsRef = useRef(ANALYSIS_MS)
+  const revealMsRef = useRef(REVEAL_MS)
+  const manualTimerRef = useRef<number | null>(null)
+  const lastPhaseTextRef = useRef<string | null>(null)
+  const lastPercentRef = useRef(0)
 
   useEffect(() => {
     setMounted(true)
+  }, [])
+
+  // El bucle de detección corre a ~60 cuadros por segundo: el texto y
+  // el porcentaje de la fase solo tocan el estado cuando cambian.
+  const setPhaseTextThrottled = useCallback((text: string | null) => {
+    if (lastPhaseTextRef.current !== text) {
+      lastPhaseTextRef.current = text
+      setPhaseText(text)
+    }
+  }, [])
+
+  const setPercentThrottled = useCallback((value: number) => {
+    if (lastPercentRef.current !== value) {
+      lastPercentRef.current = value
+      setPercent(value)
+    }
+  }, [])
+
+  const clearCanvas = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
   }, [])
 
   const stopCamera = useCallback(() => {
@@ -167,7 +274,23 @@ export default function FaceScanner({
     samplesRef.current = []
     stableSinceRef.current = null
     lastVideoTimeRef.current = -1
-  }, [])
+    // La presentación por fases también se cancela entera: sin
+    // temporizadores vivos ni puntos fantasma al reabrir.
+    camPhaseRef.current = 'guide'
+    setCamPhase('guide')
+    lastPhaseTextRef.current = null
+    setPhaseText(null)
+    lastPercentRef.current = 0
+    setPercent(0)
+    progressRef.current = 0
+    pendingShapeRef.current = null
+    latestLandmarksRef.current = null
+    if (manualTimerRef.current !== null) {
+      window.clearTimeout(manualTimerRef.current)
+      manualTimerRef.current = null
+    }
+    clearCanvas()
+  }, [clearCanvas])
 
   // Al cerrar el modal (o desmontar), la cámara se detiene SIEMPRE y
   // el flujo vuelve a la intro para la próxima apertura.
@@ -198,32 +321,210 @@ export default function FaceScanner({
     [stopCamera],
   )
 
-  const finishScan = useCallback(
-    (samples: LandmarkPoint[][]) => {
-      // Promedio punto a punto de los cuadros estables capturados.
-      const averaged = KEY_INDICES.map((_, k) => {
-        let x = 0
-        let y = 0
-        for (const s of samples) {
-          x += s[k].x
-          y += s[k].y
-        }
-        return { x: x / samples.length, y: y / samples.length }
-      })
-      const center = {
-        x: averaged.reduce((a, p) => a + p.x, 0) / averaged.length,
-        y: averaged.reduce((a, p) => a + p.y, 0) / averaged.length,
+  // La clasificación de siempre: promedio punto a punto de los
+  // cuadros estables capturados y el clasificador puro. Sin efectos:
+  // quien llama decide cuándo se muestra el resultado.
+  const computeShape = useCallback((samples: LandmarkPoint[][]): FaceShape => {
+    const averaged = KEY_INDICES.map((_, k) => {
+      let x = 0
+      let y = 0
+      for (const s of samples) {
+        x += s[k].x
+        y += s[k].y
       }
-      const points: LandmarkPoint[] = Array.from({ length: 468 }, () => center)
-      KEY_INDICES.forEach((idx, k) => {
-        points[idx] = averaged[k]
+      return { x: x / samples.length, y: y / samples.length }
+    })
+    const center = {
+      x: averaged.reduce((a, p) => a + p.x, 0) / averaged.length,
+      y: averaged.reduce((a, p) => a + p.y, 0) / averaged.length,
+    }
+    const points: LandmarkPoint[] = Array.from({ length: 468 }, () => center)
+    KEY_INDICES.forEach((idx, k) => {
+      points[idx] = averaged[k]
+    })
+    return classifyFaceShape(points)
+  }, [])
+
+  // Dibuja los landmarks REALES del último cuadro sobre el video (el
+  // canvas lleva el mismo espejo que el <video>). En escaneo los
+  // puntos aparecen de arriba hacia abajo en proporción al avance y
+  // baja una línea de barrido; en análisis quedan todos, pulsando,
+  // con la medida del turno resaltada; en revelado se tiñen de marca.
+  const drawOverlay = useCallback(() => {
+    const canvas = canvasRef.current
+    const video = videoRef.current
+    if (!canvas || !video) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const cw = canvas.clientWidth
+    const ch = canvas.clientHeight
+    if (!cw || !ch) return
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const pw = Math.round(cw * dpr)
+    const ph = Math.round(ch * dpr)
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw
+      canvas.height = ph
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, cw, ch)
+    const phase = camPhaseRef.current
+    if (phase === 'guide') return
+    const lm = latestLandmarksRef.current
+    if (!lm || lm.length < 468) return
+    // Mapeo del cuadro de video al contenedor con object-cover.
+    const vw = video.videoWidth > 0 ? video.videoWidth : cw
+    const vh = video.videoHeight > 0 ? video.videoHeight : ch
+    const scale = Math.max(cw / vw, ch / vh)
+    const dw = vw * scale
+    const dh = vh * scale
+    const ox = (cw - dw) / 2
+    const oy = (ch - dh) / 2
+    const P = (i: number) => ({ x: ox + lm[i].x * dw, y: oy + lm[i].y * dh })
+    const reduced = reducedMotionRef.current
+
+    if (phase === 'scan') {
+      const p = progressRef.current
+      const sorted = [...DRAW_POINTS].sort((a, b) => lm[a].y - lm[b].y)
+      const revealCount = reduced
+        ? sorted.length
+        : Math.min(sorted.length, Math.ceil(p * sorted.length))
+      const rank = new Map<number, number>()
+      sorted.forEach((idx, r) => rank.set(idx, r))
+      const visible = (i: number) => (rank.get(i) ?? 0) < revealCount
+
+      if (!reduced && p > 0) {
+        const top = P(10).y
+        const bottom = P(152).y
+        const sy = top + p * (bottom - top)
+        const left = Math.min(P(234).x, P(454).x) - 14
+        const width = Math.abs(P(454).x - P(234).x) + 28
+        const grad = ctx.createLinearGradient(0, sy - 30, 0, sy + 30)
+        grad.addColorStop(0, 'rgba(34,197,94,0)')
+        grad.addColorStop(0.5, 'rgba(34,197,94,0.16)')
+        grad.addColorStop(1, 'rgba(34,197,94,0)')
+        ctx.fillStyle = grad
+        ctx.fillRect(left, sy - 30, width, 60)
+        ctx.strokeStyle = 'rgba(34,197,94,0.75)'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(left, sy)
+        ctx.lineTo(left + width, sy)
+        ctx.stroke()
+      }
+
+      ctx.strokeStyle = 'rgba(34,197,94,0.5)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      for (let k = 0; k < OVAL_POINTS.length; k++) {
+        const a = OVAL_POINTS[k]
+        const b = OVAL_POINTS[(k + 1) % OVAL_POINTS.length]
+        if (!visible(a) || !visible(b)) continue
+        const pa = P(a)
+        const pb = P(b)
+        ctx.moveTo(pa.x, pa.y)
+        ctx.lineTo(pb.x, pb.y)
+      }
+      ctx.stroke()
+
+      ctx.fillStyle = '#22c55e'
+      for (const idx of DRAW_POINTS) {
+        if (!visible(idx)) continue
+        const q = P(idx)
+        ctx.beginPath()
+        ctx.arc(q.x, q.y, 2, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      return
+    }
+
+    // Análisis y revelado: la malla completa sobre el rostro.
+    const radius =
+      phase === 'reveal' || reduced ? 2.2 : 2.2 + 0.7 * Math.sin(performance.now() / 280)
+    ctx.strokeStyle =
+      phase === 'reveal' ? 'rgba(8,153,201,0.45)' : 'rgba(34,197,94,0.35)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    for (let k = 0; k < OVAL_POINTS.length; k++) {
+      const pa = P(OVAL_POINTS[k])
+      const pb = P(OVAL_POINTS[(k + 1) % OVAL_POINTS.length])
+      ctx.moveTo(pa.x, pa.y)
+      ctx.lineTo(pb.x, pb.y)
+    }
+    ctx.stroke()
+
+    if (phase === 'analysis') {
+      MEASURE_LINES.forEach((line, i) => {
+        const pa = P(line[0])
+        const pb = P(line[1])
+        if (i === analysisSegRef.current) {
+          ctx.strokeStyle = 'rgba(34,197,94,0.35)'
+          ctx.lineWidth = 6
+          ctx.beginPath()
+          ctx.moveTo(pa.x, pa.y)
+          ctx.lineTo(pb.x, pb.y)
+          ctx.stroke()
+          ctx.strokeStyle = '#22c55e'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(pa.x, pa.y)
+          ctx.lineTo(pb.x, pb.y)
+          ctx.stroke()
+        } else {
+          ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(pa.x, pa.y)
+          ctx.lineTo(pb.x, pb.y)
+          ctx.stroke()
+        }
       })
-      const shape = classifyFaceShape(points)
-      stopCamera()
-      setResultShape(shape)
-      setStep('result')
+    }
+
+    ctx.fillStyle = phase === 'reveal' ? '#0899c9' : '#22c55e'
+    for (const idx of DRAW_POINTS) {
+      const q = P(idx)
+      ctx.beginPath()
+      ctx.arc(q.x, q.y, radius, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }, [])
+
+  // Avanza las fases de análisis y revelado según el reloj. La forma
+  // ya se calculó del promedio real al cerrar el escaneo; aquí solo
+  // se presenta y, al final, se entrega la tarjeta de resultado.
+  const advancePhase = useCallback(
+    (now: number) => {
+      if (camPhaseRef.current === 'analysis') {
+        const total = analysisMsRef.current
+        const elapsed = now - phaseStartRef.current
+        const seg = Math.min(
+          ANALYSIS_TEXTS.length - 1,
+          Math.floor(elapsed / (total / ANALYSIS_TEXTS.length)),
+        )
+        analysisSegRef.current = seg
+        setPhaseTextThrottled(ANALYSIS_TEXTS[seg] ?? ANALYSIS_TEXTS[0])
+        setPercentThrottled(50 + Math.round(Math.min(1, elapsed / total) * 50))
+        if (elapsed >= total) {
+          camPhaseRef.current = 'reveal'
+          phaseStartRef.current = now
+          setCamPhase('reveal')
+          setPhaseTextThrottled(null)
+          setPercentThrottled(100)
+        }
+      } else if (camPhaseRef.current === 'reveal') {
+        if (now - phaseStartRef.current >= revealMsRef.current) {
+          const shape = pendingShapeRef.current
+          pendingShapeRef.current = null
+          stopCamera()
+          if (shape) {
+            setResultShape(shape)
+            setStep('result')
+          }
+        }
+      }
     },
-    [stopCamera],
+    [setPercentThrottled, setPhaseTextThrottled, stopCamera],
   )
 
   const runLoop = useCallback(
@@ -244,6 +545,13 @@ export default function FaceScanner({
           detectErrorsRef.current = 0
         } catch {
           detectErrorsRef.current += 1
+          if (camPhaseRef.current === 'analysis' || camPhaseRef.current === 'reveal') {
+            // La forma ya salió del promedio real: un fallo de
+            // detección aquí no cancela la presentación.
+            advancePhase(performance.now())
+            drawOverlay()
+            return
+          }
           if (detectErrorsRef.current >= 10) {
             failWith(
               'La detección se interrumpió en su teléfono. Puede elegir su forma de rostro manualmente.',
@@ -264,11 +572,35 @@ export default function FaceScanner({
               progressRef.current = 0
               setProgress(0)
             }
+            // El rostro se perdió: el escaneo se cancela y se vuelve
+            // a la guía, sin forzar la presentación sobre nadie.
+            if (camPhaseRef.current === 'scan') {
+              camPhaseRef.current = 'guide'
+              setCamPhase('guide')
+            }
+            setPhaseTextThrottled(null)
+            setPercentThrottled(0)
+            clearCanvas()
           }
         }
 
         if (!landmarks || landmarks.length < 468) {
+          if (camPhaseRef.current === 'analysis' || camPhaseRef.current === 'reveal') {
+            // Se conserva la última malla conocida y la fase sigue.
+            advancePhase(performance.now())
+            drawOverlay()
+            return
+          }
           setStatus('searching')
+          return
+        }
+        latestLandmarksRef.current = landmarks
+
+        // Con el escaneo completo, la guía ya no manda: solo corre
+        // la presentación (análisis y revelado) sobre el video vivo.
+        if (camPhaseRef.current === 'analysis' || camPhaseRef.current === 'reveal') {
+          advancePhase(performance.now())
+          drawOverlay()
           return
         }
 
@@ -317,26 +649,51 @@ export default function FaceScanner({
         }
 
         // De frente y estable: acumular la muestra de este cuadro.
+        // Esta ventana ES la fase de escaneo: los puntos reales se
+        // van dibujando en proporción al avance del promediado.
         setStatus('perfect')
         const now = performance.now()
         if (stableSinceRef.current === null) stableSinceRef.current = now
+        if (camPhaseRef.current === 'guide') {
+          camPhaseRef.current = 'scan'
+          setCamPhase('scan')
+        }
         samplesRef.current.push(KEY_INDICES.map(i => pt(i)))
         const elapsed = now - stableSinceRef.current
-        const p = Math.min(1, elapsed / STABLE_MS)
+        const p = Math.min(1, elapsed / scanMsRef.current)
         if (Math.abs(p - progressRef.current) >= 0.05 || p === 1) {
           progressRef.current = p
           setProgress(p)
         }
-        if (elapsed >= STABLE_MS && samplesRef.current.length >= MIN_SAMPLES) {
+        setPhaseTextThrottled(elapsed < scanMsRef.current / 2 ? SCAN_TEXTS[0] : SCAN_TEXTS[1])
+        setPercentThrottled(Math.round(p * 50))
+        drawOverlay()
+        if (elapsed >= scanMsRef.current && samplesRef.current.length >= MIN_SAMPLES) {
           const samples = samplesRef.current
           samplesRef.current = []
           stableSinceRef.current = null
-          finishScan(samples)
+          // La forma se calcula AHORA, del promedio real; la tarjeta
+          // se retiene mientras corren el análisis y el revelado.
+          pendingShapeRef.current = computeShape(samples)
+          camPhaseRef.current = 'analysis'
+          phaseStartRef.current = now
+          analysisSegRef.current = 0
+          setCamPhase('analysis')
+          setPhaseTextThrottled(ANALYSIS_TEXTS[0])
+          setPercentThrottled(50)
         }
       }
       rafRef.current = requestAnimationFrame(tick)
     },
-    [failWith, finishScan],
+    [
+      advancePhase,
+      clearCanvas,
+      computeShape,
+      drawOverlay,
+      failWith,
+      setPercentThrottled,
+      setPhaseTextThrottled,
+    ],
   )
 
   const startCamera = useCallback(async () => {
@@ -352,6 +709,13 @@ export default function FaceScanner({
     detectErrorsRef.current = 0
     samplesRef.current = []
     stableSinceRef.current = null
+    const reduced = prefersReducedMotion()
+    reducedMotionRef.current = reduced
+    scanMsRef.current = reduced ? SCAN_MS_REDUCED : SCAN_MS
+    analysisMsRef.current = reduced ? ANALYSIS_MS_REDUCED : ANALYSIS_MS
+    revealMsRef.current = reduced ? REVEAL_MS_REDUCED : REVEAL_MS
+    camPhaseRef.current = 'guide'
+    setCamPhase('guide')
 
     // 1) Modelo de detección (carga dinámica: solo paga quien escanea).
     let landmarker: FaceLandmarker
@@ -447,7 +811,14 @@ export default function FaceScanner({
     (shape: FaceShape) => {
       stopCamera()
       setResultShape(shape)
-      setStep('result')
+      setStep('manualWait')
+      // Espera breve para que la elección también se sienta buscada;
+      // cerrar el modal la cancela (stopCamera limpia el temporizador).
+      const wait = prefersReducedMotion() ? MANUAL_WAIT_MS_REDUCED : MANUAL_WAIT_MS
+      manualTimerRef.current = window.setTimeout(() => {
+        manualTimerRef.current = null
+        setStep('result')
+      }, wait)
     },
     [stopCamera],
   )
@@ -534,7 +905,11 @@ export default function FaceScanner({
         {(step === 'loading' || step === 'camera') && (
           <div className="space-y-4">
             <h3 className="pr-10 text-base font-extrabold tracking-tight text-[#111c2d]">
-              Centre su rostro en el óvalo
+              {step === 'camera' && camPhase === 'analysis'
+                ? 'Analizando su rostro'
+                : step === 'camera' && camPhase === 'reveal'
+                  ? '¡Listo!'
+                  : 'Centre su rostro en el óvalo'}
             </h3>
             <div className="relative aspect-[3/4] w-full overflow-hidden rounded-3xl bg-black">
               <video
@@ -544,6 +919,12 @@ export default function FaceScanner({
                 autoPlay
                 className="absolute inset-0 h-full w-full -scale-x-100 object-cover"
                 aria-label="Vista de la cámara"
+              />
+              {/* Malla de puntos reales del escaneo (mismo espejo que el video) */}
+              <canvas
+                ref={canvasRef}
+                className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100"
+                aria-hidden="true"
               />
               {/* Óvalo guía */}
               <svg
@@ -562,6 +943,13 @@ export default function FaceScanner({
                   strokeDasharray="10 8"
                 />
               </svg>
+              {step === 'camera' && camPhase === 'reveal' && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span className="anim-fade-up flex h-20 w-20 items-center justify-center rounded-full bg-[#0899c9] text-white shadow-2xl">
+                    <Check className="h-10 w-10" strokeWidth={3} />
+                  </span>
+                </div>
+              )}
               {step === 'loading' ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center">
                   <span className="skeleton-shimmer h-10 w-10 rounded-full" />
@@ -578,14 +966,21 @@ export default function FaceScanner({
                       liveStatus === 'perfect' ? 'bg-[#00422b]/90' : 'bg-black/65'
                     }`}
                   >
-                    {liveStatus === 'perfect' && <CheckCircle2 className="h-4 w-4 shrink-0" />}
-                    {STATUS_TEXT[liveStatus]}
+                    {liveStatus === 'perfect' && camPhase === 'guide' && (
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    )}
+                    {phaseText ?? STATUS_TEXT[liveStatus]}
+                    {camPhase !== 'guide' && (
+                      <span className="tabular-nums opacity-90">{percent}%</span>
+                    )}
                   </p>
-                  {liveStatus === 'perfect' && (
+                  {(liveStatus === 'perfect' || camPhase !== 'guide') && (
                     <div className="mx-auto h-1.5 w-40 overflow-hidden rounded-full bg-white/30">
                       <div
                         className="h-full rounded-full bg-[#49da9f] transition-[width] duration-100"
-                        style={{ width: `${Math.round(progress * 100)}%` }}
+                        style={{
+                          width: `${camPhase === 'guide' ? Math.round(progress * 100) : percent}%`,
+                        }}
                       />
                     </div>
                   )}
@@ -638,6 +1033,28 @@ export default function FaceScanner({
             >
               Volver
             </button>
+          </div>
+        )}
+
+        {/* ——— ESPERA TRAS LA ELECCIÓN MANUAL ——— */}
+        {step === 'manualWait' && resultShape && info && (
+          <div className="space-y-4 py-2 text-center">
+            <div className="anim-pulse-soft flex justify-center">
+              <FaceOutline shape={resultShape} />
+            </div>
+            <p role="status" className="text-sm font-bold text-[#111c2d]">
+              Buscando los armazones ideales para su forma
+              <span aria-hidden="true">
+                <span className="anim-blink-soft">.</span>
+                <span className="anim-blink-soft" style={{ animationDelay: '0.25s' }}>
+                  .
+                </span>
+                <span className="anim-blink-soft" style={{ animationDelay: '0.5s' }}>
+                  .
+                </span>
+              </span>
+            </p>
+            <p className="text-xs text-[#737784]">Forma elegida: {info.label}</p>
           </div>
         )}
 
