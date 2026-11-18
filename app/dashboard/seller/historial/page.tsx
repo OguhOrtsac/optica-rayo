@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { getSales, updateSaleStatus } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { Database } from '@/types/database.types'
 import { ArrowLeft, CheckCircle, History, ShieldAlert } from 'lucide-react'
@@ -135,19 +136,29 @@ export default function SalesHistoryPage() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
 
-      {/* Header chico del sistema, como Reportes y Mensajes */}
-      <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
-        <Link href="/dashboard/seller" aria-label="Volver a Realizar Venta" className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
-          <ArrowLeft className="w-4.5 h-4.5" />
-        </Link>
-        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-          <History className="w-4.5 h-4.5" />
-        </span>
-        <div>
-          <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Historial de ventas</h1>
-          <p className="text-xs text-[#434653] font-medium">Monitoreo de taller: partidas, complementos y estado de cada venta.</p>
+      {/* Header chico del sistema, como Reportes y Mensajes.
+          En móvil: solo la etiqueta + el volver compacto (PageHeader). */}
+      <PageHeader
+        title="Historial de ventas"
+        mobileActions={
+          <Link href="/dashboard/seller" aria-label="Volver a Realizar Venta" className="flex items-center justify-center w-9 h-9 -ml-1 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+            <ArrowLeft className="w-4.5 h-4.5" />
+          </Link>
+        }
+      >
+        <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
+          <Link href="/dashboard/seller" aria-label="Volver a Realizar Venta" className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+            <ArrowLeft className="w-4.5 h-4.5" />
+          </Link>
+          <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+            <History className="w-4.5 h-4.5" />
+          </span>
+          <div>
+            <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Historial de ventas</h1>
+            <p className="text-xs text-[#434653] font-medium">Monitoreo de taller: partidas, complementos y estado de cada venta.</p>
+          </div>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Global Feedback Notifications */}
       {successMessage && (

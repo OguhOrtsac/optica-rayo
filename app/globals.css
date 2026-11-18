@@ -165,6 +165,19 @@ body {
   }
 }
 
+/* Slow, subtle opacity breathing for the mobile page-name tag
+   (components/page-header.tsx): the tag gently blinks so the eye
+   catches which window is open without a big title block. */
+@keyframes fx-blink-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 /* One-shot entrance. `backwards` fill applies the "from" state during any
    delay and then releases the element, so hover transforms keep working. */
 .anim-fade-up {
@@ -180,6 +193,11 @@ body {
 /* Gentle attention pulse for badges (softer than animate-pulse). */
 .anim-pulse-soft {
   animation: fx-pulse-soft 2.2s ease-in-out infinite;
+}
+
+/* Gentle blink for the mobile page-name tag (see page-header.tsx). */
+.anim-blink-soft {
+  animation: fx-blink-soft 2.8s ease-in-out infinite;
 }
 
 /* Shimmering placeholder surface for skeleton loading states. */
@@ -204,6 +222,7 @@ html[data-nav-scrolled='true'] .site-nav {
   .anim-fade-up,
   .anim-stagger-item,
   .anim-pulse-soft,
+  .anim-blink-soft,
   .skeleton-shimmer {
     animation: none !important;
   }

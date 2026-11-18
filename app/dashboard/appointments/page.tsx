@@ -33,10 +33,14 @@ import {
   type DaySlot,
 } from '@/lib/appointments'
 import { searchCustomers } from '@/lib/services'
+import PageHeader from '@/components/page-header'
+import AppointmentCalendar from '@/components/appointment-calendar'
 
 const STATUS_BADGES: Record<Appointment['status'], { label: string; classes: string }> = {
   pending: { label: 'Pendiente', classes: 'bg-amber-50 text-amber-700 border-amber-200' },
-  confirmed: { label: 'Confirmada', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  // «Confirmada» is the SAME light green the booking calendar paints
+  // (owner's order 2026-11-18): one green for confirmed everywhere.
+  confirmed: { label: 'Confirmada', classes: 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]' },
   cancelled: { label: 'Cancelada', classes: 'bg-red-50 text-[#ba1a1a] border-red-200' },
 }
 
@@ -67,6 +71,13 @@ export default function StaffAppointmentsPage() {
   // OUTSIDE the picker without choosing anyone (owner's order).
   const [resultsOpen, setResultsOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  // After the trash button removes the selected customer, the search
+  // effect must NOT reopen the results list on its own (owner's order
+  // 2026-11-18): the picker stays closed until the user types in or
+  // taps the search field again. «Cambiar» clears this flag instead:
+  // changing the customer DOES deploy the list.
+  const suppressAutoOpenRef = useRef(false)
   // Quick-add customer (same mini form and same creation path as the POS)
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [quickName, setQuickName] = useState('')
@@ -74,10 +85,11 @@ export default function StaffAppointmentsPage() {
   const [quickEmail, setQuickEmail] = useState('')
   const [quickError, setQuickError] = useState('')
   const [quickCreating, setQuickCreating] = useState(false)
-  // Month calendar for picking the appointment day beyond the strip
+  // Month calendar for picking the appointment day beyond the strip.
+  // It is a MODAL now (components/appointment-calendar.tsx): it handles
+  // its own backdrop/X/Escape closing, so it is not part of the
+  // outside-click handler below.
   const [calendarOpen, setCalendarOpen] = useState(false)
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date())
-  const calendarRef = useRef<HTMLDivElement>(null)
   // Time combo (dropdown list instead of the old button grid)
   const [timeOpen, setTimeOpen] = useState(false)
   const timeRef = useRef<HTMLDivElement>(null)
@@ -119,7 +131,10 @@ export default function StaffAppointmentsPage() {
         const results = await searchCustomers(customerQuery)
         if (!cancelled) {
           setCustomerResults(results)
-          setResultsOpen(true)
+          // Results are always cached, but the list only OPENS on its
+          // own while the user is actively picking (see the trash /
+          // «Cambiar» handlers and suppressAutoOpenRef).
+          if (!suppressAutoOpenRef.current) setResultsOpen(true)
         }
       } catch {
         if (!cancelled) setCustomerResults([])
@@ -149,7 +164,8 @@ export default function StaffAppointmentsPage() {
   }, [formDate])
 
   // Click/tap OUTSIDE closes the floating pieces (customer dropdown,
-  // month calendar, time combo) without touching the rest of the form.
+  // time combo) without touching the rest of the form. The month
+  // calendar is a modal and closes itself (backdrop / X / Escape).
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
       const target = e.target as Node
@@ -157,17 +173,32 @@ export default function StaffAppointmentsPage() {
         setResultsOpen(false)
         setShowQuickAdd(false)
       }
-      if (calendarRef.current && !calendarRef.current.contains(target)) setCalendarOpen(false)
       if (timeRef.current && !timeRef.current.contains(target)) setTimeOpen(false)
     }
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [])
 
-  const clearSelectedCustomer = () => {
+  // Trash: the customer was picked by mistake — clear the selection
+  // and keep the results list CLOSED. The empty search box stays shut
+  // until the user types in it or taps it again (owner's order).
+  const removeSelectedCustomer = () => {
+    suppressAutoOpenRef.current = true
     setSelectedCustomer(null)
     setCustomerQuery('')
     setShowQuickAdd(false)
+    setResultsOpen(false)
+  }
+
+  // «Cambiar»: clear the selection and DO deploy the results list, so
+  // another customer can be picked right away.
+  const changeSelectedCustomer = () => {
+    suppressAutoOpenRef.current = false
+    setSelectedCustomer(null)
+    setCustomerQuery('')
+    setShowQuickAdd(false)
+    setResultsOpen(true)
+    setTimeout(() => searchInputRef.current?.focus(), 0)
   }
 
   // Username suggestion with the EXACT convention of /customers/new and
@@ -250,30 +281,6 @@ export default function StaffAppointmentsPage() {
     return result
   }, [openDays])
 
-  // Month calendar cells (lunes-first). A cell is null for the blanks
-  // before the 1st; worked/past follow the same «Configurar horario»
-  // days the strip uses, and past days cannot be picked.
-  const calendarCells = useMemo(() => {
-    const year = calendarMonth.getFullYear()
-    const month = calendarMonth.getMonth()
-    const lead = (new Date(year, month, 1).getDay() + 6) % 7
-    const daysInMonth = new Date(year, month + 1, 0).getDate()
-    const cells: ({ iso: string; date: Date; open: boolean; past: boolean } | null)[] = []
-    for (let i = 0; i < lead; i++) cells.push(null)
-    for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(year, month, d)
-      const iso = toLocalDateISO(date)
-      cells.push({ iso, date, open: openDays.includes(agendaDayNumber(date)), past: iso < todayISO })
-    }
-    return cells
-  }, [calendarMonth, openDays, todayISO])
-
-  const monthIndexOf = (d: Date) => d.getFullYear() * 12 + d.getMonth()
-  const canPrevCalendarMonth = monthIndexOf(calendarMonth) > monthIndexOf(new Date())
-  const canNextCalendarMonth = monthIndexOf(calendarMonth) < monthIndexOf(new Date()) + 3
-  const shiftCalendarMonth = (delta: number) =>
-    setCalendarMonth(m => new Date(m.getFullYear(), m.getMonth() + delta, 1))
-
   const shiftViewDate = (delta: number) => {
     const d = parseLocalDate(viewDate)
     d.setDate(d.getDate() + delta)
@@ -344,15 +351,17 @@ export default function StaffAppointmentsPage() {
 
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-4xl mx-auto pb-24 md:pb-8 text-left space-y-5">
-      {/* Header */}
-      <header className="anim-fade-up">
-        <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight flex items-center gap-2.5">
-          <CalendarDays className="w-7 h-7" /> Agenda de Exámenes
-        </h1>
-        <p className="text-sm text-[#434653] mt-1 font-medium">
-          Citas del examen de la vista gratuito: confirma, cancela (con motivo) o agenda por un cliente.
-        </p>
-      </header>
+      {/* Header: en móvil solo la etiqueta chiquita (PageHeader) */}
+      <PageHeader title="Agenda de Exámenes">
+        <header className="anim-fade-up">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight flex items-center gap-2.5">
+            <CalendarDays className="w-7 h-7" /> Agenda de Exámenes
+          </h1>
+          <p className="text-sm text-[#434653] mt-1 font-medium">
+            Citas del examen de la vista gratuito: confirma, cancela (con motivo) o agenda por un cliente.
+          </p>
+        </header>
+      </PageHeader>
 
       {/* Day navigation */}
       <section className="anim-fade-up bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4 flex flex-wrap items-center gap-2.5">
@@ -518,19 +527,19 @@ export default function StaffAppointmentsPage() {
                 <span className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
-                    onClick={clearSelectedCustomer}
+                    onClick={changeSelectedCustomer}
+                    className="text-xs font-black text-[#00357f] underline underline-offset-2 cursor-pointer"
+                  >
+                    Cambiar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={removeSelectedCustomer}
                     aria-label="Quitar cliente"
                     title="Quitar cliente (si lo seleccionaste mal)"
                     className="w-8 h-8 flex items-center justify-center rounded-lg text-[#ba1a1a] hover:bg-[#ffdad6]/70 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearSelectedCustomer}
-                    className="text-xs font-black text-[#00357f] underline underline-offset-2 cursor-pointer"
-                  >
-                    Cambiar
                   </button>
                 </span>
               </div>
@@ -538,10 +547,19 @@ export default function StaffAppointmentsPage() {
               <div className="relative mt-1" ref={pickerRef}>
                 <Search className="w-4 h-4 text-[#737784] absolute left-3.5 top-[13px]" />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   value={customerQuery}
-                  onChange={e => setCustomerQuery(e.target.value)}
-                  onFocus={() => setResultsOpen(true)}
+                  onChange={e => {
+                    // Typing again re-arms the auto-open (it stays off
+                    // only right after the trash button cleared a pick).
+                    suppressAutoOpenRef.current = false
+                    setCustomerQuery(e.target.value)
+                  }}
+                  onFocus={() => {
+                    suppressAutoOpenRef.current = false
+                    setResultsOpen(true)
+                  }}
                   placeholder="Busca por nombre…"
                   className="w-full border border-[#cbd5e1] rounded-xl pl-10 pr-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#00357f]/40 focus:border-[#00357f] bg-white"
                 />
@@ -656,17 +674,13 @@ export default function StaffAppointmentsPage() {
             )}
           </div>
 
-          {/* Day chips (compact) + month calendar */}
-          <div className="relative" ref={calendarRef}>
+          {/* Day chips (compact) + month calendar modal */}
+          <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-black uppercase tracking-wider text-[#737784]">Día</span>
               <button
                 type="button"
-                onClick={() => {
-                  const d = parseLocalDate(formDate)
-                  setCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1))
-                  setCalendarOpen(v => !v)
-                }}
+                onClick={() => setCalendarOpen(v => !v)}
                 aria-expanded={calendarOpen}
                 className="inline-flex items-center gap-1.5 text-[11px] font-black text-[#00357f] bg-[#dee8ff]/70 hover:bg-[#dee8ff] px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer capitalize"
               >
@@ -705,62 +719,13 @@ export default function StaffAppointmentsPage() {
             </div>
 
             {calendarOpen && (
-              <div className="absolute z-20 right-0 top-full mt-2 w-[300px] max-w-[calc(100vw-3rem)] bg-white border border-[#cbd5e1] rounded-2xl shadow-xl p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    disabled={!canPrevCalendarMonth}
-                    onClick={() => shiftCalendarMonth(-1)}
-                    aria-label="Mes anterior"
-                    className="w-8 h-8 rounded-lg border border-[#cbd5e1] flex items-center justify-center hover:bg-[#f0f3ff] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4 text-[#00357f]" />
-                  </button>
-                  <p className="text-sm font-extrabold text-[#00357f] capitalize">
-                    {new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(calendarMonth)}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={!canNextCalendarMonth}
-                    onClick={() => shiftCalendarMonth(1)}
-                    aria-label="Mes siguiente"
-                    className="w-8 h-8 rounded-lg border border-[#cbd5e1] flex items-center justify-center hover:bg-[#f0f3ff] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4 text-[#00357f]" />
-                  </button>
-                </div>
-                <div className="grid grid-cols-7 gap-1 mt-2.5">
-                  {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
-                    <span key={i} className="text-center text-[9px] font-black uppercase tracking-wider text-[#737784] py-0.5">{d}</span>
-                  ))}
-                  {calendarCells.map((cell, i) =>
-                    cell === null ? (
-                      <span key={`blank-${i}`} />
-                    ) : (
-                      <button
-                        key={cell.iso}
-                        type="button"
-                        disabled={!cell.open || cell.past}
-                        onClick={() => { setFormDate(cell.iso); setCalendarOpen(false) }}
-                        className={`h-9 rounded-lg text-[13px] font-bold transition-all ${
-                          !cell.open || cell.past
-                            ? 'text-[#737784]/40 cursor-not-allowed'
-                            : cell.iso === formDate
-                              ? 'bg-[#00357f] text-white shadow-md shadow-[#00357f]/25 active:scale-95'
-                              : cell.iso === todayISO
-                                ? 'border border-[#00357f] text-[#00357f] hover:bg-[#f0f3ff] active:scale-95 cursor-pointer'
-                                : 'text-[#111c2d] hover:bg-[#f0f3ff] active:scale-95 cursor-pointer'
-                        }`}
-                      >
-                        {cell.date.getDate()}
-                      </button>
-                    )
-                  )}
-                </div>
-                <p className="text-[10px] text-[#737784] font-semibold mt-2">
-                  Los días en gris no se trabajan (según «Configurar horario») o ya pasaron.
-                </p>
-              </div>
+              <AppointmentCalendar
+                selectedISO={formDate}
+                todayISO={todayISO}
+                openDays={openDays}
+                onSelect={iso => { setFormDate(iso); setCalendarOpen(false) }}
+                onClose={() => setCalendarOpen(false)}
+              />
             )}
           </div>
 
@@ -849,7 +814,7 @@ export default function StaffAppointmentsPage() {
           {formFeedback && (
             <p className={`text-sm font-semibold rounded-lg px-3 py-2 border ${
               formFeedback.type === 'success'
-                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                ? 'text-[#15803d] bg-[#dcfce7]/60 border-[#bbf7d0]'
                 : 'text-[#ba1a1a] bg-red-50 border-red-200'
             }`}>
               {formFeedback.text}

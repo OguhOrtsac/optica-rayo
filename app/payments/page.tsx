@@ -8,6 +8,7 @@ import {
   getCustomerSales,
   getCustomerInstallments
 } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 import {
   Search,
   User,
@@ -325,18 +326,28 @@ export default function PaymentsPage() {
     <main className="min-h-screen text-[#111c2d] pt-4 pb-24 md:pb-8 text-left">
       <div className="max-w-[1440px] mx-auto px-4 md:px-8">
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 pb-4 border-b border-[#e7eeff] gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors md:hidden">
-                <ArrowLeft className="w-4 h-4" />
-              </Link>
-              <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Pagos diferidos</h1>
+        {/* Header: en móvil solo la etiqueta + el volver (PageHeader) */}
+        <PageHeader
+          title="Pagos diferidos"
+          mobileClassName="mb-6"
+          mobileActions={
+            <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+          }
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 pb-4 border-b border-[#e7eeff] gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors md:hidden">
+                  <ArrowLeft className="w-4 h-4" />
+                </Link>
+                <h1 className="text-2xl md:text-[28px] font-extrabold text-[#00357f] tracking-tight">Pagos diferidos</h1>
+              </div>
+              <p className="text-sm text-[#434653] mt-1 font-medium">Control de abonos de lentes a plazos y actualización de saldos.</p>
             </div>
-            <p className="text-sm text-[#434653] mt-1 font-medium">Control de abonos de lentes a plazos y actualización de saldos.</p>
           </div>
-        </div>
+        </PageHeader>
 
         {/* Directorio: tocar un cliente con pago diferido o un cliente buscado abre su
             estado de cuenta en el modal; ya no hay columna de resumen. */}

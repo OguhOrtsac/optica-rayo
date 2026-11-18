@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { normalizeRole } from '@/lib/roles'
+import PageHeader from '@/components/page-header'
 import {
   EXPENSE_CATEGORIES,
   createDailyExpense,
@@ -585,17 +586,26 @@ export default function AdminExpensesPage() {
   if (!canManage) {
     return (
       <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
-        <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
-          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
-            <ArrowLeft className="w-4.5 h-4.5" />
-          </Link>
-          <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-            <Receipt className="w-5 h-5" />
-          </span>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Gastos</h1>
+        <PageHeader
+          title="Gastos"
+          mobileActions={
+            <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+              <ArrowLeft className="w-4.5 h-4.5" />
+            </Link>
+          }
+        >
+          <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
+            <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+              <ArrowLeft className="w-4.5 h-4.5" />
+            </Link>
+            <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+              <Receipt className="w-5 h-5" />
+            </span>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Gastos</h1>
+            </div>
           </div>
-        </div>
+        </PageHeader>
         <div className="mt-6 bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm flex items-start gap-4">
           <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#ffdad6] text-[#ba1a1a] shrink-0" aria-hidden="true">
             <Lock className="w-5 h-5" />
@@ -615,21 +625,30 @@ export default function AdminExpensesPage() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1100px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
 
-      {/* Page Header */}
-      <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
-        <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
-          <ArrowLeft className="w-4.5 h-4.5" />
-        </Link>
-        <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-          <Receipt className="w-5 h-5" />
-        </span>
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Gastos</h1>
-          <p className="text-sm text-[#434653] mt-1 font-medium">
-            El dinero que sale: gastos del día y gastos fijos del negocio.
-          </p>
+      {/* Page Header: en móvil solo la etiqueta + volver (PageHeader) */}
+      <PageHeader
+        title="Gastos"
+        mobileActions={
+          <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+            <ArrowLeft className="w-4.5 h-4.5" />
+          </Link>
+        }
+      >
+        <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+            <ArrowLeft className="w-4.5 h-4.5" />
+          </Link>
+          <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+            <Receipt className="w-5 h-5" />
+          </span>
+          <div>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Gastos</h1>
+            <p className="text-sm text-[#434653] mt-1 font-medium">
+              El dinero que sale: gastos del día y gastos fijos del negocio.
+            </p>
+          </div>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Feedback Messages */}
       {feedbackMsg && (

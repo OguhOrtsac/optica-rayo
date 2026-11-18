@@ -13,8 +13,13 @@ import {
   dismissBirthday,
   getMessageTemplates,
   getMonthSales,
+  getRecentExams,
+  getRecentActivityEvents,
+  logActivityEvent,
   type DueReminder,
-  type MessageTemplates
+  type MessageTemplates,
+  type RecentExamActivity,
+  type ActivityEventItem
 } from '@/lib/services'
 import { toWhatsAppNumber } from '@/lib/reminder-config'
 import {
@@ -84,6 +89,13 @@ export default function AdminDashboard() {
   // panel; mientras carga o si falla, la mini gráfica muestra su línea
   // en cero.
   const [monthDays, setMonthDays] = useState<{ date: string; total: number }[]>([])
+  // Fuentes extra de «Actividad reciente» (decisión del dueño,
+  // 2026-11-18: la sección muestra TODA la actividad, no solo ventas):
+  // exámenes nuevos y envíos registrados (recordatorios/felicitaciones).
+  // Se cargan aparte y sin bloquear el panel; si una lectura falla, esa
+  // fuente simplemente no aporta y la sección sigue con las demás.
+  const [activityExams, setActivityExams] = useState<RecentExamActivity[]>([])
+  const [activityEvents, setActivityEvents] = useState<ActivityEventItem[]>([])
   const [birthdayDismissals, setBirthdayDismissals] = useState<Set<string>>(new Set())
   const [dismissingId, setDismissingId] = useState<string | null>(null)
   const [birthdayError, setBirthdayError] = useState<string | null>(null)
@@ -125,6 +137,17 @@ export default function AdminDashboard() {
     const nowForMonth = new Date()
     getMonthSales(nowForMonth.getFullYear(), nowForMonth.getMonth() + 1)
       .then(detail => setMonthDays(detail.days))
+      .catch(() => {})
+
+    // Exámenes nuevos y envíos registrados para «Actividad reciente»:
+    // aparte y sin bloquear el panel; los servicios ya degradan a []
+    // si una lectura falla (p. ej. migración de activity_events aún
+    // no aplicada), así que la sección simplemente sigue sin esa fuente.
+    getRecentExams()
+      .then(setActivityExams)
+      .catch(() => {})
+    getRecentActivityEvents()
+      .then(setActivityEvents)
       .catch(() => {})
 
     try {
@@ -701,6 +724,17 @@ export default function AdminDashboard() {
                               href={`https://wa.me/${waNumber}?text=${waMessage}`}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={() => {
+                                // La felicitación queda asentada en
+                                // «Actividad reciente» (activity_events)
+                                // al tocar el botón; el registro es en
+                                // segundo plano y NUNCA bloquea la
+                                // apertura de WhatsApp.
+                                void logActivityEvent('birthday_greeting', {
+                                  customerId: b.id,
+                                  description: `Felicitación de cumpleaños a ${b.name}`,
+                                })
+                              }}
                               className="shrink-0 flex items-center gap-1 min-h-[44px] px-2.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-95 cursor-pointer"
                             >
                               <MessageSquare className="w-3.5 h-3.5" />
@@ -738,8 +772,10 @@ export default function AdminDashboard() {
 
           {/* Actividad reciente — al final, nace minimizada igual que las
               demás secciones (corrección del dueño, 2026-11-18); el
-              colapsable vive en el propio componente */}
-          <RecentActivity sales={sales} />
+              colapsable vive en el propio componente. Muestra TODA la
+              actividad mezclada por fecha: ventas, exámenes nuevos,
+              clientes nuevos (de los ya cargados) y envíos registrados */}
+          <RecentActivity sales={sales} exams={activityExams} customers={customers} events={activityEvents} />
 
         </div>
       )}

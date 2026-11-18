@@ -16,6 +16,7 @@ import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { normalizeRole } from '@/lib/roles'
 import { getPeriodReport, type PeriodReport } from '@/lib/expenses'
 import DateRangePicker from '@/components/date-range-picker'
+import PageHeader from '@/components/page-header'
 import SalesLineChart from '@/components/sales-line-chart'
 
 // Reports are administrator territory (owner / super_admin), same gate
@@ -381,17 +382,26 @@ export default function AdminReportsPage() {
   if (!canAccess) {
     return (
       <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
-        <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
-          <Link href="/dashboard/admin" aria-label="Volver al panel" className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
-            <ArrowLeft className="w-4.5 h-4.5" />
-          </Link>
-          <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-            <BarChart3 className="w-4.5 h-4.5" />
-          </span>
-          <div>
-            <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Reportes</h1>
+        <PageHeader
+          title="Reportes"
+          mobileActions={
+            <Link href="/dashboard/admin" aria-label="Volver al panel" className="flex items-center justify-center w-9 h-9 -ml-1 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+              <ArrowLeft className="w-4.5 h-4.5" />
+            </Link>
+          }
+        >
+          <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
+            <Link href="/dashboard/admin" aria-label="Volver al panel" className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+              <ArrowLeft className="w-4.5 h-4.5" />
+            </Link>
+            <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+              <BarChart3 className="w-4.5 h-4.5" />
+            </span>
+            <div>
+              <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Reportes</h1>
+            </div>
           </div>
-        </div>
+        </PageHeader>
         <div className="mt-6 bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm flex items-start gap-4">
           <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#ffdad6] text-[#ba1a1a] shrink-0" aria-hidden="true">
             <Lock className="w-5 h-5" />
@@ -419,20 +429,29 @@ export default function AdminReportsPage() {
           título va en el tamaño más chico de título de página y la
           descripción en fuente menor, para que el encabezado ocupe
           poco espacio vertical y las cifras respiren. */}
-      <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
-        <Link href="/dashboard/admin" aria-label="Volver al panel" className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
-          <ArrowLeft className="w-4.5 h-4.5" />
-        </Link>
-        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-          <BarChart3 className="w-4.5 h-4.5" />
-        </span>
-        <div className="min-w-0">
-          <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Reportes</h1>
-          <p className="text-xs text-[#434653] font-medium leading-snug">
-            Ventas, gastos y utilidad por periodo. Solo el administrador ve estas cifras.
-          </p>
+      <PageHeader
+        title="Reportes"
+        mobileActions={
+          <Link href="/dashboard/admin" aria-label="Volver al panel" className="flex items-center justify-center w-9 h-9 -ml-1 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+            <ArrowLeft className="w-4.5 h-4.5" />
+          </Link>
+        }
+      >
+        <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
+          <Link href="/dashboard/admin" aria-label="Volver al panel" className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+            <ArrowLeft className="w-4.5 h-4.5" />
+          </Link>
+          <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+            <BarChart3 className="w-4.5 h-4.5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Reportes</h1>
+            <p className="text-xs text-[#434653] font-medium leading-snug">
+              Ventas, gastos y utilidad por periodo. Solo el administrador ve estas cifras.
+            </p>
+          </div>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Period presets */}
       <section aria-label="Periodo del reporte" className="space-y-4">

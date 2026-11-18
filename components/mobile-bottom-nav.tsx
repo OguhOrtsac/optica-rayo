@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, Eye } from 'lucide-react'
 
 import { dashboardHrefForRole, normalizeRole } from '@/lib/roles'
 
@@ -41,15 +41,18 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
       ]
     }
 
-    // Staff view (owner, seller, super_admin/dev) — orden del dueño
-    // 2026-11-18: sale «Clientes» y entra «Agenda».
+    // Staff view (owner, seller, super_admin/dev) — órdenes del dueño
+    // 2026-11-18: primero sale «Clientes» y entra «Agenda»; después sale
+    // «Perfil» (vive en la hamburguesa, «Mi perfil»), Agenda pasa al
+    // último lugar y en el cuarto entra «Realizar examen», el acceso
+    // rápido a capturar el examen de un cliente.
     const homeHref = dashboardHrefForRole(normalizedRole)
     return [
       { label: 'Inicio', href: homeHref, icon: 'home' },
       { label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' },
       { label: 'Registrar Pago', href: '/payments', icon: 'payment' },
-      { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' },
-      { label: 'Perfil', href: '/profile', icon: 'profile' }
+      { label: 'Realizar examen', href: '/dashboard/exams/new', icon: 'exam' },
+      { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' }
     ]
   }
 
@@ -90,6 +93,8 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
         )
       case 'agenda':
         return <CalendarDays className="w-5.5 h-5.5" strokeWidth={2} />
+      case 'exam':
+        return <Eye className="w-5.5 h-5.5" strokeWidth={2} />
       case 'profile':
         return (
           <div className="w-6 h-6 rounded-full bg-[#dee8ff] border border-[#c3c6d5] flex items-center justify-center shrink-0">

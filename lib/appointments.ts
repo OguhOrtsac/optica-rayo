@@ -449,6 +449,55 @@ export async function getDaySlots(dateISO: string): Promise<DaySlot[]> {
   return slots
 }
 
+/** Live-appointment marks of one calendar day, for painting the calendar. */
+export interface AppointmentDayMarks {
+  confirmed: boolean
+  pending: boolean
+}
+
+/**
+ * Which days of a month carry live appointments — the marks the staff
+ * booking calendar paints (owner's order 2026-11-18). The mapping is
+ * the schema's own semantics:
+ *  - confirmed: at least one appointment with status 'confirmed'. A
+ *    booking is born 'confirmed' when the ADMIN creates it
+ *    (createAppointmentByAdmin, reinforced by the database trigger on
+ *    created_by='admin'), and a customer/guest request becomes
+ *    'confirmed' when the admin confirms it (confirmAppointment).
+ *  - pending: at least one appointment with status 'pending' — every
+ *    request from /agendar (created_by 'customer' or 'guest') is born
+ *    'pending' and stays so until the admin confirms it.
+ * Cancelled appointments never mark a day.
+ */
+export async function getMonthAppointmentDays(
+  year: number,
+  month: number // 0 = enero … 11 = diciembre
+): Promise<Record<string, AppointmentDayMarks>> {
+  const supabase = requireSupabase()
+  const first = toLocalDateISO(new Date(year, month, 1))
+  const last = toLocalDateISO(new Date(year, month + 1, 0))
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('scheduled_date, status')
+    .gte('scheduled_date', first)
+    .lte('scheduled_date', last)
+    .neq('status', 'cancelled')
+
+  if (error) throw new Error(error.message)
+
+  const marks: Record<string, AppointmentDayMarks> = {}
+  for (const row of data ?? []) {
+    let day = marks[row.scheduled_date]
+    if (!day) {
+      day = { confirmed: false, pending: false }
+      marks[row.scheduled_date] = day
+    }
+    if (row.status === 'confirmed') day.confirmed = true
+    else if (row.status === 'pending') day.pending = true
+  }
+  return marks
+}
+
 export interface CreateAppointmentInput {
   /** 'YYYY-MM-DD' */
   date: string

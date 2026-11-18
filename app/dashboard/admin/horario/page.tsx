@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, CalendarClock, Check, Copy, Lock, Save } from 'lucide-react'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { normalizeRole } from '@/lib/roles'
+import PageHeader from '@/components/page-header'
 import {
   AGENDA_DAY_KEYS,
   AGENDA_DAY_LABELS,
@@ -131,24 +132,37 @@ export default function HorarioPage() {
   }
 
   const header = (
-    <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
-      <Link
-        href="/dashboard/admin"
-        aria-label="Volver al panel"
-        className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0"
-      >
-        <ArrowLeft className="w-4.5 h-4.5" />
-      </Link>
-      <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-        <CalendarClock className="w-4.5 h-4.5" />
-      </span>
-      <div>
-        <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Configurar horario</h1>
-        <p className="text-xs text-[#434653] font-medium">
-          Días de atención y horarios: de aquí salen las horas de la agenda y de las citas en línea.
-        </p>
+    <PageHeader
+      title="Configurar horario"
+      mobileActions={
+        <Link
+          href="/dashboard/admin"
+          aria-label="Volver al panel"
+          className="flex items-center justify-center w-9 h-9 -ml-1 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0"
+        >
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </Link>
+      }
+    >
+      <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
+        <Link
+          href="/dashboard/admin"
+          aria-label="Volver al panel"
+          className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0"
+        >
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </Link>
+        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+          <CalendarClock className="w-4.5 h-4.5" />
+        </span>
+        <div>
+          <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Configurar horario</h1>
+          <p className="text-xs text-[#434653] font-medium">
+            Días de atención y horarios: de aquí salen las horas de la agenda y de las citas en línea.
+          </p>
+        </div>
       </div>
-    </div>
+    </PageHeader>
   )
 
   if (loading) {

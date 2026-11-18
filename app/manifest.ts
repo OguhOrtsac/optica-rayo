@@ -11,21 +11,27 @@ export default function manifest(): MetadataRoute.Manifest {
     description: 'Sistema inteligente de óptica, inventario y fidelización de clientes.',
     start_url: '/',
     display: 'standalone',
-    background_color: '#020617', // slate-950
+    background_color: '#ffffff', // blanco: el logo oficial va sobre fondo blanco
     theme_color: '#06b6d4', // cyan-500
     orientation: 'portrait',
     icons: [
       {
-        src: '/icon.png',
+        src: '/icon-192.png',
         sizes: '192x192',
         type: 'image/png',
-        purpose: 'maskable'
+        purpose: 'any'
       },
       {
-        src: '/apple-icon.png',
+        src: '/icon-512.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any'
+      },
+      {
+        src: '/icon-maskable-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable'
       }
     ],
   }

@@ -10,6 +10,7 @@ import {
   getMemberDiscountPercent
 } from '@/lib/services'
 import { registerCustomerAction } from '@/app/customers/actions'
+import PageHeader from '@/components/page-header'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDetails } from '@/lib/product-data'
 import { Database } from '@/types/database.types'
@@ -571,15 +572,17 @@ export default function SellerDashboard() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
       
-      {/* Header */}
-      <div className="border-b border-[#e7eeff] pb-5">
-        <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">
-          Realizar Venta
-        </h1>
-        <p className="text-sm text-[#434653] mt-1 font-medium">
-          Registro de ventas y control de inventario.
-        </p>
-      </div>
+      {/* Header: en móvil solo la etiqueta chiquita (PageHeader) */}
+      <PageHeader title="Realizar Venta">
+        <div className="border-b border-[#e7eeff] pb-5">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">
+            Realizar Venta
+          </h1>
+          <p className="text-sm text-[#434653] mt-1 font-medium">
+            Registro de ventas y control de inventario.
+          </p>
+        </div>
+      </PageHeader>
 
       {/* Global Feedback Notifications */}
       {successMessage && (

@@ -6,6 +6,7 @@ import { ArrowLeft, CalendarDays, Lock, RefreshCw, ShoppingBag } from 'lucide-re
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { normalizeRole } from '@/lib/roles'
 import { getDaySalesDetail, type DaySalesDetail } from '@/lib/services'
+import PageHeader from '@/components/page-header'
 
 // Ventas de hoy (Finanzas): el detalle del día con la ecuación del
 // dueño a la vista — cobrado + por cobrar = vendido. Solo el
@@ -96,18 +97,27 @@ export default function FinanzasHoyPage() {
   }, [load])
 
   const header = (
-    <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
-      <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
-        <ArrowLeft className="w-4.5 h-4.5" />
-      </Link>
-      <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-        <CalendarDays className="w-5 h-5" />
-      </span>
-      <div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Ventas de hoy</h1>
-        <p className="text-sm text-[#434653] mt-1 font-medium capitalize">{todayLabel}</p>
+    <PageHeader
+      title="Ventas de hoy"
+      mobileActions={
+        <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </Link>
+      }
+    >
+      <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
+        <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+          <ArrowLeft className="w-4.5 h-4.5" />
+        </Link>
+        <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+          <CalendarDays className="w-5 h-5" />
+        </span>
+        <div>
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Ventas de hoy</h1>
+          <p className="text-sm text-[#434653] mt-1 font-medium capitalize">{todayLabel}</p>
+        </div>
       </div>
-    </div>
+    </PageHeader>
   )
 
   if (gateLoading) {

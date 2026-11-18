@@ -6,6 +6,7 @@ import {
   saveReminderConfig,
   getDueReminders,
   markReminderContacted,
+  logActivityEvent,
   type DueReminder,
 } from '@/lib/services'
 import { buildReminderMessage, toWhatsAppNumber } from '@/lib/reminder-config'
@@ -193,6 +194,18 @@ export default function ReminderTray() {
                     href={waUrl}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => {
+                      // El envío queda asentado en «Actividad reciente»
+                      // (activity_events) al tocar el botón; el registro
+                      // es en segundo plano y NUNCA bloquea la apertura
+                      // de WhatsApp, ni siquiera si falla.
+                      if (waNumber) {
+                        void logActivityEvent('reminder_sent', {
+                          customerId: r.customer_id,
+                          description: `Recordatorio enviado a ${r.customer_name}`,
+                        })
+                      }
+                    }}
                     className={`flex items-center gap-1.5 py-2 px-3.5 rounded-lg text-[10px] font-bold text-white transition-all ${
                       waNumber ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 cursor-pointer' : 'bg-emerald-600/50 cursor-not-allowed'
                     }`}
