@@ -49,7 +49,10 @@ import {
   SlidersHorizontal,
   Tag,
   Settings,
-  ChevronDown
+  ChevronDown,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -72,6 +75,89 @@ function templatesToEditorDrafts(rows: LensOptionTemplate[]): LensOptionDraft[] 
     sort_order: t.sort_order,
     is_active: t.is_active
   }))
+}
+
+// Display labels for the product type column (same words the cards used).
+const CATEGORY_LABELS: Record<Product['category'], string> = {
+  frames: 'Armazones',
+  lenses: 'Micas',
+  contact_lenses: 'Contacto',
+  accessories: 'Accesorios',
+}
+
+// --- Ordenamiento de la tabla de productos (solo presentación, en
+// memoria). Mismo patrón que Reportes: primera pulsación en una columna
+// = ascendente (A a Z / menor a mayor); pulsar la MISMA columna otra
+// vez invierte el sentido; pulsar otra columna ordena por ella desde
+// ascendente. ---
+type ProductSortKey = 'name' | 'brand' | 'category' | 'price' | 'stock'
+type SortDir = 'asc' | 'desc'
+
+interface SortState<K extends string> {
+  key: K
+  dir: SortDir
+}
+
+function nextSort<K extends string>(current: SortState<K>, key: K): SortState<K> {
+  return current.key === key
+    ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+    : { key, dir: 'asc' }
+}
+
+function sortedBy<T, K extends string>(
+  rows: T[],
+  sort: SortState<K>,
+  value: (row: T, key: K) => string | number,
+): T[] {
+  const mul = sort.dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const va = value(a, sort.key)
+    const vb = value(b, sort.key)
+    const cmp =
+      typeof va === 'string'
+        ? va.localeCompare(String(vb), 'es')
+        : Number(va) - Number(vb)
+    return cmp * mul
+  })
+}
+
+function SortHeader<K extends string>({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align = 'left',
+  padClass = 'px-3',
+}: {
+  label: string
+  sortKey: K
+  sort: SortState<K>
+  onSort: (key: K) => void
+  align?: 'left' | 'center' | 'right'
+  padClass?: string
+}) {
+  const active = sort.key === sortKey
+  const Icon = active ? (sort.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  const justify =
+    align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'
+  return (
+    <th
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+      className="p-0 font-black"
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Ordenar por ${label}${active ? (sort.dir === 'asc' ? ' (ascendente)' : ' (descendente)') : ''}`}
+        className={`flex w-full min-h-[44px] items-center gap-1 py-2 text-[10px] font-black uppercase tracking-wider cursor-pointer ${padClass} ${justify} ${
+          active ? 'text-[#00357f]' : 'text-[#737784] hover:text-[#00357f]'
+        }`}
+      >
+        <span>{label}</span>
+        <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? '' : 'opacity-40'}`} aria-hidden="true" />
+      </button>
+    </th>
+  )
 }
 
 export default function AdminProductsPage() {
@@ -540,6 +626,27 @@ export default function AdminProductsPage() {
     })
   }, [products, productSearch, productCategoryFilter, productBrandFilter, stockStatusFilter])
 
+  // In-memory column sorting for the products table (presentation only,
+  // same pattern as Reports). Default: name A-Z, as the service returns.
+  const [productSort, setProductSort] = useState<SortState<ProductSortKey>>({ key: 'name', dir: 'asc' })
+
+  const sortedProducts = useMemo(() => {
+    return sortedBy(filteredProducts, productSort, (p, key) => {
+      switch (key) {
+        case 'brand':
+          return parseProductDescription(p).brand
+        case 'category':
+          return CATEGORY_LABELS[p.category]
+        case 'price':
+          return p.price
+        case 'stock':
+          return p.stock
+        default:
+          return p.name
+      }
+    })
+  }, [filteredProducts, productSort])
+
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
       
@@ -747,7 +854,14 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
-      {/* Products Bento Grid */}
+      {/* Brand suggestions shared by the create/edit «Marca» fields */}
+      <datalist id="product-brand-suggestions">
+        {uniqueBrandsList.map(brand => (
+          <option key={brand} value={brand} />
+        ))}
+      </datalist>
+
+      {/* Products Table — sortable by column (same pattern as Reports) */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
@@ -758,87 +872,98 @@ export default function AdminProductsPage() {
           No se encontraron productos en el inventario.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProducts.map(p => {
-            const parsed = parseProductDescription(p)
-            return (
-              <div key={p.id} className="bg-white rounded-2xl border border-[#cbd5e1] shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-shadow text-left">
-                <div className="h-48 bg-[#f9f9ff] relative flex items-center justify-center border-b border-[#cbd5e1]/30 p-4">
-                  {p.image_url ? (
-                    <img 
-                      src={p.image_url} 
-                      alt={p.name}
-                      className="w-full h-full object-contain" 
-                    />
-                  ) : (
-                    <Package className="w-12 h-12 text-[#cbd5e1]" />
-                  )}
-                  
-                  {/* Stock Tag */}
-                  <div className={`absolute top-3 right-3 font-bold text-[9px] px-2.5 py-0.5 rounded-full border uppercase ${
-                    p.stock === 0 
-                      ? 'bg-[#ffdad6] text-[#ba1a1a] border-[#ffdad6]' 
-                      : p.stock < 5 
-                      ? 'bg-[#ffdad6] text-[#ba1a1a] border-[#ffdad6] animate-pulse' 
-                      : 'bg-[#49da9f]/20 text-[#00422b] border-[#49da9f]/30'
-                  }`}>
-                    {p.stock === 0 ? 'Agotado' : p.stock < 5 ? `Stock Bajo: ${p.stock}` : `Stock: ${p.stock}`}
-                  </div>
-
-                  {/* Promo Badge */}
-                  {p.is_promo && (
-                    <div className="absolute bottom-3 left-3 bg-[#00668a] text-white font-bold text-[9px] px-2.5 py-0.5 rounded flex items-center gap-1 shadow-sm uppercase tracking-wider">
-                      <Sparkles className="w-3 h-3" /> Promoción
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-4 flex-1 flex flex-col justify-between">
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-start mb-1">
-                      <div>
-                        <span className="text-[9px] font-black uppercase text-[#00668a] tracking-wider">
-                          {p.category === 'frames' && 'Armazones'}
-                          {p.category === 'lenses' && 'Micas'}
-                          {p.category === 'contact_lenses' && 'Contacto'}
-                          {p.category === 'accessories' && 'Accesorios'}
-                          {parsed.brand && ` · ${parsed.brand}`}
+        <div className="bg-white rounded-2xl border border-[#cbd5e1] shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm min-w-[780px]">
+              <thead>
+                <tr className="border-b border-[#f0f3ff]">
+                  <SortHeader label="Producto" sortKey="name" sort={productSort} onSort={k => setProductSort(s => nextSort(s, k))} padClass="pl-5 pr-3" />
+                  <SortHeader label="Marca" sortKey="brand" sort={productSort} onSort={k => setProductSort(s => nextSort(s, k))} />
+                  <SortHeader label="Tipo" sortKey="category" sort={productSort} onSort={k => setProductSort(s => nextSort(s, k))} />
+                  <SortHeader label="Precio" sortKey="price" sort={productSort} onSort={k => setProductSort(s => nextSort(s, k))} align="right" />
+                  <SortHeader label="Stock" sortKey="stock" sort={productSort} onSort={k => setProductSort(s => nextSort(s, k))} align="center" />
+                  <th className="p-0 font-black">
+                    <span className="flex min-h-[44px] items-center justify-end py-2 pl-3 pr-5 text-[10px] font-black uppercase tracking-wider text-[#737784]">
+                      Acciones
+                    </span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f0f3ff]">
+                {sortedProducts.map(p => {
+                  const parsed = parseProductDescription(p)
+                  return (
+                    <tr key={p.id} className="hover:bg-[#f9f9ff] transition-colors">
+                      <td className="pl-5 pr-3 py-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-11 h-11 rounded-xl bg-[#f9f9ff] border border-[#cbd5e1]/40 flex items-center justify-center overflow-hidden shrink-0" aria-hidden="true">
+                            {p.image_url ? (
+                              <img src={p.image_url} alt="" className="w-full h-full object-contain" />
+                            ) : (
+                              <Package className="w-5 h-5 text-[#cbd5e1]" />
+                            )}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-bold text-sm text-[#111c2d] truncate" title={p.name}>{p.name}</p>
+                            <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                              {p.is_promo && (
+                                <span className="bg-[#00668a] text-white font-bold text-[9px] px-2 py-0.5 rounded flex items-center gap-1 uppercase tracking-wider shrink-0">
+                                  <Sparkles className="w-3 h-3" /> Promoción
+                                </span>
+                              )}
+                              <p className="text-[11px] text-[#737784] font-medium truncate">
+                                {parsed.sku && <span className="font-mono font-bold uppercase">SKU: {parsed.sku} · </span>}
+                                {parsed.notes || 'Sin descripción disponible.'}
+                                {parsed.material && ` (Material: ${parsed.material})`}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-xs font-semibold text-[#434653] whitespace-nowrap">
+                        {parsed.brand || '—'}
+                      </td>
+                      <td className="px-3 py-3 text-xs font-semibold text-[#434653] whitespace-nowrap">
+                        {CATEGORY_LABELS[p.category]}
+                      </td>
+                      <td className="px-3 py-3 text-right font-black text-sm text-[#00357f] font-mono whitespace-nowrap">
+                        {formatPrice(p.price)}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={`inline-block font-bold text-[9px] px-2.5 py-0.5 rounded-full border uppercase whitespace-nowrap ${
+                          p.stock === 0
+                            ? 'bg-[#ffdad6] text-[#ba1a1a] border-[#ffdad6]'
+                            : p.stock < 5
+                            ? 'bg-[#ffdad6] text-[#ba1a1a] border-[#ffdad6]'
+                            : 'bg-[#49da9f]/20 text-[#00422b] border-[#49da9f]/30'
+                        }`}>
+                          {p.stock === 0 ? 'Agotado' : p.stock < 5 ? `Stock Bajo: ${p.stock}` : `Stock: ${p.stock}`}
                         </span>
-                        <h3 className="font-bold text-sm text-[#111c2d] truncate mt-0.5" title={p.name}>{p.name}</h3>
-                      </div>
-                      <span className="font-black text-sm text-[#00357f] font-mono shrink-0 pl-2">{formatPrice(p.price)}</span>
-                    </div>
-                    
-                    {parsed.sku && (
-                      <p className="text-[9px] font-mono font-bold text-[#737784] uppercase">SKU: {parsed.sku}</p>
-                    )}
-
-                    <p className="text-[#434653] text-xs leading-normal line-clamp-2 min-h-[32px] font-medium pt-1">
-                      {parsed.notes || 'Sin descripción disponible.'}
-                      {parsed.material && ` (Material: ${parsed.material})`}
-                    </p>
-                  </div>
-
-                  <div className="flex gap-2 border-t border-[#f0f3ff] pt-3 mt-4">
-                    <button 
-                      onClick={() => setEditingProduct(p)}
-                      className="flex-1 bg-[#dee8ff] hover:bg-[#dee8ff]/80 text-[#00357f] py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      Editar
-                    </button>
-                    <button 
-                      onClick={() => setDeletingProduct(p)}
-                      className="flex-1 border border-[#ba1a1a]/30 hover:bg-[#ffdad6] text-[#ba1a1a] py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Borrar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+                      </td>
+                      <td className="pl-3 pr-5 py-3">
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => setEditingProduct(p)}
+                            className="bg-[#dee8ff] hover:bg-[#dee8ff]/80 text-[#00357f] px-3.5 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => setDeletingProduct(p)}
+                            className="border border-[#ba1a1a]/30 hover:bg-[#ffdad6] text-[#ba1a1a] px-3.5 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Borrar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -944,6 +1069,7 @@ export default function AdminProductsPage() {
                 <div>
                   <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Marca</label>
                   <input 
+                    list="product-brand-suggestions"
                     value={pBrand}
                     onChange={(e) => setPBrand(e.target.value)}
                     className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"
@@ -1130,6 +1256,7 @@ export default function AdminProductsPage() {
                 <div>
                   <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Marca</label>
                   <input 
+                    list="product-brand-suggestions"
                     value={eBrand}
                     onChange={(e) => setEBrand(e.target.value)}
                     className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[40px]"

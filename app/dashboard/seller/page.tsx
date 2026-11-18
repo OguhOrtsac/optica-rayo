@@ -7,28 +7,20 @@ import {
   getReminders,
   searchCustomers,
   getCoupons,
-  getSales,
-  updateSaleStatus,
   getMemberDiscountPercent
 } from '@/lib/services'
 import { registerCustomerAction } from '@/app/customers/actions'
-import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { effectiveClientPrice } from '@/lib/pricing'
+import { getProductDetails } from '@/lib/product-data'
 import { Database } from '@/types/database.types'
-import { 
-  Search, 
-  Plus, 
-  Trash2, 
-  CheckCircle, 
-  Clock, 
-  ShieldAlert, 
-  Wrench, 
-  ShoppingCart, 
-  Tag, 
-  User, 
+import {
+  Search,
+  Plus,
+  Trash2,
+  CheckCircle,
+  ShieldAlert,
+  ShoppingCart,
   UserPlus,
-  ArrowRight,
-  TrendingDown,
   X,
   Pencil
 } from 'lucide-react'
@@ -36,7 +28,15 @@ import {
 type Product = Database['public']['Tables']['products']['Row']
 type Reminder = Database['public']['Tables']['reminders']['Row']
 type Coupon = Database['public']['Tables']['coupons']['Row']
-type Sale = Database['public']['Tables']['sales']['Row']
+
+// Product search by type uses the words sellers actually say (Spanish),
+// not the internal category codes — nobody searches by code at the counter.
+const CATEGORY_SEARCH_TERMS: Record<Product['category'], string> = {
+  frames: 'armazones armazón frames',
+  lenses: 'micas mica lentes lenses',
+  contact_lenses: 'lentes de contacto contacto contact_lenses',
+  accessories: 'accesorios accesorio accessories',
+}
 
 // Free-text complement attached to a product at the counter (e.g.
 // «Fotocromático»). price 0 means the complement is free («Gratis»).
@@ -55,19 +55,6 @@ interface CartItem {
   cartKey: string
 }
 
-// One persisted sale_items row as the workshop history renders it:
-// product rows and complement rows (is_complement) of the same sale.
-interface SaleItemLine {
-  id: string
-  product_id: string | null
-  product_name: string | null
-  quantity: number
-  price: number
-  is_complement: boolean
-  complement_name: string | null
-  complement_for: string | null
-}
-
 interface CustomerProfile {
   id: string
   full_name: string
@@ -84,13 +71,8 @@ export default function SellerDashboard() {
   const [customers, setCustomers] = useState<CustomerProfile[]>([])
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [memberDiscount, setMemberDiscount] = useState(0)
-  const [sales, setSales] = useState<(Sale & { customer_name?: string; seller_name?: string; items?: SaleItemLine[] })[]>([])
-  
   const [loading, setLoading] = useState(true)
-  
-  // View mode: 'pos' (Nueva Venta) or 'taller' (Monitoreo de Taller)
-  const [viewMode, setViewMode] = useState<'pos' | 'taller'>('pos')
-  
+
   // Mobile active tab for POS mode ('products' or 'cart')
   const [activeTab, setActiveTab] = useState<'products' | 'cart'>('products')
   
@@ -133,9 +115,6 @@ export default function SellerDashboard() {
   // Removing a cart line always asks first (confirmation modal).
   const [removeCandidate, setRemoveCandidate] = useState<CartItem | null>(null)
 
-  // Taller Filter state
-  const [tallerFilter, setTallerFilter] = useState<'Todos' | 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado'>('Todos')
-  
   // Messages states
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
@@ -150,52 +129,13 @@ export default function SellerDashboard() {
   // what the cashier sees even if a change event was swallowed.
   const anticipoInputRef = useRef<HTMLInputElement>(null)
 
-  // Sale line items (products + free-text complements) for the workshop
-  // history cards. getSales does not join items, so they are read here in
-  // one batch and attached to each sale. Any failure (demo mode, or the
-  // complements migration not applied yet) leaves the sales untouched and
-  // the cards render exactly as before, with no items section.
-  const attachSaleItems = async (
-    saleList: (Sale & { customer_name?: string; seller_name?: string })[]
-  ): Promise<(Sale & { customer_name?: string; seller_name?: string; items?: SaleItemLine[] })[]> => {
-    if (saleList.length === 0) return saleList
-    try {
-      const supabase = createBrowserClient()
-      const { data, error } = await supabase
-        .from('sale_items')
-        .select('id, sale_id, product_id, quantity, price, is_complement, complement_name, complement_for, product:products(name)')
-        .in('sale_id', saleList.map(s => s.id))
-      if (error || !data) return saleList
-      const bySale = new Map<string, SaleItemLine[]>()
-      for (const row of data as any[]) {
-        const line: SaleItemLine = {
-          id: row.id,
-          product_id: row.product_id ?? null,
-          product_name: row.product?.name ?? null,
-          quantity: row.quantity ?? 1,
-          price: Number(row.price ?? 0),
-          is_complement: !!row.is_complement,
-          complement_name: row.complement_name ?? null,
-          complement_for: row.complement_for ?? null
-        }
-        const arr = bySale.get(row.sale_id) ?? []
-        arr.push(line)
-        bySale.set(row.sale_id, arr)
-      }
-      return saleList.map(s => ({ ...s, items: bySale.get(s.id) ?? [] }))
-    } catch {
-      return saleList
-    }
-  }
-
   const loadAllData = async () => {
     try {
-      const [productsData, remindersData, customersData, couponsData, salesData, memberPctData] = await Promise.all([
+      const [productsData, remindersData, customersData, couponsData, memberPctData] = await Promise.all([
         getProducts(),
         getReminders(),
         searchCustomers(''),
         getCoupons(),
-        getSales(),
         getMemberDiscountPercent()
       ])
       setMemberDiscount(memberPctData)
@@ -203,7 +143,6 @@ export default function SellerDashboard() {
       setReminders(remindersData)
       setCustomers(customersData)
       setCoupons(couponsData)
-      setSales(await attachSaleItems(salesData))
     } catch (e) {
       console.error('Error loading POS data:', e)
     }
@@ -218,13 +157,21 @@ export default function SellerDashboard() {
     initLoad()
   }, [])
 
-  // Filter products locally
+  // Filter products locally: by name, by BRAND and by TYPE (the way
+  // sellers actually search at the counter), keeping the previous
+  // description/category matches.
   const filteredProducts = useMemo(() => {
-    return products.filter(p => 
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      (p.description && p.description.toLowerCase().includes(productSearch.toLowerCase())) ||
-      p.category.toLowerCase().includes(productSearch.toLowerCase())
-    )
+    const q = productSearch.toLowerCase()
+    return products.filter(p => {
+      const details = getProductDetails(p)
+      return (
+        p.name.toLowerCase().includes(q) ||
+        details.brand.toLowerCase().includes(q) ||
+        CATEGORY_SEARCH_TERMS[p.category].includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        (p.description && p.description.toLowerCase().includes(q))
+      )
+    })
   }, [products, productSearch])
 
   // Filter customer suggestions based on text input
@@ -234,14 +181,6 @@ export default function SellerDashboard() {
       (c.customer_profiles?.phone && c.customer_profiles.phone.includes(customerSearch))
     )
   }, [customers, customerSearch])
-
-  // Filter sales for the workshop monitor
-  const filteredSales = useMemo(() => {
-    return sales.filter(s => {
-      if (tallerFilter === 'Todos') return true
-      return s.status === tallerFilter
-    })
-  }, [sales, tallerFilter])
 
   // Adds one unit of a product to the cart. Without complements it keeps
   // the classic behaviour (repeat taps merge into the plain line and bump
@@ -622,21 +561,6 @@ export default function SellerDashboard() {
     }
   }
 
-  // Update Workshop status of a sale
-  const handleStatusChange = async (saleId: string, newStatus: any) => {
-    try {
-      const success = await updateSaleStatus(saleId, newStatus)
-      if (success) {
-        showFeedback('success', 'Estado del trabajo en taller actualizado correctamente.')
-        await loadAllData()
-      } else {
-        showFeedback('error', 'No se pudo actualizar el estado de taller.')
-      }
-    } catch (err) {
-      showFeedback('error', 'Error al modificar el estado de taller.')
-    }
-  }
-
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
@@ -647,40 +571,14 @@ export default function SellerDashboard() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
       
-      {/* Header and View Mode Toggles */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#e7eeff] pb-5">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">
-            Realizar Venta
-          </h1>
-          <p className="text-sm text-[#434653] mt-1 font-medium">
-            Registro de ventas, control de inventario y monitoreo clínico.
-          </p>
-        </div>
-
-        {/* Tab Selector: POS vs Taller */}
-        <div className="flex bg-white p-1 rounded-full or-shadow-card w-full md:w-auto">
-          <button
-            onClick={() => setViewMode('pos')}
-            className={`flex-1 md:flex-none text-sm font-semibold px-5 min-h-[44px] rounded-full transition-colors cursor-pointer ${
-              viewMode === 'pos'
-                ? 'bg-[#dee8ff] text-[#00357f] font-bold'
-                : 'text-[#737784] hover:text-[#111c2d]'
-            }`}
-          >
-            Realizar Venta
-          </button>
-          <button
-            onClick={() => setViewMode('taller')}
-            className={`flex-1 md:flex-none text-sm font-semibold px-5 min-h-[44px] rounded-full transition-colors cursor-pointer ${
-              viewMode === 'taller'
-                ? 'bg-[#dee8ff] text-[#00357f] font-bold'
-                : 'text-[#737784] hover:text-[#111c2d]'
-            }`}
-          >
-            Historial ({sales.filter(s => s.status !== 'Entregado').length})
-          </button>
-        </div>
+      {/* Header */}
+      <div className="border-b border-[#e7eeff] pb-5">
+        <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">
+          Realizar Venta
+        </h1>
+        <p className="text-sm text-[#434653] mt-1 font-medium">
+          Registro de ventas y control de inventario.
+        </p>
       </div>
 
       {/* Global Feedback Notifications */}
@@ -704,9 +602,6 @@ export default function SellerDashboard() {
         </div>
       ) : (
         <>
-          {/* VIEW MODE: TERMINAL POS */}
-          {viewMode === 'pos' && (
-            <>
               {/* Mobile Tabs Header */}
               <div className="grid grid-cols-2 gap-1 bg-white p-1 rounded-full or-shadow-card md:hidden">
                 <button
@@ -743,7 +638,7 @@ export default function SellerDashboard() {
                       <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#737784]" />
                       <input
                         type="text"
-                        placeholder="Buscar por código, nombre o tipo de lente..."
+                        placeholder="Buscar por marca, nombre o tipo de lente..."
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}
                         className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-full pl-11 pr-4 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
@@ -1225,172 +1120,6 @@ export default function SellerDashboard() {
                   </div>
                 </div>
               </div>
-            </>
-          )}
-
-          {/* VIEW MODE: MONITOREO DE TALLER (STATUS ENGINE) */}
-          {viewMode === 'taller' && (
-            <div className="space-y-6">
-              
-              {/* Taller status filter tabs */}
-              <div className="flex flex-wrap gap-2 pb-2 overflow-x-auto scrollbar-none">
-                {[
-                  { id: 'Todos', label: 'Todos' },
-                  { id: 'Cotizacion', label: 'Cotización' },
-                  { id: 'En_Taller', label: 'En taller' },
-                  { id: 'Listo_Entrega', label: 'Listo para entrega' },
-                  { id: 'Entregado', label: 'Entregado' }
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setTallerFilter(tab.id as any)}
-                    className={`text-[13px] font-semibold px-4 py-2.5 rounded-full border transition-all cursor-pointer min-h-[40px] ${
-                      tallerFilter === tab.id
-                        ? 'bg-[#dee8ff] border-[#00357f]/40 text-[#00357f] font-bold'
-                        : 'bg-white border-[#dee8ff] text-[#737784] hover:bg-[#f9f9ff]'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Orders list */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredSales.length === 0 ? (
-                  <div className="col-span-full py-20 text-center text-sm text-[#737784] bg-white rounded-[20px] or-shadow-card font-semibold">
-                    No hay órdenes de taller bajo este estado.
-                  </div>
-                ) : (
-                  filteredSales.map((sale) => {
-                    const balance = sale.pending_balance !== undefined ? sale.pending_balance : 0
-                    const paid = sale.paid_amount !== undefined ? sale.paid_amount : sale.total
-                    const productLines = (sale.items ?? []).filter(i => !i.is_complement)
-                    const orphanComplements = (sale.items ?? []).filter(c =>
-                      c.is_complement && !productLines.some(i => (i.product_name || '') === (c.complement_for || ''))
-                    )
-
-                    return (
-                      <div
-                        key={sale.id}
-                        className="bg-white rounded-[20px] or-shadow-card p-5 flex flex-col justify-between gap-4 text-left"
-                      >
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-start gap-2">
-                            <div>
-                              <span className="text-xs text-[#737784] block font-semibold">Orden #{sale.id.slice(2, 8).toUpperCase()}</span>
-                              <h3 className="font-extrabold text-base text-[#111c2d] mt-0.5 leading-snug">
-                                {sale.customer_name || 'Cliente Externo'}
-                              </h3>
-                            </div>
-
-                            {/* Status Badge */}
-                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 ${
-                              sale.status === 'Cotizacion' ? 'bg-[#dee8ff] text-[#00357f]' :
-                              sale.status === 'Anticipo_Pagado' ? 'bg-[#fef3c7] text-[#92400e]' :
-                              sale.status === 'En_Taller' ? 'bg-[#fef3c7] text-[#92400e]' :
-                              sale.status === 'Listo_Entrega' ? 'bg-[#dee8ff] text-[#00357f]' :
-                              'bg-[#e2f9ee] text-[#00422b]'
-                            }`}>
-                              {sale.status === 'Cotizacion' && 'Cotización'}
-                              {sale.status === 'Anticipo_Pagado' && 'Anticipo'}
-                              {sale.status === 'En_Taller' && 'En taller'}
-                              {sale.status === 'Listo_Entrega' && 'Listo para entrega'}
-                              {sale.status === 'Entregado' && 'Entregado'}
-                            </span>
-                          </div>
-
-                          <div className="h-px bg-[#f0f3ff]" />
-
-                          {/* Financial info */}
-                          <div className="grid grid-cols-3 gap-2 text-sm text-center font-medium">
-                            <div className="bg-[#f9f9ff] p-2.5 rounded-xl">
-                              <span className="block text-[#737784] font-semibold text-[11px] mb-0.5">Total</span>
-                              <span className="font-bold text-[#111c2d] tabular-nums">{formatPrice(sale.total)}</span>
-                            </div>
-                            <div className="bg-[#f9f9ff] p-2.5 rounded-xl">
-                              <span className="block text-[#737784] font-semibold text-[11px] mb-0.5">Anticipo</span>
-                              <span className="font-bold text-[#00422b] tabular-nums">{formatPrice(paid)}</span>
-                            </div>
-                            <div className="bg-[#f9f9ff] p-2.5 rounded-xl">
-                              <span className="block text-[#737784] font-semibold text-[11px] mb-0.5">Adeudo</span>
-                              <span className={`font-bold tabular-nums ${balance > 0 ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
-                                {formatPrice(balance)}
-                              </span>
-                            </div>
-                          </div>
-
-                          {sale.notes && (
-                            <p className="text-xs text-[#434653] bg-[#f9f9ff] p-2.5 rounded-xl truncate font-medium" title={sale.notes}>
-                              <strong>Nota:</strong> {sale.notes}
-                            </p>
-                          )}
-
-                          {/* Sold items with their free-text complements */}
-                          {sale.items && sale.items.length > 0 && (
-                            <div className="space-y-1.5 bg-[#f9f9ff] p-2.5 rounded-xl text-xs">
-                              {productLines.map(line => (
-                                <div key={line.id}>
-                                  <div className="flex justify-between gap-2">
-                                    <span className="font-semibold text-[#111c2d]">{line.product_name || 'Producto'}</span>
-                                    <span className="tabular-nums text-[#434653] shrink-0">{line.quantity} × {formatPrice(line.price)}</span>
-                                  </div>
-                                  {(sale.items ?? []).filter(c => c.is_complement && (c.complement_for || '') === (line.product_name || '')).map(c => (
-                                    <div key={c.id} className="flex justify-between items-center gap-2 pl-3 pt-0.5">
-                                      <span className="text-[#434653] font-medium">
-                                        Complemento: <strong className="text-[#111c2d]">{c.complement_name || 'Complemento'}</strong>
-                                      </span>
-                                      {c.price > 0 ? (
-                                        <span className="tabular-nums text-[#434653] shrink-0">{formatPrice(c.price * c.quantity)}</span>
-                                      ) : (
-                                        <span className="bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded-full font-bold text-[10px] shrink-0">Gratis</span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              ))}
-                              {orphanComplements.map(c => (
-                                <div key={c.id} className="flex justify-between items-center gap-2">
-                                  <span className="text-[#434653] font-medium">
-                                    Complemento: <strong className="text-[#111c2d]">{c.complement_name || 'Complemento'}</strong>
-                                  </span>
-                                  {c.price > 0 ? (
-                                    <span className="tabular-nums text-[#434653] shrink-0">{formatPrice(c.price * c.quantity)}</span>
-                                  ) : (
-                                    <span className="bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded-full font-bold text-[10px] shrink-0">Gratis</span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* ACTION SELECT ENGINE FOR WORKSHOP */}
-                        <div className="space-y-1.5 pt-2 border-t border-[#f0f3ff]">
-                          <label className="block text-xs font-semibold text-[#434653]">
-                            Cambiar Estado de Laboratorio
-                          </label>
-
-                          <select
-                            value={sale.status}
-                            onChange={(e) => handleStatusChange(sale.id, e.target.value)}
-                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2 text-sm text-[#111c2d] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] font-semibold cursor-pointer transition-colors"
-                          >
-                            <option value="Cotizacion">Cotización (Sin pago)</option>
-                            <option value="Anticipo_Pagado">Anticipo Pagado (Espera taller)</option>
-                            <option value="En_Taller">En Taller (Laboratorio)</option>
-                            <option value="Listo_Entrega">Listo para Entrega</option>
-                            <option value="Entregado">Entregado al Cliente</option>
-                          </select>
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-
-            </div>
-          )}
         </>
       )}
 
