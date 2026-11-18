@@ -1332,4 +1332,128 @@ export async function registerInstallmentPaymentAction(
   }
 }
 
+/**
+ * Registers an abono against a sale that carries a pending balance but
+ * has NO installments — the POS anticipo case: createSale stores
+ * pending_balance > 0 without generating cuotas, and the Cobranza tab
+ * only knew how to collect per-cuota, leaving that balance unpayable
+ * from the app.
+ *
+ * On the first abono it creates ONE mirror installment for the sale's
+ * full pending balance, shaped EXACTLY like the installments the plazo
+ * flow generates in createSaleAction (same table and columns:
+ * sale_id, installment_number starting at 1, due_date as an ISO date,
+ * amount, status 'pending'). A contado sale's remainder is already
+ * owed, so the mirror cuota's due_date is today. The payment itself is
+ * then applied by registerInstallmentPaymentAction, so paid_amount,
+ * pending_balance and the payment_date semantics stay identical to
+ * the rest of the system. Sales that already have cuotas are rejected
+ * here: their abonos keep going through the per-cuota flow, unchanged.
+ */
+export async function registerSaleBalancePaymentAction(
+  saleId: string,
+  amountPaid: number,
+  paymentMethod: 'cash' | 'card' | 'transfer'
+): Promise<{ success: string | null; error: string | null }> {
+  try {
+    const supabase = await createClient()
+
+    // 1. The sale and its outstanding balance.
+    const { data: sale, error: saleError } = await supabase
+      .from('sales')
+      .select('id, pending_balance')
+      .eq('id', saleId)
+      .single()
+
+    if (saleError || !sale) {
+      throw new Error('No se encontró la venta: ' + (saleError?.message || ''))
+    }
+
+    const pendingBalance = Number(sale.pending_balance) || 0
+    if (pendingBalance <= 0) {
+      return { success: null, error: 'Esta venta ya no tiene saldo pendiente.' }
+    }
+    if (!Number.isFinite(amountPaid) || amountPaid <= 0) {
+      return { success: null, error: 'El abono debe ser mayor que cero.' }
+    }
+    if (amountPaid > pendingBalance + 0.01) {
+      return { success: null, error: 'El abono supera el saldo pendiente de la venta.' }
+    }
+
+    // 2. A sale that already has cuotas collects per-cuota, as today.
+    const { data: existing, error: existingError } = await supabase
+      .from('payment_installments')
+      .select('id')
+      .eq('sale_id', saleId)
+      .limit(1)
+
+    if (existingError) {
+      throw new Error('Error al revisar las cuotas de la venta: ' + existingError.message)
+    }
+    if (existing && existing.length > 0) {
+      return { success: null, error: 'Esta venta ya tiene cuotas registradas; registra el abono desde la cuota correspondiente.' }
+    }
+
+    // 3. Mirror installment for the full pending balance (single cuota,
+    // due today — see the header comment for the mirrored shape).
+    const { data: mirror, error: mirrorError } = await supabase
+      .from('payment_installments')
+      .insert([{
+        sale_id: saleId,
+        installment_number: 1,
+        due_date: new Date().toISOString().split('T')[0],
+        amount: pendingBalance,
+        status: 'pending'
+      }])
+      .select('id')
+      .single()
+
+    if (mirrorError || !mirror) {
+      throw new Error('No se pudo generar la cuota del saldo: ' + (mirrorError?.message || ''))
+    }
+
+    // 4. The payment itself goes through the one and only abono action.
+    return await registerInstallmentPaymentAction(mirror.id, amountPaid, paymentMethod)
+  } catch (err: any) {
+    if (isSupabaseConfigured()) {
+      // A database IS configured and the payment was NOT recorded:
+      // report the real error, never a dressed-up success.
+      console.error('registerSaleBalancePaymentAction failed:', err)
+      return { error: 'Fallo al registrar el abono: ' + (err.message || 'error de conexión con la base de datos.'), success: null }
+    }
+    console.warn('Supabase not configured; registerSaleBalancePaymentAction running in local demo mode:', err.message)
+
+    // Fallback Mock (demo mode only — no database configured): same
+    // mirror cuota over the local data, same abono registration.
+    const sale = mockDb.MOCK_SALES.find(s => s.id === saleId)
+    if (!sale) {
+      return { error: 'No se encontró la venta.', success: null }
+    }
+    const pendingBalance = Number(sale.pending_balance || 0)
+    if (pendingBalance <= 0) {
+      return { success: null, error: 'Esta venta ya no tiene saldo pendiente.' }
+    }
+    if (!Number.isFinite(amountPaid) || amountPaid <= 0) {
+      return { success: null, error: 'El abono debe ser mayor que cero.' }
+    }
+    if (amountPaid > pendingBalance + 0.01) {
+      return { success: null, error: 'El abono supera el saldo pendiente de la venta.' }
+    }
+    if (mockDb.MOCK_PAYMENT_INSTALLMENTS.some(i => i.sale_id === saleId)) {
+      return { success: null, error: 'Esta venta ya tiene cuotas registradas; registra el abono desde la cuota correspondiente.' }
+    }
+    const mirror: mockDb.MockPaymentInstallment = {
+      id: 'inst_' + Math.random().toString(36).substr(2, 9),
+      sale_id: saleId,
+      installment_number: 1,
+      due_date: new Date().toISOString().split('T')[0],
+      amount: pendingBalance,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    }
+    mockDb.MOCK_PAYMENT_INSTALLMENTS.push(mirror)
+    return await registerInstallmentPaymentAction(mirror.id, amountPaid, paymentMethod)
+  }
+}
+
 

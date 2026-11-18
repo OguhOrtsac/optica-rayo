@@ -167,26 +167,28 @@ export default function FinanzasHoyPage() {
 
       {!loading && !loadError && detail && (
         <>
-          {/* La ecuación del día */}
+          {/* La ecuación del día. En móvil cada cifra va en fila de ancho
+              completo (etiqueta y nota a la izquierda, monto a la derecha)
+              para que ningún monto se corte; en sm+ vuelven las 3 columnas. */}
           <section aria-label="Cifras de hoy" className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-white rounded-[20px] or-shadow-card p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-white rounded-[20px] or-shadow-card p-4 grid grid-cols-[1fr_auto] items-center gap-x-3 sm:flex sm:flex-col sm:items-stretch">
                 <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Cobrado hoy</p>
-                <p className="text-lg md:text-2xl font-extrabold text-[#00422b] mt-1 tabular-nums">{money.format(detail.collectedTotal)}</p>
+                <p className="row-span-2 text-xl md:text-2xl font-extrabold text-[#00422b] sm:mt-1 tabular-nums whitespace-nowrap">{money.format(detail.collectedTotal)}</p>
                 <p className="text-[11px] text-[#434653] font-semibold mt-0.5">Entró a caja por las ventas de hoy</p>
               </div>
-              <div className="bg-white rounded-[20px] or-shadow-card p-4">
+              <div className="bg-white rounded-[20px] or-shadow-card p-4 grid grid-cols-[1fr_auto] items-center gap-x-3 sm:flex sm:flex-col sm:items-stretch">
                 <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Por cobrar hoy</p>
-                <p className="text-lg md:text-2xl font-extrabold text-[#92400e] mt-1 tabular-nums">{money.format(detail.pendingTotal)}</p>
+                <p className="row-span-2 text-xl md:text-2xl font-extrabold text-[#92400e] sm:mt-1 tabular-nums whitespace-nowrap">{money.format(detail.pendingTotal)}</p>
                 <p className="text-[11px] text-[#434653] font-semibold mt-0.5">Quedó en pagos diferidos</p>
               </div>
-              <div className="bg-white rounded-[20px] or-shadow-card p-4">
+              <div className="bg-white rounded-[20px] or-shadow-card p-4 grid grid-cols-[1fr_auto] items-center gap-x-3 sm:flex sm:flex-col sm:items-stretch">
                 <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Vendido hoy</p>
-                <p className="text-lg md:text-2xl font-extrabold text-[#00357f] mt-1 tabular-nums">{money.format(detail.soldTotal)}</p>
+                <p className="row-span-2 text-xl md:text-2xl font-extrabold text-[#00357f] sm:mt-1 tabular-nums whitespace-nowrap">{money.format(detail.soldTotal)}</p>
                 <p className="text-[11px] text-[#434653] font-semibold mt-0.5">{detail.sales.length} {detail.sales.length === 1 ? 'venta' : 'ventas'} de hoy</p>
               </div>
             </div>
-            <p className="text-center text-sm font-bold text-[#00357f] bg-[#dee8ff]/50 rounded-full px-4 py-2 tabular-nums" role="status">
+            <p className="text-center text-[13px] sm:text-sm leading-relaxed font-bold text-[#00357f] bg-[#dee8ff]/50 rounded-full px-4 py-2 tabular-nums" role="status">
               {money.format(detail.collectedTotal)} cobrado + {money.format(detail.pendingTotal)} por cobrar = {money.format(detail.soldTotal)} vendido
             </p>
           </section>

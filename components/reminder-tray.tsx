@@ -100,7 +100,9 @@ export default function ReminderTray() {
     iso ? new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
   return (
-    <div className="bg-white p-6 rounded-2xl border border-[#cbd5e1] shadow-sm text-left">
+    // Sin tarjeta propia: en el panel la sección ya vive dentro de una
+    // tarjeta blanca del sistema; anidar otra tarjeta se veía doble.
+    <div className="text-left">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-bold text-[#111c2d] flex items-center gap-2">
           <span className="w-8 h-8 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">

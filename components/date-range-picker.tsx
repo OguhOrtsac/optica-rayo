@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 
 // Date-range picker with a monthly calendar (Spanish, week starts Monday).
 //
@@ -14,6 +14,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 // Dates travel as 'YYYY-MM-DD' strings and are parsed as LOCAL dates —
 // never through `new Date(str)`, which would parse as UTC midnight and
 // shift the day in this timezone.
+//
+// The calendar COLLAPSES on its own the moment a complete range exists:
+// as soon as the second day is tapped, or when a complete range arrives
+// from the props (a preset applied by the parent), only a compact
+// summary row remains — the month grid no longer occupies the screen.
+// Tapping that row reopens the calendar to pick a different range.
 
 interface DateRangePickerProps {
   start: string | null
@@ -52,8 +58,14 @@ export default function DateRangePicker({ start, end, onChange }: DateRangePicke
   const [viewYear, setViewYear] = useState(initialMonth.getFullYear())
   const [viewMonth, setViewMonth] = useState(initialMonth.getMonth())
 
+  // Open only while there is something to pick: a complete range that
+  // is already chosen starts collapsed to its summary row.
+  const [expanded, setExpanded] = useState(() => !(start && end))
+
   // External changes (presets) replace the internal selection and jump
-  // the visible month to the new start.
+  // the visible month to the new start. A complete range arriving from
+  // outside also collapses the calendar: the choice is made, so the
+  // grid steps out of the way.
   useEffect(() => {
     setSelStart(start)
     setSelEnd(end)
@@ -61,6 +73,9 @@ export default function DateRangePicker({ start, end, onChange }: DateRangePicke
       const d = parseISODate(start)
       setViewYear(d.getFullYear())
       setViewMonth(d.getMonth())
+    }
+    if (start && end) {
+      setExpanded(false)
     }
   }, [start, end])
 
@@ -78,9 +93,11 @@ export default function DateRangePicker({ start, end, onChange }: DateRangePicke
       setSelEnd(null)
       return
     }
-    // Start chosen, waiting for the end.
+    // Start chosen, waiting for the end. The second tap completes the
+    // range: notify the parent and collapse the calendar right away.
     if (iso >= selStart) {
       setSelEnd(iso)
+      setExpanded(false)
       onChange(selStart, iso)
     } else {
       // Tapped before the start: that day becomes the new start.
@@ -117,6 +134,28 @@ export default function DateRangePicker({ start, end, onChange }: DateRangePicke
     summary = 'Ahora toca el día final'
   } else {
     summary = 'Toca el día inicial'
+  }
+
+  // Collapsed: just the chosen range and a way back in. The calendar
+  // lands here on its own once the range is complete (second tap or a
+  // preset from the parent); tapping the row reopens it.
+  if (!expanded) {
+    return (
+      <div className="select-none">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-expanded={false}
+          className="flex w-full min-h-[44px] items-center justify-between gap-3 rounded-xl border border-[#cbd5e1] bg-white px-4 py-2.5 text-left cursor-pointer hover:bg-[#f0f3ff] transition-colors"
+        >
+          <span className="flex items-center gap-2.5 min-w-0">
+            <Calendar className="w-4.5 h-4.5 text-[#00357f] shrink-0" aria-hidden="true" />
+            <span className="text-xs font-bold text-[#111c2d] leading-snug">{summary}</span>
+          </span>
+          <ChevronDown className="w-4.5 h-4.5 text-[#00357f] shrink-0" aria-hidden="true" />
+        </button>
+      </div>
+    )
   }
 
   return (

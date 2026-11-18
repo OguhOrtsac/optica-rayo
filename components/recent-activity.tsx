@@ -33,8 +33,9 @@ const formatLongDate = (dateStr: string) =>
  */
 export default function RecentActivity({ sales }: { sales: RecentActivitySale[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  // Tarjeta minimizable del panel: nace expandida (orden del dueño).
-  const [open, setOpen] = useState(true)
+  // Tarjeta minimizable del panel: nace minimizada, igual que las demás
+  // secciones (corrección del dueño, 2026-11-18).
+  const [open, setOpen] = useState(false)
   const recent = sales.slice(0, 5)
 
   return (
