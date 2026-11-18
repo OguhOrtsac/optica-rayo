@@ -337,8 +337,8 @@ export default function NewLinkedSalePage({ params }: PageProps) {
   }
 
   return (
-    <main className="min-h-screen text-[#111c2d] pt-4 pb-24 md:pb-8">
-      <div className="max-w-[1440px] mx-auto px-4 md:px-8 space-y-6">
+    <main className="min-h-screen text-[#111c2d] pt-2 pb-24 md:pb-8">
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 space-y-4 md:space-y-6">
 
         {/* Header: en móvil solo la etiqueta + volver, con el cliente
             como línea compacta y el botón de imprimir debajo (PageHeader) */}

@@ -167,7 +167,7 @@ export default function HorarioPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
+      <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
         {header}
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#00357f] border-t-transparent" />
@@ -179,9 +179,9 @@ export default function HorarioPage() {
 
   if (!canManage) {
     return (
-      <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
+      <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
         {header}
-        <div className="mt-6 bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm flex items-start gap-4">
+        <div className="mt-4 md:mt-6 bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm flex items-start gap-4">
           <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#ffdad6] text-[#ba1a1a] shrink-0" aria-hidden="true">
             <Lock className="w-5 h-5" />
           </span>
@@ -201,17 +201,17 @@ export default function HorarioPage() {
     'border border-[#cbd5e1] rounded-lg px-2.5 py-2 text-sm font-bold text-[#111c2d] focus:outline-none focus:ring-2 focus:ring-[#00357f]/40 focus:border-[#00357f] bg-white disabled:opacity-40 disabled:bg-[#f0f3ff]'
 
   return (
-    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
+    <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
       {header}
 
       {loadError && (
-        <p role="alert" className="mt-6 text-sm text-[#ba1a1a] font-semibold bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+        <p role="alert" className="mt-4 md:mt-6 text-sm text-[#ba1a1a] font-semibold bg-red-50 border border-red-200 rounded-xl px-4 py-3">
           {loadError}
         </p>
       )}
 
       {schedule && (
-        <div className="mt-6 space-y-4">
+        <div className="mt-4 md:mt-6 space-y-4">
           <section className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4 sm:p-5 space-y-2">
             <h2 className="text-sm font-black uppercase tracking-wider text-[#00357f]">Días de atención</h2>
             <p className="text-xs text-[#737784] font-medium leading-relaxed">

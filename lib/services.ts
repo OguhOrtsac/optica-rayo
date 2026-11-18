@@ -1434,7 +1434,8 @@ export async function getMessageTemplates(): Promise<MessageTemplates> {
  * so a real database error is THROWN and the caller can show it — a
  * template is never reported as saved when it is not. The reminder
  * template saved here is the same `reminder_template` key the Reminders
- * tray modal edits (one source, two doors).
+ * tray READS to send (one source; «Mensajes» is the only editing door —
+ * the reminder card there saves period + template via saveReminderConfig).
  */
 export async function saveMessageTemplate(key: MessageTemplateKey, value: string): Promise<void> {
   await setAppSetting(key, value)

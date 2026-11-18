@@ -235,9 +235,9 @@ export default function FinanzasMesPage() {
 
   if (!canAccess) {
     return (
-      <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
+      <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
         {header}
-        <div className="mt-6 bg-white rounded-[20px] or-shadow-card p-6 flex items-start gap-4">
+        <div className="mt-4 md:mt-6 bg-white rounded-[20px] or-shadow-card p-6 flex items-start gap-4">
           <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#ffdad6] text-[#ba1a1a] shrink-0" aria-hidden="true">
             <Lock className="w-5 h-5" />
           </span>
@@ -253,7 +253,7 @@ export default function FinanzasMesPage() {
   }
 
   return (
-    <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1100px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
+    <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 space-y-4 md:space-y-6 max-w-[1100px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
       {header}
 
       {/* Month navigation */}

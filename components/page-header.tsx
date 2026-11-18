@@ -9,6 +9,12 @@ import type { ReactNode } from 'react'
  * En ESCRITORIO (md:) el encabezado se pinta EXACTAMENTE como antes:
  * los `children` son el bloque original de cada página, sin tocar.
  *
+ * Ajuste del dueño (2026-11-18, segunda foto): la etiqueta subió a
+ * 12px y la fila móvil va PEGADA a la barra superior — las páginas
+ * redujeron su padding superior móvil (pt-2) y el margen que la fila
+ * deja antes del contenido (space-y-4 / mb-4 / mt-4 en móvil), para
+ * que la primera tarjeta quede justo debajo sin el hueco grande.
+ *
  * Uso:
  *   <PageHeader title="Realizar Venta" mobileActions={...}>
  *     { bloque de encabezado de escritorio, tal cual estaba }
@@ -49,7 +55,7 @@ export default function PageHeader({
       <div className={`md:hidden ${mobileClassName}`}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">{mobileActions}</div>
-          <span className="anim-blink-soft inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#00357f]/10 bg-[#dee8ff] px-2.5 py-1 text-[11px] font-bold leading-none text-[#00357f] shadow-sm">
+          <span className="anim-blink-soft inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#00357f]/10 bg-[#dee8ff] px-2.5 py-1 text-[12px] font-bold leading-none text-[#00357f] shadow-sm">
             <span
               aria-hidden="true"
               className="anim-pulse-soft h-1.5 w-1.5 shrink-0 rounded-full bg-[#0899c9]"

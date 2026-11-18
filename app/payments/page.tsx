@@ -323,13 +323,13 @@ export default function PaymentsPage() {
   }
 
   return (
-    <main className="min-h-screen text-[#111c2d] pt-4 pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] pt-2 pb-24 md:pb-8 text-left">
       <div className="max-w-[1440px] mx-auto px-4 md:px-8">
 
         {/* Header: en móvil solo la etiqueta + el volver (PageHeader) */}
         <PageHeader
           title="Pagos diferidos"
-          mobileClassName="mb-6"
+          mobileClassName="mb-4"
           mobileActions={
             <Link href="/dashboard/admin" aria-label="Volver al panel" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors">
               <ArrowLeft className="w-4 h-4" />
