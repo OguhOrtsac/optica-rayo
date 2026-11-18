@@ -9,8 +9,19 @@ import {
   updateLensRequestStatus,
   getDueReminders,
   searchCustomers,
-  type DueReminder
+  getBirthdayDismissals,
+  dismissBirthday,
+  getMessageTemplates,
+  type DueReminder,
+  type MessageTemplates
 } from '@/lib/services'
+import { toWhatsAppNumber } from '@/lib/reminder-config'
+import {
+  buildBirthdayMessage,
+  buildLensRequestReplyMessage,
+  DEFAULT_BIRTHDAY_TEMPLATE,
+  DEFAULT_LENS_REQUEST_REPLY_TEMPLATE
+} from '@/lib/message-templates'
 import { getProfileData } from '@/app/auth/actions'
 import { isAdminRole } from '@/lib/roles'
 import { ensureFixedPaymentNotifications } from '@/lib/expenses'
@@ -25,6 +36,7 @@ import {
   ChevronRight,
   ChevronDown,
   MessageSquare,
+  Trash2,
   BellRing,
   CalendarDays,
   Cake,
@@ -56,6 +68,17 @@ export default function AdminDashboard() {
   const [customers, setCustomers] = useState<any[]>([])
   const [dueReminders, setDueReminders] = useState<DueReminder[]>([])
   const [remindersError, setRemindersError] = useState(false)
+  // Cumpleaños descartados («Eliminar»): llaves `customerId:año` de la
+  // ocurrencia oculta. La fila solo sale cuando el servicio confirma el
+  // guardado (patrón no optimista de la campanita).
+  // Plantillas de mensajes de WhatsApp (fuente única en app_settings,
+  // editables en Configuración → Mensajes): el «Felicitar» de cumpleaños
+  // y la respuesta a solicitudes leen su texto de aquí, con el texto de
+  // siempre como respaldo mientras cargan o si la lectura falla.
+  const [msgTemplates, setMsgTemplates] = useState<MessageTemplates | null>(null)
+  const [birthdayDismissals, setBirthdayDismissals] = useState<Set<string>>(new Set())
+  const [dismissingId, setDismissingId] = useState<string | null>(null)
+  const [birthdayError, setBirthdayError] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   // Secciones minimizables del panel: Recordatorios, Solicitudes y
@@ -75,6 +98,19 @@ export default function AdminDashboard() {
         setRemindersError(false)
       })
       .catch(() => setRemindersError(true))
+
+    // Descartes de cumpleaños del ciclo: aparte y sin bloquear el panel;
+    // si la lectura falla (p. ej. migración aún no aplicada) el servicio
+    // ya degrada a «ninguno descartado» y la lista se ve como siempre.
+    getBirthdayDismissals()
+      .then(setBirthdayDismissals)
+      .catch(() => {})
+
+    // Plantillas de mensajes: aparte y sin bloquear el panel; si la
+    // lectura falla, los botones usan el texto por defecto de siempre.
+    getMessageTemplates()
+      .then(setMsgTemplates)
+      .catch(() => {})
 
     try {
       setLoading(true)
@@ -213,10 +249,13 @@ export default function AdminDashboard() {
 
   // Cumpleaños en los próximos 7 días (incluye hoy), desde
   // customer_profiles.date_of_birth de los clientes ya cargados.
+  // occurrenceYear = año calendario de la ocurrencia mostrada (la
+  // próxima): es la llave del descarte — descartarla NO oculta la del
+  // año siguiente, que tiene otro año y reaparece sola.
   const upcomingBirthdays = useMemo(() => {
     const now = new Date()
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const result: { id: string; name: string; phone: string; dayLabel: string; daysUntil: number }[] = []
+    const result: { id: string; name: string; phone: string; dayLabel: string; daysUntil: number; occurrenceYear: number }[] = []
     for (const c of customers) {
       const dob: string | null = c.customer_profiles?.date_of_birth ?? null
       if (!dob) continue
@@ -228,22 +267,50 @@ export default function AdminDashboard() {
       }
       const daysUntil = Math.round((next.getTime() - startOfToday.getTime()) / 86400000)
       if (daysUntil > 7) continue
+      const occurrenceYear = next.getFullYear()
+      if (birthdayDismissals.has(`${c.id}:${occurrenceYear}`)) continue
       result.push({
         id: c.id,
         name: c.full_name || 'Cliente',
         phone: c.customer_profiles?.phone || '',
         dayLabel: next.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).replace(/\.$/, ''),
-        daysUntil
+        daysUntil,
+        occurrenceYear
       })
     }
     return result.sort((a, b) => a.daysUntil - b.daysUntil)
-  }, [customers])
+  }, [customers, birthdayDismissals])
+
+  // «Eliminar» de un cumpleaños: NO optimista — la fila sale solo cuando
+  // el descarte quedó guardado; si falla, la fila se queda y se avisa.
+  const handleDismissBirthday = async (b: { id: string; occurrenceYear: number }) => {
+    if (dismissingId) return
+    setDismissingId(b.id)
+    setBirthdayError(null)
+    try {
+      const saved = await dismissBirthday(b.id, b.occurrenceYear)
+      if (saved) {
+        setBirthdayDismissals(prev => new Set(prev).add(`${b.id}:${b.occurrenceYear}`))
+      } else {
+        setBirthdayError('No se pudo quitar el cumpleaños. Inténtalo de nuevo.')
+      }
+    } catch {
+      setBirthdayError('No se pudo quitar el cumpleaños. Inténtalo de nuevo.')
+    } finally {
+      setDismissingId(null)
+    }
+  }
 
   // «Configuración»: solo lo que se puede configurar (orden del dueño).
+  // «Usuarios» y «Mensajes» solo existen para owner/super_admin (la página
+  // de Mensajes es solo del administrador, como la de Usuarios).
   const quickAccess = [
     { label: 'Productos', href: '/dashboard/admin/products', icon: Package, chip: 'bg-[#e6f5fb] text-[#0899c9]' },
     ...(isAdmin
-      ? [{ label: 'Usuarios', href: '/dashboard/admin/users', icon: ShieldCheck, chip: 'bg-[#fef3c7] text-[#92400e]' }]
+      ? [
+          { label: 'Usuarios', href: '/dashboard/admin/users', icon: ShieldCheck, chip: 'bg-[#fef3c7] text-[#92400e]' },
+          { label: 'Mensajes', href: '/dashboard/admin/mensajes', icon: MessageSquare, chip: 'bg-[#e2f9ee] text-[#00422b]' }
+        ]
       : []),
     { label: 'Clientes', href: '/customers', icon: Users, chip: 'bg-[#dee8ff] text-[#00357f]' }
   ]
@@ -280,58 +347,68 @@ export default function AdminDashboard() {
               <h2 className="text-[17px] font-semibold text-[#111c2d]">Finanzas</h2>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            {/* En móvil las mini tarjetas van como filas de ancho completo
+                (icono a la izquierda; etiqueta, monto y comparación apilados):
+                en 3 columnas los montos se cortaban contra el borde. En sm+
+                vuelve la fila de 3 tarjetas verticales de siempre. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
               {/* Ventas hoy — abre el detalle del día */}
               <Link
                 href="/dashboard/admin/finanzas/hoy"
-                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98]"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:block"
               >
-                <span className="w-7 h-7 rounded-lg bg-[#00357f] text-white flex items-center justify-center shrink-0">
-                  <TrendingUp className="w-3.5 h-3.5" />
+                <span className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-[#00357f] text-white flex items-center justify-center shrink-0">
+                  <TrendingUp className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                 </span>
-                <p className="text-[11px] font-bold text-[#434653] mt-2">Ventas hoy</p>
-                <p className="text-lg sm:text-2xl font-black tabular-nums text-[#111c2d] mt-0.5">{formatPrice(todayStats.total)}</p>
-                <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653] flex items-center gap-1">
-                  {todayStats.diffPct >= 0 ? (
-                    <><ArrowUp className="w-3 h-3 text-[#00422b] shrink-0" /> +{todayStats.diffPct}% vs ayer</>
-                  ) : (
-                    <><TrendingDown className="w-3 h-3 text-[#ba1a1a] shrink-0" /> {todayStats.diffPct}% vs ayer</>
-                  )}
-                </p>
+                <span className="flex-1 min-w-0 sm:contents">
+                  <p className="block text-[11px] font-bold text-[#434653] sm:mt-2">Ventas hoy</p>
+                  <p className="block text-xl sm:text-2xl font-black tabular-nums whitespace-nowrap text-[#111c2d] mt-0.5">{formatPrice(todayStats.total)}</p>
+                  <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653] flex items-center gap-1">
+                    {todayStats.diffPct >= 0 ? (
+                      <><ArrowUp className="w-3 h-3 text-[#00422b] shrink-0" /> +{todayStats.diffPct}% vs ayer</>
+                    ) : (
+                      <><TrendingDown className="w-3 h-3 text-[#ba1a1a] shrink-0" /> {todayStats.diffPct}% vs ayer</>
+                    )}
+                  </p>
+                </span>
               </Link>
 
               {/* Ventas del mes — abre la gráfica y la tabla del mes */}
               <Link
                 href="/dashboard/admin/finanzas/mes"
-                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98]"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:block"
               >
-                <span className="w-7 h-7 rounded-lg bg-[#0899c9] text-white flex items-center justify-center shrink-0">
-                  <CalendarDays className="w-3.5 h-3.5" />
+                <span className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-[#0899c9] text-white flex items-center justify-center shrink-0">
+                  <CalendarDays className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                 </span>
-                <p className="text-[11px] font-bold text-[#434653] mt-2">Ventas del mes</p>
-                <p className="text-lg sm:text-2xl font-black tabular-nums text-[#111c2d] mt-0.5">{formatPrice(monthlyStats.total)}</p>
-                <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653] flex items-center gap-1">
-                  {monthlyStats.diffPct >= 0 ? (
-                    <><ArrowUp className="w-3 h-3 text-[#00422b] shrink-0" /> +{monthlyStats.diffPct}% vs mes anterior</>
-                  ) : (
-                    <><TrendingDown className="w-3 h-3 text-[#ba1a1a] shrink-0" /> {monthlyStats.diffPct}% vs mes anterior</>
-                  )}
-                </p>
+                <span className="flex-1 min-w-0 sm:contents">
+                  <p className="block text-[11px] font-bold text-[#434653] sm:mt-2">Ventas del mes</p>
+                  <p className="block text-xl sm:text-2xl font-black tabular-nums whitespace-nowrap text-[#111c2d] mt-0.5">{formatPrice(monthlyStats.total)}</p>
+                  <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653] flex items-center gap-1">
+                    {monthlyStats.diffPct >= 0 ? (
+                      <><ArrowUp className="w-3 h-3 text-[#00422b] shrink-0" /> +{monthlyStats.diffPct}% vs mes anterior</>
+                    ) : (
+                      <><TrendingDown className="w-3 h-3 text-[#ba1a1a] shrink-0" /> {monthlyStats.diffPct}% vs mes anterior</>
+                    )}
+                  </p>
+                </span>
               </Link>
 
               {/* Por cobrar — enlace a Pagos; semáforo: rojo suave si hay adeudo, verde si no */}
               <Link
                 href="/payments"
-                className={`rounded-2xl p-3 transition-all active:scale-[0.98] ${pendingTotal > 0 ? 'bg-[#ffdad6]/60 hover:bg-[#ffdad6]/80' : 'bg-[#e2f9ee] hover:bg-[#d3f5e3]'}`}
+                className={`rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-3 sm:block ${pendingTotal > 0 ? 'bg-[#ffdad6]/60 hover:bg-[#ffdad6]/80' : 'bg-[#e2f9ee] hover:bg-[#d3f5e3]'}`}
               >
-                <span className={`w-7 h-7 rounded-lg text-white flex items-center justify-center shrink-0 ${pendingTotal > 0 ? 'bg-[#ba1a1a]' : 'bg-[#00422b]'}`}>
-                  <Wallet className="w-3.5 h-3.5" />
+                <span className={`w-9 h-9 sm:w-7 sm:h-7 rounded-lg text-white flex items-center justify-center shrink-0 ${pendingTotal > 0 ? 'bg-[#ba1a1a]' : 'bg-[#00422b]'}`}>
+                  <Wallet className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                 </span>
-                <p className="text-[11px] font-bold text-[#434653] mt-2">Por cobrar</p>
-                <p className={`text-lg sm:text-2xl font-black tabular-nums mt-0.5 ${pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>{formatPrice(pendingTotal)}</p>
-                <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653]">
-                  {pendingTotal > 0 ? `${pendingCount} venta${pendingCount !== 1 ? 's' : ''} con saldo pendiente` : 'Todo cobrado, sin adeudos'}
-                </p>
+                <span className="flex-1 min-w-0 sm:contents">
+                  <p className="block text-[11px] font-bold text-[#434653] sm:mt-2">Por cobrar</p>
+                  <p className={`block text-xl sm:text-2xl font-black tabular-nums whitespace-nowrap mt-0.5 ${pendingTotal > 0 ? 'text-[#ba1a1a]' : 'text-[#00422b]'}`}>{formatPrice(pendingTotal)}</p>
+                  <p className="mt-1 text-[10px] leading-tight font-semibold text-[#434653]">
+                    {pendingTotal > 0 ? `${pendingCount} venta${pendingCount !== 1 ? 's' : ''} con saldo pendiente` : 'Todo cobrado, sin adeudos'}
+                  </p>
+                </span>
               </Link>
             </div>
 
@@ -339,43 +416,48 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-2 gap-2 sm:gap-3 mt-2 sm:mt-3">
               <Link
                 href="/dashboard/admin/finanzas/pagos"
-                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px]"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-2.5 sm:p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px] min-w-0"
               >
                 <span className="w-7 h-7 rounded-lg bg-[#fef3c7] text-[#92400e] flex items-center justify-center shrink-0">
                   <Receipt className="w-3.5 h-3.5" />
                 </span>
-                <span className="text-xs font-bold text-[#111c2d]">Pagos</span>
+                <span className="text-xs font-bold text-[#111c2d] min-w-0">Pagos</span>
                 <ChevronRight className="w-3.5 h-3.5 ml-auto text-[#737784] shrink-0" />
               </Link>
               <Link
                 href="/dashboard/admin/finanzas/utilidad"
-                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px]"
+                className="bg-[#f9f9ff] hover:bg-[#eef3ff] rounded-2xl p-2.5 sm:p-3 transition-all active:scale-[0.98] flex items-center gap-2.5 min-h-[52px] min-w-0"
               >
                 <span className="w-7 h-7 rounded-lg bg-[#e2f9ee] text-[#00422b] flex items-center justify-center shrink-0">
                   <PiggyBank className="w-3.5 h-3.5" />
                 </span>
-                <span className="text-xs font-bold text-[#111c2d]">Utilidad del mes</span>
+                <span className="text-xs font-bold text-[#111c2d] min-w-0">Utilidad del mes</span>
                 <ChevronRight className="w-3.5 h-3.5 ml-auto text-[#737784] shrink-0" />
               </Link>
             </div>
           </section>
 
-          {/* Configuración: solo Productos, Usuarios y Clientes */}
-          <section className="anim-stagger-item" style={{ '--enter-delay': '60ms' } as React.CSSProperties}>
-            <div className="flex items-center gap-3 mb-3">
+          {/* Configuración: Productos, Usuarios, Mensajes y Clientes.
+              La sección completa vive dentro de una tarjeta blanca para
+              que su contorno se vea sobre el fondo; los mosaicos internos
+              usan el tono #f9f9ff para separarse del blanco de la tarjeta.
+              Con 4 mosaicos la rejilla es 2×2 en móvil para que no se
+              amontonen, y una fila de 4 desde sm. */}
+          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '60ms' } as React.CSSProperties}>
+            <div className="flex items-center gap-3 mb-4">
               <span className="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#00357f] flex items-center justify-center shrink-0">
                 <Settings className="w-5 h-5" />
               </span>
               <h3 className="text-base font-semibold text-[#111c2d]">Configuración</h3>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
               {quickAccess.map(item => {
                 const Icon = item.icon
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="bg-white rounded-[20px] or-shadow-card p-3 flex flex-col items-center justify-center gap-2 min-h-[76px] transition-all active:scale-95"
+                    className="bg-[#f9f9ff] hover:bg-[#eef3ff] ring-1 ring-[#cbd5e1]/40 rounded-[20px] p-3 flex flex-col items-center justify-center gap-2 min-h-[76px] transition-all active:scale-95"
                   >
                     <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.chip}`}>
                       <Icon className="w-5 h-5" />
@@ -391,12 +473,12 @@ export default function AdminDashboard() {
               y avisar a los 6 meses «ya es tiempo de tu nuevo examen».
               Va inmediatamente después de Configuración, con el contador de
               vencidos en rojo sobre la cabecera; la sección nace minimizada. */}
-          <section className="anim-stagger-item space-y-3" style={{ '--enter-delay': '120ms' } as React.CSSProperties}>
+          <section className="anim-stagger-item bg-white rounded-[20px] or-shadow-card p-4 sm:p-5" style={{ '--enter-delay': '120ms' } as React.CSSProperties}>
             <button
               type="button"
               onClick={() => toggleSection('reminders')}
               aria-expanded={openSections.reminders}
-              className="w-full flex items-center gap-3 px-1 cursor-pointer text-left"
+              className="w-full flex items-center gap-3 cursor-pointer text-left"
             >
               <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${overdueCount > 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#dee8ff] text-[#00357f]'}`}>
                 <BellRing className="w-5 h-5" />
@@ -426,7 +508,7 @@ export default function AdminDashboard() {
               <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.reminders ? 'rotate-180' : ''}`} />
             </button>
             {openSections.reminders && (
-              <div className={overdueCount > 0 ? 'rounded-2xl ring-1 ring-[#ba1a1a]/25' : undefined}>
+              <div className={`mt-4 ${overdueCount > 0 ? 'rounded-2xl ring-1 ring-[#ba1a1a]/25' : ''}`}>
                 <ReminderTray />
               </div>
             )}
@@ -462,15 +544,21 @@ export default function AdminDashboard() {
                   const frameName = req.frame?.name || 'No seleccionado'
                   const materialName = req.lens_material?.name || 'No seleccionado'
 
-                  // Construct pre-filled WhatsApp link
+                  // Construct pre-filled WhatsApp link. El texto sale de la
+                  // plantilla editable (Configuración → Mensajes), con el
+                  // texto de siempre como respaldo.
                   const cleanPhone = customerPhone.replace(/\D/g, '')
                   const waNumber = cleanPhone.startsWith('52') ? cleanPhone : `52${cleanPhone}`
                   const waMessage = encodeURIComponent(
-                    `Hola *${customerName}*, recibimos tu diseño de lentes en el portal de *Optica Rayo* 🕶️.\n\n` +
-                    `- Armazón: *${frameName}*\n` +
-                    `- Mica: *${materialName}*\n` +
-                    `${req.notes ? `- Notas: _"${req.notes}"_\n` : ''}\n` +
-                    `¿Te gustaría que agendemos tu visita para confirmar la graduación y cerrar tu orden?`
+                    buildLensRequestReplyMessage(
+                      msgTemplates?.lensRequestReply ?? DEFAULT_LENS_REQUEST_REPLY_TEMPLATE,
+                      {
+                        nombre: customerName,
+                        armazon: frameName,
+                        mica: materialName,
+                        notas: req.notes || ''
+                      }
+                    )
                   )
                   const waUrl = `https://wa.me/${waNumber}?text=${waMessage}`
 
@@ -542,48 +630,88 @@ export default function AdminDashboard() {
               <ChevronDown className={`w-5 h-5 shrink-0 text-[#737784] transition-transform duration-200 ${openSections.birthdays ? 'rotate-180' : ''} ${upcomingBirthdays.length > 0 ? '' : 'ml-auto'}`} />
             </button>
 
-            {openSections.birthdays && (upcomingBirthdays.length === 0 ? (
-              <p className="text-xs text-[#737784] font-semibold py-3 text-center">Sin cumpleaños esta semana.</p>
-            ) : (
-              <ul className="divide-y divide-[#cbd5e1]/30">
-                {upcomingBirthdays.map(b => {
-                  const cleanPhone = b.phone.replace(/\D/g, '')
-                  const waNumber = cleanPhone ? (cleanPhone.startsWith('52') ? cleanPhone : `52${cleanPhone}`) : ''
-                  const firstName = b.name.split(' ')[0] || b.name
-                  const waMessage = encodeURIComponent(
-                    `¡Hola ${firstName}! 🎂 En *Óptica Rayo* queremos desearte un muy feliz cumpleaños. ¡Que tengas un excelente día!`
-                  )
-                  const waUrl = waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : '#'
-                  return (
-                    <li key={b.id} className="flex items-center gap-3 py-3 min-h-[48px]">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#111c2d] truncate">{b.name}</p>
-                        <p className="text-xs text-[#737784] font-medium mt-0.5">
-                          {b.daysUntil === 0 ? '¡Cumple hoy!' : b.daysUntil === 1 ? 'Mañana' : `En ${b.daysUntil} días`}
-                        </p>
-                      </div>
-                      <span className="shrink-0 bg-[#e6f5fb] text-[#0899c9] text-xs font-bold px-2.5 py-1 rounded-full capitalize">
-                        {b.dayLabel}
-                      </span>
-                      <a
-                        href={waUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`shrink-0 flex items-center gap-1.5 py-2 px-3 rounded-lg text-[10px] font-bold text-white transition-all ${
-                          waNumber ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-95 cursor-pointer' : 'bg-emerald-600/50 cursor-not-allowed'
-                        }`}
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        Felicitar
-                      </a>
-                    </li>
-                  )
-                })}
-              </ul>
-            ))}
+            {openSections.birthdays && (
+              <>
+                {birthdayError && (
+                  <p className="mt-3 text-xs font-bold text-[#ba1a1a] bg-[#ffdad6]/60 border border-[#ba1a1a]/25 rounded-lg px-3 py-2">
+                    {birthdayError}
+                  </p>
+                )}
+                {upcomingBirthdays.length === 0 ? (
+                  <p className="text-xs text-[#737784] font-semibold py-3 text-center">Sin cumpleaños esta semana.</p>
+                ) : (
+                  <ul className="divide-y divide-[#cbd5e1]/30">
+                    {upcomingBirthdays.map(b => {
+                      // Mismo mecanismo wa.me de la bandeja de recordatorios:
+                      // número normalizado con toWhatsAppNumber y texto
+                      // prellenado. Sin teléfono NO hay enlace: el botón va
+                      // deshabilitado con el motivo en el título.
+                      const waNumber = b.phone ? toWhatsAppNumber(b.phone) : null
+                      const firstName = b.name.split(' ')[0] || b.name
+                      // El texto sale de la plantilla editable
+                      // (Configuración → Mensajes), con el texto de
+                      // siempre como respaldo.
+                      const waMessage = encodeURIComponent(
+                        buildBirthdayMessage(
+                          msgTemplates?.birthday ?? DEFAULT_BIRTHDAY_TEMPLATE,
+                          { nombre: firstName }
+                        )
+                      )
+                      const dismissing = dismissingId === b.id
+                      return (
+                        <li key={b.id} className="flex items-center gap-3 py-3 min-h-[48px]">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-[#111c2d] truncate">{b.name}</p>
+                            <p className="text-xs text-[#737784] font-medium mt-0.5">
+                              {b.daysUntil === 0 ? '¡Cumple hoy!' : b.daysUntil === 1 ? 'Mañana' : `En ${b.daysUntil} días`}
+                            </p>
+                          </div>
+                          <span className="shrink-0 bg-[#e6f5fb] text-[#0899c9] text-xs font-bold px-2.5 py-1 rounded-full capitalize">
+                            {b.dayLabel}
+                          </span>
+                          {waNumber ? (
+                            <a
+                              href={`https://wa.me/${waNumber}?text=${waMessage}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="shrink-0 flex items-center gap-1.5 min-h-[44px] px-3.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-95 cursor-pointer"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              Felicitar
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              title="Este cliente no tiene teléfono registrado"
+                              className="shrink-0 flex items-center gap-1.5 min-h-[44px] px-3.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600/50 cursor-not-allowed"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              Felicitar
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDismissBirthday(b)}
+                            disabled={!!dismissingId}
+                            aria-label={`Eliminar cumpleaños de ${b.name}`}
+                            className="shrink-0 flex items-center gap-1.5 min-h-[44px] px-3 rounded-lg text-[11px] font-bold text-[#ba1a1a] transition hover:bg-[#ffdad6]/60 disabled:opacity-60 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            {dismissing ? 'Quitando…' : 'Eliminar'}
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </>
+            )}
           </div>
 
-          {/* Actividad reciente — al final, nace expandida (colapsable en el propio componente) */}
+          {/* Actividad reciente — al final, nace minimizada igual que las
+              demás secciones (corrección del dueño, 2026-11-18); el
+              colapsable vive en el propio componente */}
           <RecentActivity sales={sales} />
 
         </div>

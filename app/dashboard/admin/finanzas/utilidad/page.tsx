@@ -262,36 +262,36 @@ export default function FinanzasUtilidadPage() {
 
       {!loading && !loadError && utility && (
         <section aria-label="Cifras del periodo" className="grid grid-cols-2 gap-3 md:gap-4">
-          <div className="bg-white rounded-[20px] or-shadow-card p-4">
+          <div className="bg-white rounded-[20px] or-shadow-card p-3.5 sm:p-4 min-w-0">
             <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ingresos</p>
-            <p className="text-xl md:text-2xl font-extrabold text-[#00422b] mt-1 tabular-nums">{money.format(utility.income)}</p>
+            <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#00422b] mt-1 tabular-nums whitespace-nowrap">{money.format(utility.income)}</p>
             <p className="text-xs text-[#434653] font-semibold mt-1 tabular-nums">
               Pagos al vender {money.format(utility.incomeFromSales)} · Abonos recibidos {money.format(utility.incomeFromInstallments)}
             </p>
           </div>
-          <div className="bg-white rounded-[20px] or-shadow-card p-4">
+          <div className="bg-white rounded-[20px] or-shadow-card p-3.5 sm:p-4 min-w-0">
             <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Pagos</p>
-            <p className="text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1 tabular-nums">{money.format(utility.payments)}</p>
+            <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1 tabular-nums whitespace-nowrap">{money.format(utility.payments)}</p>
             <p className="text-xs text-[#434653] font-semibold mt-1 tabular-nums">
               Gastos del día {money.format(utility.dailyExpensesTotal)} · Fijos prorrateados {money.format(utility.fixedProrated)} (de {money.format(utility.fixedMonthlyTotal)} al mes)
             </p>
           </div>
-          <div className="bg-white rounded-[20px] or-shadow-card p-4">
+          <div className="bg-white rounded-[20px] or-shadow-card p-3.5 sm:p-4 min-w-0">
             <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Adeudos generados</p>
-            <p className="text-xl md:text-2xl font-extrabold text-[#92400e] mt-1 tabular-nums">{money.format(utility.debtsGenerated)}</p>
+            <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#92400e] mt-1 tabular-nums whitespace-nowrap">{money.format(utility.debtsGenerated)}</p>
             <p className="text-xs text-[#434653] font-semibold mt-1">
               Lo vendido en el periodo que quedó en pagos diferidos (saldo pendiente de esas ventas).
             </p>
           </div>
           <div
-            className={`rounded-[20px] or-shadow-card p-4 ${
+            className={`rounded-[20px] or-shadow-card p-3.5 sm:p-4 min-w-0 ${
               utility.utility >= 0 ? 'bg-[#e2f9ee]' : 'bg-[#ffdad6]'
             }`}
           >
             <p className={`text-[10px] font-black uppercase tracking-wider ${utility.utility >= 0 ? 'text-[#00422b]' : 'text-[#ba1a1a]'}`}>
               Utilidad del periodo
             </p>
-            <p className={`text-xl md:text-2xl font-extrabold mt-1 tabular-nums ${utility.utility >= 0 ? 'text-[#00422b]' : 'text-[#93000a]'}`}>
+            <p className={`text-lg sm:text-xl md:text-2xl font-extrabold mt-1 tabular-nums whitespace-nowrap ${utility.utility >= 0 ? 'text-[#00422b]' : 'text-[#93000a]'}`}>
               {money.format(utility.utility)}
             </p>
             <p className={`text-xs font-semibold mt-1 ${utility.utility >= 0 ? 'text-[#00422b]/75' : 'text-[#93000a]/75'}`}>

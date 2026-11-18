@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import {
   getProducts,
   createSale,
@@ -140,6 +140,15 @@ export default function SellerDashboard() {
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // Synchronous checkout lock: the `submitting` state only disables the
+  // button after a re-render, so a fast second submit (double tap, Enter
+  // in a field) could slip a second handleCheckout run in and register
+  // the sale twice. This ref flips synchronously, before any await.
+  const checkoutLockRef = useRef(false)
+  // Live node of the anticipo input: at submit time the charged amount
+  // is re-read from the field itself, so what is charged always matches
+  // what the cashier sees even if a change event was swallowed.
+  const anticipoInputRef = useRef<HTMLInputElement>(null)
 
   // Sale line items (products + free-text complements) for the workshop
   // history cards. getSales does not join items, so they are read here in
@@ -387,9 +396,16 @@ export default function SellerDashboard() {
   const iva = useMemo(() => taxableBase - netSubtotal, [taxableBase, netSubtotal])
   const total = useMemo(() => taxableBase, [taxableBase])
 
-  // Payment inputs and balance calculations
-  const paidAmount = parseFloat(paidAmountInput) || 0
-  const pendingBalance = Math.max(0, total - paidAmount)
+  // Payment inputs and balance calculations. Derived explicitly from
+  // the raw field value on every render (comma-tolerant parse), so the
+  // «Saldo Pendiente» always reflects what the anticipo field currently
+  // holds instead of lagging one edit behind.
+  const paidAmount = useMemo(() => {
+    const normalized = paidAmountInput.trim().replace(/\s/g, '').replace(',', '.')
+    const parsed = parseFloat(normalized)
+    return Number.isFinite(parsed) ? parsed : 0
+  }, [paidAmountInput])
+  const pendingBalance = useMemo(() => Math.max(0, total - paidAmount), [total, paidAmount])
 
   const showFeedback = (type: 'success' | 'error', message: string) => {
     if (type === 'success') {
@@ -481,7 +497,11 @@ export default function SellerDashboard() {
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    // Anti double-submit lock (see checkoutLockRef): a second submit
+    // while a registration is in flight is ignored outright — every
+    // extra click used to create another order.
+    if (checkoutLockRef.current) return
+
     // Validation
     const typedName = customerSearch.trim()
     let buyer: CustomerProfile | null = selectedCustomer
@@ -499,6 +519,19 @@ export default function SellerDashboard() {
       return
     }
 
+    // Re-read the anticipo straight from the field: the amount charged
+    // must be the one on screen, even if the last change event never
+    // reached the state (autofill / swallowed input events).
+    const fieldPaidRaw = anticipoInputRef.current?.value ?? paidAmountInput
+    const fieldPaidParsed = parseFloat(fieldPaidRaw.trim().replace(/\s/g, '').replace(',', '.'))
+    const effectivePaidAmount = Number.isFinite(fieldPaidParsed) ? fieldPaidParsed : paidAmount
+    if (fieldPaidRaw !== paidAmountInput) setPaidAmountInput(fieldPaidRaw)
+    if (fieldPaidRaw !== '' && effectivePaidAmount < 0) {
+      showFeedback('error', 'El monto recibido no puede ser negativo.')
+      return
+    }
+
+    checkoutLockRef.current = true
     setSubmitting(true)
     try {
       // Free-typed name with no selected customer: resolve who the buyer is
@@ -545,7 +578,7 @@ export default function SellerDashboard() {
 
       // Register sale with everything captured on screen: the registered
       // customer (when one was selected), the applied coupon and the note.
-      await createSale(nameToRegister, items, paidAmount || total, paymentMethod, {
+      await createSale(nameToRegister, items, effectivePaidAmount || total, paymentMethod, {
         customerId: buyer?.id || null,
         couponId: activeCoupon?.id || null,
         discountApplied: discount,
@@ -577,8 +610,14 @@ export default function SellerDashboard() {
       
       await loadAllData()
     } catch (e) {
-      showFeedback('error', 'Ocurrió un error al procesar la transacción.')
+      // Keep the REAL error: log it in full and surface its message on
+      // screen. The bare generic text hid the actual database failure
+      // (e.g. the sale_items insert rejection) during live diagnosis.
+      console.error('Error al registrar la venta:', e)
+      const detail = e instanceof Error && e.message ? ` ${e.message}` : ''
+      showFeedback('error', `Ocurrió un error al procesar la transacción.${detail}`)
     } finally {
+      checkoutLockRef.current = false
       setSubmitting(false)
     }
   }
@@ -1105,11 +1144,13 @@ export default function SellerDashboard() {
                             Anticipo Recibido
                           </label>
                           <input
+                            ref={anticipoInputRef}
                             type="number"
                             step="0.01"
                             placeholder={total.toFixed(2)}
                             value={paidAmountInput}
                             onChange={(e) => setPaidAmountInput(e.target.value)}
+                            onInput={(e) => setPaidAmountInput(e.currentTarget.value)}
                             disabled={subtotal === 0}
                             className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] tabular-nums transition-colors"
                           />

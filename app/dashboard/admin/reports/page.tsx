@@ -1,10 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
+  ArrowUpDown,
   BarChart3,
+  ChevronDown,
   Lock,
   RefreshCw,
 } from 'lucide-react'
@@ -12,6 +16,7 @@ import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { normalizeRole } from '@/lib/roles'
 import { getPeriodReport, type PeriodReport } from '@/lib/expenses'
 import DateRangePicker from '@/components/date-range-picker'
+import SalesLineChart from '@/components/sales-line-chart'
 
 // Reports are administrator territory (owner / super_admin), same gate
 // as Promotions: period sales, daily expenses, prorated fixed expenses
@@ -101,6 +106,117 @@ const money = new Intl.NumberFormat('es-MX', {
   minimumFractionDigits: 2,
 })
 
+// --- Tarjeta minimizable (mismo patrón que Finanzas: cabecera-boton
+// con chevron y aria-expanded; el contenido se monta solo si está
+// abierta). Todas las tarjetas de Reportes se pueden minimizar. ---
+function CollapsibleSection({
+  title,
+  open,
+  onToggle,
+  ariaLabel,
+  children,
+}: {
+  title: string
+  open: boolean
+  onToggle: () => void
+  ariaLabel?: string
+  children: ReactNode
+}) {
+  return (
+    <section
+      aria-label={ariaLabel ?? title}
+      className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden"
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 px-5 py-3 min-h-[48px] cursor-pointer text-left"
+      >
+        <span className="text-xs font-black uppercase tracking-wider text-[#00357f]">{title}</span>
+        <ChevronDown
+          className={`w-5 h-5 text-[#00357f] shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && children}
+    </section>
+  )
+}
+
+// --- Ordenamiento de tablas (solo presentación: no toca cálculos ni
+// totales). Primera pulsación en una columna = ascendente (menor a
+// mayor / A a Z / fecha temprana a tardía); pulsar la MISMA columna
+// otra vez invierte el sentido; pulsar otra columna ordena por ella
+// desde ascendente. ---
+type SortDir = 'asc' | 'desc'
+
+interface SortState<K extends string> {
+  key: K
+  dir: SortDir
+}
+
+function nextSort<K extends string>(current: SortState<K>, key: K): SortState<K> {
+  return current.key === key
+    ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' }
+    : { key, dir: 'asc' }
+}
+
+function sortedBy<T, K extends string>(
+  rows: T[],
+  sort: SortState<K>,
+  value: (row: T, key: K) => string | number,
+): T[] {
+  const mul = sort.dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const va = value(a, sort.key)
+    const vb = value(b, sort.key)
+    const cmp =
+      typeof va === 'string'
+        ? va.localeCompare(String(vb), 'es')
+        : Number(va) - Number(vb)
+    return cmp * mul
+  })
+}
+
+function SortHeader<K extends string>({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align = 'left',
+  padClass = 'px-3',
+}: {
+  label: string
+  sortKey: K
+  sort: SortState<K>
+  onSort: (key: K) => void
+  align?: 'left' | 'center' | 'right'
+  padClass?: string
+}) {
+  const active = sort.key === sortKey
+  const Icon = active ? (sort.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  const justify =
+    align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'
+  return (
+    <th
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+      className="p-0 font-black"
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Ordenar por ${label}${active ? (sort.dir === 'asc' ? ' (ascendente)' : ' (descendente)') : ''}`}
+        className={`flex w-full min-h-[44px] items-center gap-1 py-2 text-[10px] font-black uppercase tracking-wider cursor-pointer ${padClass} ${justify} ${
+          active ? 'text-[#00357f]' : 'text-[#737784] hover:text-[#00357f]'
+        }`}
+      >
+        <span>{label}</span>
+        <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? '' : 'opacity-40'}`} aria-hidden="true" />
+      </button>
+    </th>
+  )
+}
+
 export default function AdminReportsPage() {
   const [gateLoading, setGateLoading] = useState(true)
   const [canAccess, setCanAccess] = useState(false)
@@ -116,6 +232,34 @@ export default function AdminReportsPage() {
   const [report, setReport] = useState<PeriodReport | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState(false)
+
+  // Todas las tarjetas nacen expandidas; cada una se minimiza con su
+  // chevron. «Cifras» agrupa las tarjetas de cifras (Ventas, Utilidad,
+  // Gastos y Gastos fijos) y se minimiza como un solo bloque.
+  const [openSections, setOpenSections] = useState({
+    cifras: true,
+    grafica: true,
+    ventas: true,
+    gastos: true,
+    productos: true,
+  })
+  const toggleSection = (key: keyof typeof openSections) =>
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
+
+  // Orden activo de cada tabla (la vista inicial conserva el orden en
+  // que el servicio entrega los datos).
+  const [salesSort, setSalesSort] = useState<SortState<'date' | 'count' | 'total'>>({
+    key: 'date',
+    dir: 'asc',
+  })
+  const [expensesSort, setExpensesSort] = useState<SortState<'category' | 'total'>>({
+    key: 'total',
+    dir: 'desc',
+  })
+  const [productsSort, setProductsSort] = useState<SortState<'name' | 'units' | 'total'>>({
+    key: 'total',
+    dir: 'desc',
+  })
 
   const loadReport = useCallback(async (start: string, end: string) => {
     setReportLoading(true)
@@ -186,6 +330,43 @@ export default function AdminReportsPage() {
     void loadReport(start, end)
   }
 
+  // Filas ordenadas según la columna activa de cada tabla. Es solo el
+  // orden de presentación: los totales y cifras no se tocan.
+  const sortedSalesByDay = useMemo(
+    () =>
+      report
+        ? sortedBy(report.salesByDay, salesSort, (d, k) =>
+            k === 'date' ? d.date : k === 'count' ? d.count : d.total,
+          )
+        : [],
+    [report, salesSort],
+  )
+  const sortedExpenses = useMemo(
+    () =>
+      report
+        ? sortedBy(report.expensesByCategory, expensesSort, (c, k) =>
+            k === 'category' ? c.category : c.total,
+          )
+        : [],
+    [report, expensesSort],
+  )
+  const sortedProducts = useMemo(
+    () =>
+      report
+        ? sortedBy(report.topProducts, productsSort, (p, k) =>
+            k === 'name' ? p.name : k === 'units' ? p.units : p.total,
+          )
+        : [],
+    [report, productsSort],
+  )
+
+  // Las etiquetas de gastos dicen «del día» solo cuando el rango ES
+  // hoy; cualquier otro rango (semana, mes o personalizado) es «del
+  // periodo».
+  const isTodayRange = range.start === range.end && range.start === toISODate(new Date())
+  const dailyExpensesLabel = isTodayRange ? 'Gastos del día' : 'Gastos del periodo'
+  const fixedExpensesLabel = isTodayRange ? 'Gastos fijos' : 'Gastos fijos del periodo'
+
   if (gateLoading) {
     return (
       <main className="min-h-screen flex items-center justify-center text-[#111c2d]">
@@ -200,15 +381,15 @@ export default function AdminReportsPage() {
   if (!canAccess) {
     return (
       <main className="min-h-screen text-[#111c2d] p-4 md:p-8 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
-        <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
-          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+        <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
+          <Link href="/dashboard/admin" aria-label="Volver al panel" className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
             <ArrowLeft className="w-4.5 h-4.5" />
           </Link>
-          <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-            <BarChart3 className="w-5 h-5" />
+          <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+            <BarChart3 className="w-4.5 h-4.5" />
           </span>
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Reportes</h1>
+            <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Reportes</h1>
           </div>
         </div>
         <div className="mt-6 bg-white border border-[#cbd5e1] rounded-2xl p-6 shadow-sm flex items-start gap-4">
@@ -234,17 +415,20 @@ export default function AdminReportsPage() {
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-[1100px] mx-auto pb-24 md:pb-8 text-left animate-in fade-in duration-200">
 
-      {/* Page Header */}
-      <div className="flex items-center gap-3 border-b border-[#e7eeff] pb-6">
-        <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
+      {/* Page Header — compacto a propósito (pedido del dueño): el
+          título va en el tamaño más chico de título de página y la
+          descripción en fuente menor, para que el encabezado ocupe
+          poco espacio vertical y las cifras respiren. */}
+      <div className="flex items-center gap-2.5 border-b border-[#e7eeff] pb-3">
+        <Link href="/dashboard/admin" aria-label="Volver al panel" className="flex items-center justify-center w-11 h-11 -ml-2 rounded-full hover:bg-[#dee8ff] text-[#434653] transition-colors shrink-0">
           <ArrowLeft className="w-4.5 h-4.5" />
         </Link>
-        <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
-          <BarChart3 className="w-5 h-5" />
+        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#dee8ff] text-[#00357f] shrink-0" aria-hidden="true">
+          <BarChart3 className="w-4.5 h-4.5" />
         </span>
-        <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-[#00357f] tracking-tight">Reportes</h1>
-          <p className="text-sm text-[#434653] mt-1 font-medium">
+        <div className="min-w-0">
+          <h1 className="text-lg md:text-xl font-extrabold text-[#00357f] tracking-tight">Reportes</h1>
+          <p className="text-xs text-[#434653] font-medium leading-snug">
             Ventas, gastos y utilidad por periodo. Solo el administrador ve estas cifras.
           </p>
         </div>
@@ -310,129 +494,200 @@ export default function AdminReportsPage() {
 
       {!reportLoading && !reportError && report && (
         <>
-          {/* Figure cards */}
-          <section aria-label="Cifras del periodo" className="grid grid-cols-2 gap-3 md:gap-4">
-            <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4">
-              <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ventas del periodo</p>
-              <p className="text-xl md:text-2xl font-extrabold text-[#111c2d] mt-1">{money.format(report.salesTotal)}</p>
-              <p className="text-xs text-[#434653] font-semibold mt-0.5">
-                {report.salesCount} {report.salesCount === 1 ? 'venta' : 'ventas'}
-              </p>
-            </div>
-            <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4">
-              <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Promedio por venta</p>
-              <p className="text-xl md:text-2xl font-extrabold text-[#111c2d] mt-1">{money.format(report.avgTicket)}</p>
-              <p className="text-xs text-[#434653] font-semibold mt-0.5">Ticket promedio del periodo</p>
-            </div>
-            <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4">
-              <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Gastos del día</p>
-              <p className="text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1">{money.format(report.dailyExpensesTotal)}</p>
-              <p className="text-xs text-[#434653] font-semibold mt-0.5">Compras y gastos registrados día a día</p>
-            </div>
-            <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-4">
-              <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Gastos fijos</p>
-              <p className="text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1">{money.format(report.fixedProrated)}</p>
-              <p className="text-xs text-[#434653] font-semibold mt-0.5">
-                de {money.format(report.fixedMonthlyTotal)} fijos al mes, prorrateo por días
-              </p>
-            </div>
-            <div
-              className={`col-span-2 border rounded-2xl shadow-sm p-5 ${
-                report.profit >= 0
-                  ? 'bg-[#e2f9ee] border-[#00422b]/20'
-                  : 'bg-[#ffdad6] border-[#ba1a1a]/25'
-              }`}
-            >
-              <p
-                className={`text-[10px] font-black uppercase tracking-wider ${
-                  report.profit >= 0 ? 'text-[#00422b]' : 'text-[#ba1a1a]'
+          {/* Figure cards — minimizables como un solo bloque. Sin la
+              tarjeta de «Promedio por venta» (fuera por pedido del
+              dueño) y con la Utilidad ARRIBA, junto a Ventas, en el
+              espacio que esa salida dejó. Las etiquetas de gastos
+              dicen «del día» solo si el rango es hoy; si no, «del
+              periodo». */}
+          <CollapsibleSection
+            title="Cifras del periodo"
+            open={openSections.cifras}
+            onToggle={() => toggleSection('cifras')}
+          >
+            <div className="grid grid-cols-2 gap-3 md:gap-4 px-4 pb-4">
+              <div className="bg-[#f9f9ff] ring-1 ring-[#cbd5e1]/40 rounded-2xl p-4">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Ventas del periodo</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#111c2d] mt-1 tabular-nums whitespace-nowrap">{money.format(report.salesTotal)}</p>
+                <p className="text-xs text-[#434653] font-semibold mt-0.5">
+                  {report.salesCount} {report.salesCount === 1 ? 'venta' : 'ventas'}
+                </p>
+              </div>
+              <div
+                className={`ring-1 rounded-2xl p-4 ${
+                  report.profit >= 0
+                    ? 'bg-[#e2f9ee] ring-[#00422b]/15'
+                    : 'bg-[#ffdad6] ring-[#ba1a1a]/20'
                 }`}
               >
-                Utilidad del periodo
-              </p>
-              <p
-                className={`text-2xl md:text-3xl font-extrabold mt-1 ${
-                  report.profit >= 0 ? 'text-[#00422b]' : 'text-[#93000a]'
-                }`}
-              >
-                {money.format(report.profit)}
-              </p>
-              <p className={`text-xs font-semibold mt-0.5 ${report.profit >= 0 ? 'text-[#00422b]/75' : 'text-[#93000a]/75'}`}>
-                Ventas menos gastos del día y gastos fijos prorrateados.
-              </p>
+                <p
+                  className={`text-[10px] font-black uppercase tracking-wider ${
+                    report.profit >= 0 ? 'text-[#00422b]' : 'text-[#ba1a1a]'
+                  }`}
+                >
+                  Utilidad del periodo
+                </p>
+                <p
+                  className={`text-lg sm:text-xl md:text-2xl font-extrabold mt-1 tabular-nums whitespace-nowrap ${
+                    report.profit >= 0 ? 'text-[#00422b]' : 'text-[#93000a]'
+                  }`}
+                >
+                  {money.format(report.profit)}
+                </p>
+                <p className={`text-xs font-semibold mt-0.5 ${report.profit >= 0 ? 'text-[#00422b]/75' : 'text-[#93000a]/75'}`}>
+                  {isTodayRange
+                    ? 'Ventas menos gastos del día y gastos fijos prorrateados.'
+                    : 'Ventas menos gastos del periodo, con los fijos prorrateados.'}
+                </p>
+              </div>
+              <div className="bg-[#f9f9ff] ring-1 ring-[#cbd5e1]/40 rounded-2xl p-4">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">{dailyExpensesLabel}</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1 tabular-nums whitespace-nowrap">{money.format(report.dailyExpensesTotal)}</p>
+                <p className="text-xs text-[#434653] font-semibold mt-0.5">Compras y gastos registrados día a día</p>
+              </div>
+              <div className="bg-[#f9f9ff] ring-1 ring-[#cbd5e1]/40 rounded-2xl p-4">
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">{fixedExpensesLabel}</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1 tabular-nums whitespace-nowrap">{money.format(report.fixedProrated)}</p>
+                <p className="text-xs text-[#434653] font-semibold mt-0.5">
+                  de {money.format(report.fixedMonthlyTotal)} fijos al mes, prorrateo por días
+                </p>
+              </div>
             </div>
-          </section>
+          </CollapsibleSection>
 
-          {/* Sales by day */}
-          <section aria-label="Ventas por día" className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
-            <h2 className="px-5 pt-4 pb-2 text-xs font-black uppercase tracking-wider text-[#00357f]">Ventas por día</h2>
+          {/* Sales chart — puntos solo en los días con ventas */}
+          <CollapsibleSection
+            title="Gráfica de ventas"
+            open={openSections.grafica}
+            onToggle={() => toggleSection('grafica')}
+          >
+            <div className="px-4 pb-4">
+              {report.salesByDay.length === 0 ? (
+                <p className="text-sm text-[#737784] font-medium">
+                  Sin ventas en el periodo. Cuando haya ventas, cada día con actividad aparecerá como un punto con su monto.
+                </p>
+              ) : (
+                <>
+                  <SalesLineChart days={report.salesByDay} />
+                  <p className="text-[11px] text-[#737784] font-semibold mt-1">
+                    Solo aparecen los días con ventas ({report.salesByDay.length}); la línea salta los días sin actividad en vez de bajar a cero.
+                  </p>
+                </>
+              )}
+            </div>
+          </CollapsibleSection>
+
+          {/* Sales by day — tabla ordenable por columna */}
+          <CollapsibleSection
+            title="Ventas por día"
+            open={openSections.ventas}
+            onToggle={() => toggleSection('ventas')}
+          >
             {report.salesByDay.length === 0 ? (
               <p className="px-5 pb-5 text-sm text-[#737784] font-medium">Sin ventas en el periodo.</p>
             ) : (
-              <ul className="divide-y divide-[#f0f3ff]">
-                {report.salesByDay.map(day => (
-                  <li key={day.date} className="flex items-center justify-between gap-3 px-5 py-3 min-h-[48px]">
-                    <span className="text-sm font-bold text-[#111c2d] capitalize">{formatDayFull(day.date)}</span>
-                    <span className="text-xs text-[#737784] font-semibold">
-                      {day.count} {day.count === 1 ? 'venta' : 'ventas'}
-                    </span>
-                    <span className="text-sm font-extrabold text-[#111c2d]">{money.format(day.total)}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[320px]">
+                  <thead>
+                    <tr className="border-y border-[#f0f3ff]">
+                      <SortHeader label="Fecha" sortKey="date" sort={salesSort} onSort={k => setSalesSort(s => nextSort(s, k))} padClass="pl-5 pr-3" />
+                      <SortHeader label="Ventas" sortKey="count" sort={salesSort} onSort={k => setSalesSort(s => nextSort(s, k))} align="center" />
+                      <SortHeader label="Total" sortKey="total" sort={salesSort} onSort={k => setSalesSort(s => nextSort(s, k))} align="right" padClass="pl-3 pr-5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f0f3ff]">
+                    {sortedSalesByDay.map(day => (
+                      <tr key={day.date}>
+                        <td className="py-3 pl-5 pr-3 font-bold text-[#111c2d] capitalize leading-snug">{formatDayFull(day.date)}</td>
+                        <td className="py-3 px-3 text-center text-xs text-[#737784] font-semibold whitespace-nowrap">
+                          {day.count} {day.count === 1 ? 'venta' : 'ventas'}
+                        </td>
+                        <td className="py-3 pl-3 pr-5 text-right font-extrabold text-[#111c2d] tabular-nums whitespace-nowrap">{money.format(day.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </section>
+          </CollapsibleSection>
 
-          {/* Expenses by category */}
-          <section aria-label="Gastos por categoría" className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm p-5 space-y-3">
-            <h2 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Gastos por categoría</h2>
+          {/* Expenses by category — tabla ordenable por columna */}
+          <CollapsibleSection
+            title="Gastos por categoría"
+            open={openSections.gastos}
+            onToggle={() => toggleSection('gastos')}
+            ariaLabel="Gastos por categoría"
+          >
             {report.expensesByCategory.length === 0 ? (
-              <p className="text-sm text-[#737784] font-medium">Sin gastos registrados en el periodo.</p>
+              <p className="px-5 pb-5 text-sm text-[#737784] font-medium">Sin gastos registrados en el periodo.</p>
             ) : (
-              <ul className="space-y-3">
-                {report.expensesByCategory.map(cat => (
-                  <li key={cat.category}>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-bold text-[#111c2d]">{cat.category}</span>
-                      <span className="text-sm font-extrabold text-[#ba1a1a]">{money.format(cat.total)}</span>
-                    </div>
-                    <div className="mt-1.5 h-2 rounded-full bg-[#ffdad6]/50 overflow-hidden" aria-hidden="true">
-                      <div
-                        className="h-full rounded-full bg-[#ba1a1a]/70"
-                        style={{
-                          width: `${maxCategoryTotal > 0 ? Math.max(4, (cat.total / maxCategoryTotal) * 100) : 0}%`,
-                        }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[300px]">
+                  <thead>
+                    <tr className="border-y border-[#f0f3ff]">
+                      <SortHeader label="Categoría" sortKey="category" sort={expensesSort} onSort={k => setExpensesSort(s => nextSort(s, k))} padClass="pl-5 pr-3" />
+                      <SortHeader label="Total" sortKey="total" sort={expensesSort} onSort={k => setExpensesSort(s => nextSort(s, k))} align="right" padClass="pl-3 pr-5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f0f3ff]">
+                    {sortedExpenses.map(cat => (
+                      <tr key={cat.category}>
+                        <td className="py-3 pl-5 pr-3">
+                          <span className="block font-bold text-[#111c2d] leading-snug">{cat.category}</span>
+                          <span className="mt-1.5 block h-2 rounded-full bg-[#ffdad6]/50 overflow-hidden" aria-hidden="true">
+                            <span
+                              className="block h-full rounded-full bg-[#ba1a1a]/70"
+                              style={{
+                                width: `${maxCategoryTotal > 0 ? Math.max(4, (cat.total / maxCategoryTotal) * 100) : 0}%`,
+                              }}
+                            />
+                          </span>
+                        </td>
+                        <td className="py-3 pl-3 pr-5 text-right font-extrabold text-[#ba1a1a] tabular-nums whitespace-nowrap align-top">{money.format(cat.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </section>
+          </CollapsibleSection>
 
-          {/* Top products */}
-          <section aria-label="Productos más vendidos del periodo" className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
-            <h2 className="px-5 pt-4 pb-2 text-xs font-black uppercase tracking-wider text-[#00357f]">
-              Productos más vendidos del periodo
-            </h2>
+          {/* Top products — tabla ordenable por columna */}
+          <CollapsibleSection
+            title="Productos más vendidos del periodo"
+            open={openSections.productos}
+            onToggle={() => toggleSection('productos')}
+            ariaLabel="Productos más vendidos del periodo"
+          >
             {report.topProducts.length === 0 ? (
               <p className="px-5 pb-5 text-sm text-[#737784] font-medium">
                 Todavía no hay productos vendidos en este periodo.
               </p>
             ) : (
-              <ul className="divide-y divide-[#f0f3ff]">
-                {report.topProducts.map(product => (
-                  <li key={product.name} className="flex items-center justify-between gap-3 px-5 py-3 min-h-[48px]">
-                    <span className="text-sm font-bold text-[#111c2d]">{product.name}</span>
-                    <span className="text-xs text-[#737784] font-semibold">
-                      {product.units} {product.units === 1 ? 'unidad' : 'unidades'}
-                    </span>
-                    <span className="text-sm font-extrabold text-[#111c2d]">{money.format(product.total)}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm min-w-[320px]">
+                  <thead>
+                    <tr className="border-y border-[#f0f3ff]">
+                      <SortHeader label="Producto" sortKey="name" sort={productsSort} onSort={k => setProductsSort(s => nextSort(s, k))} padClass="pl-5 pr-3" />
+                      <SortHeader label="Unidades" sortKey="units" sort={productsSort} onSort={k => setProductsSort(s => nextSort(s, k))} align="center" />
+                      <SortHeader label="Total" sortKey="total" sort={productsSort} onSort={k => setProductsSort(s => nextSort(s, k))} align="right" padClass="pl-3 pr-5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f0f3ff]">
+                    {sortedProducts.map(product => (
+                      <tr key={product.name}>
+                        <td className="py-3 pl-5 pr-3 font-bold text-[#111c2d] leading-snug">{product.name}</td>
+                        <td className="py-3 px-3 text-center text-xs text-[#737784] font-semibold whitespace-nowrap">
+                          {product.units} {product.units === 1 ? 'unidad' : 'unidades'}
+                        </td>
+                        <td className="py-3 pl-3 pr-5 text-right font-extrabold text-[#111c2d] tabular-nums whitespace-nowrap">{money.format(product.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
-          </section>
+          </CollapsibleSection>
         </>
       )}
     </main>

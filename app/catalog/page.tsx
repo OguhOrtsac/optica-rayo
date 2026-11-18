@@ -3,7 +3,12 @@
 import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { getProducts, getWishlist, toggleWishlistItem, getMemberDiscountPercent, createLensRequest, getAppSetting } from '@/lib/services'
+import { getProducts, getWishlist, toggleWishlistItem, getMemberDiscountPercent, createLensRequest, getAppSetting, getMessageTemplate } from '@/lib/services'
+import {
+  CATALOG_INQUIRY_TEMPLATE_KEY,
+  DEFAULT_CATALOG_INQUIRY_TEMPLATE,
+  buildCatalogInquiryMessage,
+} from '@/lib/message-templates'
 import { getProductLensOptions } from '@/lib/product-lens-options'
 import { uploadPrescriptionFile, attachPrescriptionToRequest, validatePrescriptionFile } from '@/lib/catalog-data'
 import { effectiveClientPrice } from '@/lib/pricing'
@@ -11,7 +16,7 @@ import { getProductDescription, getProductDetails, getProductImageAlt, getProduc
 import { getProfileData } from '@/app/auth/actions'
 import { Database } from '@/types/database.types'
 import useEmblaCarousel from 'embla-carousel-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import {
   SlidersHorizontal,
   Search,
@@ -23,8 +28,6 @@ import {
   Info,
   X,
   Tag,
-  Compass,
-  Percent,
   Heart,
   Eye,
   Activity,
@@ -52,6 +55,7 @@ interface ProfileData {
 function CatalogContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const shouldReduceMotion = useReducedMotion()
 
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
@@ -88,6 +92,7 @@ function CatalogContent() {
   const searchTerm = searchParams.get('search') || ''
   const sortBy = searchParams.get('sort') || 'recommended'
   const onlyPromoFilter = searchParams.get('promo') === 'true'
+  const brandFilter = searchParams.get('brand') || 'all'
   const layoutMode = (searchParams.get('layout') as 'grid' | 'list') || 'grid'
   const [isFiltersOpen, setIsFiltersOpen] = useState(false)
 
@@ -114,6 +119,11 @@ function CatalogContent() {
   // Business WhatsApp number from app_settings ('business_whatsapp').
   // Empty string = not configured = every WhatsApp button stays hidden.
   const [businessWhatsapp, setBusinessWhatsapp] = useState<string>('')
+
+  // Inquiry message template from app_settings ('catalog_inquiry_template',
+  // edited in Configuración → Mensajes); the built-in default is the text
+  // the catalog always used, and it stands until the saved one loads.
+  const [catalogTemplate, setCatalogTemplate] = useState<string>(DEFAULT_CATALOG_INQUIRY_TEMPLATE)
 
   // Units sold per product, from the public aggregate view
   // product_sales_ranking (product + units of REAL sales only, quotes
@@ -144,6 +154,10 @@ function CatalogContent() {
         // Business WhatsApp from editable settings; keep digits only.
         const wa = await getAppSetting('business_whatsapp')
         setBusinessWhatsapp((wa || '').replace(/\D/g, ''))
+
+        // Inquiry message template from the same editable settings.
+        const inquiryTemplate = await getMessageTemplate(CATALOG_INQUIRY_TEMPLATE_KEY)
+        setCatalogTemplate(inquiryTemplate)
 
         // Try to fetch profile
         try {
@@ -223,6 +237,22 @@ function CatalogContent() {
       counts[p.category] = (counts[p.category] || 0) + 1
     })
     return counts
+  }, [products])
+
+  // Brand filter options: the REAL brands present in the loaded
+  // products (details.brand), with their product count, ordered by
+  // count desc and then A–Z. Products without a captured brand never
+  // invent one — they simply don't contribute an option.
+  const brandOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+    products.forEach(p => {
+      const brand = (getProductDetails(p).brand || '').trim()
+      if (!brand) return
+      counts.set(brand, (counts.get(brand) || 0) + 1)
+    })
+    return Array.from(counts.entries())
+      .map(([brand, count]) => ({ brand, count }))
+      .sort((a, b) => b.count - a.count || a.brand.localeCompare(b.brand))
   }, [products])
 
   // Filter products for the Hero Carousel (Promos or Featured with images)
@@ -344,6 +374,11 @@ function CatalogContent() {
       result = result.filter(p => selectedCategories.includes(p.category))
     }
 
+    // 1b. Brand Filter (single brand, from the brand chips row)
+    if (brandFilter !== 'all') {
+      result = result.filter(p => (getProductDetails(p).brand || '').trim() === brandFilter)
+    }
+
     // 2. Max Price Filter
     result = result.filter(p => p.price <= maxPriceFilter)
 
@@ -378,7 +413,7 @@ function CatalogContent() {
     }
 
     return result
-  }, [products, selectedCategories, maxPriceFilter, searchTerm, onlyPromoFilter, faceShapeFilter, sortBy])
+  }, [products, selectedCategories, brandFilter, maxPriceFilter, searchTerm, onlyPromoFilter, faceShapeFilter, sortBy])
 
   // Lens Wizard pricing: frame (with member pricing) + THIS PRODUCT's
   // vision option + the sum of its chosen extras. The options live on the
@@ -453,7 +488,8 @@ function CatalogContent() {
   const getWhatsAppLink = (product: Product): string | null => {
     if (!businessWhatsapp) return null
 
-    const textBase = `Hola Óptica Rayo, estoy interesado en el producto: ${product.name} (Ref: #${product.id.slice(0, 5).toUpperCase()}). `
+    // The graduation/extras segment: it becomes the {detalle} of the
+    // editable inquiry template (empty when nothing was configured).
     let textGraduation = ''
 
     if (product.category === 'frames' && hasGraduation && selectedVision) {
@@ -470,7 +506,11 @@ function CatalogContent() {
       }
     }
 
-    const fullMsg = textBase + textGraduation + '¿Tienen disponibilidad en sucursal?'
+    const fullMsg = buildCatalogInquiryMessage(catalogTemplate, {
+      producto: product.name,
+      referencia: product.id.slice(0, 5).toUpperCase(),
+      detalle: textGraduation,
+    })
     return `https://wa.me/${businessWhatsapp}?text=${encodeURIComponent(fullMsg)}`
   }
 
@@ -572,8 +612,118 @@ function CatalogContent() {
     }).format(price)
   }
 
+  // ——— Compact card system (redesign 2026-11-18) ———
+  // ONE badge per card, by priority: Agotado (state) → Promo → Más
+  // vendido (real sales ranking) → Nuevo (featured) → Quedan N (stock
+  // 1–3). No pulsing, no invented data (no stars, no reviews).
+  const getCardBadge = (p: Product): { label: string; className: string } | null => {
+    if (p.stock === 0) return { label: 'Agotado', className: 'bg-[#ffdad6] text-[#ba1a1a]' }
+    if (p.is_promo) return { label: 'Promo', className: 'bg-[#e2f9ee] text-[#00422b]' }
+    if ((soldUnits[p.id] || 0) > 0) return { label: 'Más vendido', className: 'bg-[#fef3c7] text-[#92400e]' }
+    if (p.is_featured) return { label: 'Nuevo', className: 'bg-[#dee8ff] text-[#00357f]' }
+    if (p.stock >= 1 && p.stock <= 3) return { label: `Quedan ${p.stock}`, className: 'bg-[#ffdad6] text-[#ba1a1a]' }
+    return null
+  }
+
+  const renderBadge = (p: Product, compact = false) => {
+    const badge = getCardBadge(p)
+    if (!badge) return null
+    return (
+      <span className={`absolute ${compact ? 'left-1 top-1 px-1.5' : 'left-2 top-2 px-2'} z-20 flex h-5 items-center rounded-full text-[10px] font-semibold ${badge.className}`}>
+        {badge.label}
+      </span>
+    )
+  }
+
+  // The compact card face shared by the grid and the «Más vendidos»
+  // carousel: floating photo on a flat field (no inner border, no
+  // gradient), brand eyebrow ABOVE the name, name 13px, color·material
+  // 11px, price 16px as the protagonist. No «Ver» button — the whole
+  // card is the action. Built with spans so it is valid inside both a
+  // <div> (grid) and a <button> (carousel). `overlay` lets the grid
+  // float its wishlist heart over the photo.
+  const renderCardFace = (p: Product, overlay?: React.ReactNode) => {
+    const details = getProductDetails(p)
+    const images = getProductImages(p)
+    const soldOut = p.stock === 0
+    const colorMaterial = [details.color, details.material].filter(Boolean).join(' · ')
+    const discounted = isClient && priceOf(p) < p.price
+    return (
+      <>
+        <span className="relative block aspect-[3/2] w-full shrink-0 overflow-hidden rounded-[14px] bg-[#f8faff]">
+          {images.length > 0 ? (
+            <img
+              src={images[0]}
+              alt={getProductImageAlt(p)}
+              loading="lazy"
+              className={`h-full w-full object-contain p-3 transition duration-[250ms] ease-out group-hover:scale-[1.05] group-active:scale-[1.03] ${soldOut ? 'opacity-60 grayscale' : ''}`}
+            />
+          ) : (
+            <span className={`flex h-full w-full items-center justify-center text-[#00357f]/30 ${soldOut ? 'opacity-60 grayscale' : ''}`}>
+              <Eye className="h-9 w-9 stroke-[1.5]" />
+            </span>
+          )}
+          {renderBadge(p)}
+          {overlay}
+          <span className="pointer-events-none absolute bottom-2 left-1/2 hidden -translate-x-1/2 translate-y-1 rounded-full bg-[#00357f]/90 px-3 py-1.5 text-[11px] font-semibold whitespace-nowrap text-white opacity-0 transition duration-200 group-hover:translate-y-0 group-hover:opacity-100 sm:block">
+            Cotizar
+          </span>
+        </span>
+        <span className="block min-w-0 flex-1 px-0.5 pt-2.5">
+          {details.brand && (
+            <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-[#00509e] transition-colors group-hover:text-[#00357f]">
+              {details.brand}
+            </span>
+          )}
+          <span className="mt-0.5 block text-[13px] leading-[1.25] font-semibold text-[#111c2d] line-clamp-2 transition-colors group-hover:text-[#00357f] sm:text-sm">
+            {p.name}
+          </span>
+          {colorMaterial && (
+            <span className="mt-0.5 block truncate text-[11px] text-[#5d606f]">{colorMaterial}</span>
+          )}
+          <span className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5">
+            <span className="text-base font-extrabold text-[#00357f] tabular-nums">{formatPrice(priceOf(p))}</span>
+            {discounted && (
+              <>
+                <span className="text-[11px] text-[#737784] line-through tabular-nums">{formatPrice(p.price)}</span>
+                <span className="rounded-full bg-[#e2f9ee] px-1.5 py-px text-[10px] font-semibold text-[#00422b]">
+                  -{Math.round((1 - priceOf(p) / p.price) * 100)}%
+                </span>
+              </>
+            )}
+          </span>
+        </span>
+      </>
+    )
+  }
+
+  // Removable chips for every active filter (Baymard pattern): the
+  // visitor always sees WHAT is filtering the grid and can undo each
+  // filter in place.
+  const categoryLabel = (value: string) => categories.find(c => c.value === value)?.label || value
+  const activeChips: { key: string; label: string; clear: () => void }[] = []
+  if (searchTerm.trim() !== '') {
+    activeChips.push({ key: 'search', label: `Búsqueda: «${searchTerm.trim()}»`, clear: () => updateFilter('search', null) })
+  }
+  selectedCategories.forEach(c => {
+    activeChips.push({ key: `cat-${c}`, label: categoryLabel(c), clear: () => toggleCategoryFilter(c) })
+  })
+  if (brandFilter !== 'all') {
+    activeChips.push({ key: 'brand', label: `Marca: ${brandFilter}`, clear: () => updateFilter('brand', null) })
+  }
+  if (faceShapeFilter !== 'all') {
+    const shapeLabel = faceShapes.find(s => s.value === faceShapeFilter)?.label || faceShapeFilter
+    activeChips.push({ key: 'face', label: `Rostro: ${shapeLabel}`, clear: () => updateFilter('faceShape', null) })
+  }
+  if (searchParams.get('price')) {
+    activeChips.push({ key: 'price', label: `Hasta ${formatPrice(maxPriceFilter)}`, clear: () => updateFilter('price', null) })
+  }
+  if (onlyPromoFilter) {
+    activeChips.push({ key: 'promo', label: 'Solo promociones', clear: () => updateFilter('promo', null) })
+  }
+
   return (
-    <main className="min-h-screen text-[#111c2d] px-4 py-4 sm:p-6 md:p-8 space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
+    <main className="min-h-screen text-[#111c2d] px-4 py-4 sm:p-6 md:p-8 space-y-6 max-w-[1280px] mx-auto pb-24 md:pb-8 text-left">
       <style>{`
         @keyframes gradient-x {
           0%, 100% { background-position: 0% 50%; }
@@ -644,63 +794,14 @@ function CatalogContent() {
           <div className="overflow-hidden" ref={emblaRef}>
             <div className="flex">
               {carouselProducts.map((p) => (
-                <div key={p.id} className="flex-[0_0_86%] min-[420px]:flex-[0_0_64%] sm:flex-[0_0_47%] lg:flex-[0_0_32%] min-w-0 pr-3">
+                <div key={p.id} className="flex-[0_0_72%] min-[420px]:flex-[0_0_44%] sm:flex-[0_0_31%] lg:flex-[0_0_23%] min-w-0 pr-3">
                   <button
                     type="button"
                     onClick={() => handleOpenDetailModal(p)}
                     aria-label={`Ver ${p.name}`}
-                    className="group flex h-full w-full flex-col overflow-hidden rounded-[20px] border border-[#cbd5e1] bg-white text-left shadow-[0_8px_24px_-12px_rgba(0,53,127,0.25)] transition duration-300 hover:border-[#00357f]/35 hover:shadow-[0_20px_40px_-16px_rgba(0,53,127,0.4)] active:scale-[0.99] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                    className="group or-shadow-card flex h-full w-full flex-col rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3"
                   >
-                    <span className="relative block h-44 w-full shrink-0 overflow-hidden bg-gradient-to-br from-white via-[#eef4ff] to-[#dee8ff] sm:h-52">
-                      {getProductImages(p).length > 0 ? (
-                        <img
-                          src={getProductImages(p)[0]}
-                          alt={getProductImageAlt(p)}
-                          className="h-full w-full object-contain p-4 transition duration-500 group-hover:scale-[1.05]"
-                        />
-                      ) : (
-                        <span className="flex h-full w-full items-center justify-center text-[#00357f]/30">
-                          <Eye className="w-10 h-10 stroke-[1.5]" />
-                        </span>
-                      )}
-                      {p.is_promo && (
-                        <span className="anim-pulse-soft absolute left-2 top-2 flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-500 to-[#2fbf71] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow">
-                          <Tag className="w-2.5 h-2.5" /> Promo
-                        </span>
-                      )}
-                    </span>
-
-                    <span aria-hidden="true" className="block h-1.5 w-full shrink-0 bg-gradient-to-r from-[#00357f] to-[#00509e]" />
-
-                    <span className="block min-w-0 flex-1 space-y-2 p-4">
-                      <span className="flex items-center gap-2">
-                        <span className="rounded-full bg-[#dee8ff] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#00357f]">
-                          {p.category === 'frames' ? 'Armazón' : 'Solar'}
-                        </span>
-                        {p.is_featured && (
-                          <span className="flex items-center gap-1 rounded-full bg-[#ffdad6] px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#ba1a1a]">
-                            <Percent className="w-2.5 h-2.5" /> Especial
-                          </span>
-                        )}
-                      </span>
-                      <span className="block text-base font-extrabold leading-snug text-[#111c2d] line-clamp-2">
-                        {p.name}
-                      </span>
-                      <span className="block">
-                        <span className="block text-[10px] font-bold uppercase tracking-wider text-[#737784]">
-                          {isClient && priceOf(p) < p.price ? 'Precio cliente' : 'Precio'}
-                        </span>
-                        <span className="block text-2xl font-black leading-tight text-[#00357f] tabular-nums">{formatPrice(priceOf(p))}</span>
-                        {isClient && priceOf(p) < p.price && (
-                          <span className="mt-1 flex items-center gap-2 text-[11px] text-[#737784] tabular-nums">
-                            <span className="line-through">{formatPrice(p.price)}</span>
-                            <span className="rounded-full bg-[#49da9f]/20 px-1.5 py-px font-black text-[#00422b]">
-                              -{Math.round((1 - priceOf(p) / p.price) * 100)}%
-                            </span>
-                          </span>
-                        )}
-                      </span>
-                    </span>
+                    {renderCardFace(p)}
                   </button>
                 </div>
               ))}
@@ -746,7 +847,7 @@ function CatalogContent() {
           mobile it stays short (small padding, normal-size headline) so it
           gives color without becoming the giant box the owner rejected;
           on desktop it simply grows taller. */}
-      <section className="anim-fade-up relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-4 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.45)] sm:px-6 md:px-8 md:py-9">
+      <section className="anim-fade-up relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#00357f] via-[#00509e] to-[#00668a] px-4 py-3 shadow-[0_16px_36px_-16px_rgba(0,53,127,0.45)] sm:px-6 md:px-8 md:py-6">
         {/* Decorative light glows (desktop band only) */}
         <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-10 hidden md:block w-56 h-56 rounded-full bg-white/10 blur-2xl" />
         <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 left-1/3 hidden md:block w-64 h-64 rounded-full bg-[#49da9f]/20 blur-3xl" />
@@ -755,10 +856,10 @@ function CatalogContent() {
           <p className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-white/15 text-white border border-white/20 rounded-full px-3 py-1">
             <Sparkles className="w-3.5 h-3.5" /> Óptica Rayo · Catálogo en línea
           </p>
-          <h1 className="text-2xl sm:text-3xl md:text-[2.75rem] font-black tracking-tight leading-[1.05] text-white text-balance">
+          <h1 className="text-[22px] md:text-[28px] font-black tracking-tight leading-[1.1] text-white text-balance">
             Ve el mundo con claridad
           </h1>
-          <p className="text-xs sm:text-sm md:text-base text-white/85 font-medium leading-relaxed max-w-xl">
+          <p className="text-[13px] md:text-base text-white/85 font-medium leading-relaxed max-w-xl line-clamp-1 md:line-clamp-none">
             Encuentra tus armazones favoritos y cotiza tus micas con nuestro asistente digital: precios claros y modelos para cada rostro.
           </p>
 
@@ -774,8 +875,12 @@ function CatalogContent() {
         </div>
       </section>
 
+      {/* Sticky filter deck: categories + brand chips travel together
+          under the site nav while scrolling — one deck, no extra
+          floating bar competing with the search field. */}
+      <div className="anim-fade-up sticky top-[65px] md:top-16 z-30 -mx-4 px-4 py-2 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 bg-[#e9f0fd]/90 backdrop-blur-md space-y-2">
       {/* Quick category pills: icon + count, same multi-select filter as the panel */}
-      <div className="anim-fade-up flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:flex-wrap sm:overflow-visible" role="group" aria-label="Categorías del catálogo">
+      <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible" role="group" aria-label="Categorías del catálogo">
         {categories.map(cat => {
           const Icon = cat.icon
           const isSelected = cat.value === 'all'
@@ -804,6 +909,54 @@ function CatalogContent() {
             </button>
           )
         })}
+      </div>
+
+      {/* Brand filter: its own chip row under the categories. Single
+          selection («Todas» or one brand), written to ?brand= and
+          combined with AND logic against every other filter. Only
+          rendered when the catalog really carries 2+ brands. */}
+      {brandOptions.length >= 2 && (
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 text-[11px] font-semibold text-[#434653]">Marca</span>
+          <div className="relative min-w-0 flex-1">
+            <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filtrar por marca">
+              <button
+                type="button"
+                onClick={() => updateFilter('brand', null)}
+                aria-pressed={brandFilter === 'all'}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-4 text-xs font-semibold min-h-[44px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
+                  brandFilter === 'all'
+                    ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
+                    : 'bg-white border-[#e7eeff] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f]'
+                }`}
+              >
+                <span>Todas</span>
+                <span className={`text-[10px] ${brandFilter === 'all' ? 'text-white/70' : 'text-[#737784]'}`}>{products.length}</span>
+              </button>
+              {brandOptions.map(({ brand, count }) => {
+                const isActive = brandFilter === brand
+                return (
+                  <button
+                    key={brand}
+                    type="button"
+                    onClick={() => updateFilter('brand', isActive ? null : brand)}
+                    aria-pressed={isActive}
+                    className={`flex shrink-0 items-center gap-1.5 rounded-full border px-4 text-xs font-semibold min-h-[44px] transition-all duration-200 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] focus-visible:ring-offset-2 focus-visible:ring-offset-[#edf1fa] ${
+                      isActive
+                        ? 'bg-[#00357f] border-[#00357f] text-white shadow-md shadow-[#00357f]/25'
+                        : 'bg-white border-[#e7eeff] text-[#434653] hover:border-[#00357f]/50 hover:text-[#00357f]'
+                    }`}
+                  >
+                    <span>{brand}</span>
+                    <span className={`text-[10px] ${isActive ? 'text-white/70' : 'text-[#737784]'}`}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[#e9f0fd] to-transparent" />
+          </div>
+        </div>
+      )}
       </div>
 
       {/* Member pricing banner */}
@@ -1025,21 +1178,47 @@ function CatalogContent() {
             </div>
           </div>
 
+          {/* Active filter chips: every applied filter, removable in
+              place, with a clear-all shortcut. */}
+          {activeChips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold text-[#434653]">Filtros activos:</span>
+              {activeChips.map(chip => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={chip.clear}
+                  aria-label={`Quitar filtro: ${chip.label}`}
+                  className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-full bg-[#dee8ff] px-3.5 text-xs font-semibold text-[#00357f] transition hover:bg-[#c9d8ff] active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+                >
+                  {chip.label}
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="min-h-[44px] cursor-pointer rounded-full px-2 text-xs font-bold text-[#00357f] underline-offset-2 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
+              >
+                Limpiar todo
+              </button>
+            </div>
+          )}
+
           {/* Results display */}
           {loading ? (
             <div
-              className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
+              className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-4 lg:gap-5"
               role="status"
               aria-label="Cargando catálogo"
             >
               {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="rounded-[20px] border border-[#cbd5e1]/60 bg-white p-3 sm:p-4 space-y-3 shadow-[0_8px_24px_-12px_rgba(0,53,127,0.18)]">
-                  <div className="skeleton-shimmer w-full aspect-[4/3] rounded-[16px]" />
-                  <div className="skeleton-shimmer h-3 rounded-full w-2/3" />
-                  <div className="skeleton-shimmer h-3 rounded-full w-1/2" />
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="skeleton-shimmer h-4 rounded-full w-1/3" />
-                    <div className="skeleton-shimmer h-8 rounded-xl w-14" />
+                <div key={i} className="or-shadow-card rounded-[20px] bg-white p-2.5 sm:p-3">
+                  <div className="skeleton-shimmer w-full aspect-[3/2] rounded-[14px]" />
+                  <div className="space-y-2 px-0.5 pt-2.5">
+                    <div className="skeleton-shimmer h-2.5 rounded-full w-1/3" />
+                    <div className="skeleton-shimmer h-3 rounded-full w-2/3" />
+                    <div className="skeleton-shimmer h-4 rounded-full w-1/2" />
                   </div>
                 </div>
               ))}
@@ -1062,138 +1241,114 @@ function CatalogContent() {
               layout
               className={
                 layoutMode === 'grid'
-                  ? "grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
-                  : "flex flex-col gap-4"
+                  ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-4 lg:gap-5"
+                  : "flex flex-col gap-3"
               }
             >
               <AnimatePresence mode="popLayout">
                 {processedProducts.map((p, index) => {
                   const isFaved = wishlist.includes(p.id)
-                  const isCriticalStock = p.stock <= 3 && p.stock > 0
+                  const details = getProductDetails(p)
+                  const images = getProductImages(p)
+                  const soldOut = p.stock === 0
+                  const discounted = isClient && priceOf(p) < p.price
+                  const enterStyle = { '--enter-delay': `${Math.min(index, 7) * 30}ms` } as React.CSSProperties
+
+                  // Wishlist heart: 36px visual inside a 44px touch
+                  // target; the icon pops with a spring when faved.
+                  const heartButton = (
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleWishlist(p.id, e)}
+                      aria-label={isFaved ? `Quitar ${p.name} de favoritos` : `Añadir ${p.name} a favoritos`}
+                      title={isFaved ? 'Quitar de favoritos' : 'Añadir a favoritos'}
+                      className="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow-sm">
+                        <motion.span
+                          key={isFaved ? 'fav' : 'plain'}
+                          initial={{ scale: isFaved ? 0.6 : 1 }}
+                          animate={{ scale: 1 }}
+                          transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                          className="flex"
+                        >
+                          <Heart className={`h-4 w-4 ${isFaved ? 'fill-rose-500 text-rose-500' : 'text-[#737784]'}`} />
+                        </motion.span>
+                      </span>
+                    </button>
+                  )
+
+                  if (layoutMode === 'list') {
+                    const colorMaterial = [details.color, details.material].filter(Boolean).join(' · ')
+                    return (
+                      <motion.div
+                        layout
+                        exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
+                        transition={{ duration: 0.25 }}
+                        key={p.id}
+                        onClick={() => handleOpenDetailModal(p)}
+                        style={enterStyle}
+                        className="anim-stagger-item or-shadow-card group relative flex cursor-pointer items-center gap-3 rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3"
+                      >
+                        <span className="relative block h-[72px] w-[72px] shrink-0 overflow-hidden rounded-[14px] bg-[#f8faff]">
+                          {images.length > 0 ? (
+                            <img
+                              src={images[0]}
+                              alt={getProductImageAlt(p)}
+                              loading="lazy"
+                              className={`h-full w-full object-contain p-1.5 transition duration-[250ms] ease-out group-hover:scale-[1.05] group-active:scale-[1.03] ${soldOut ? 'opacity-60 grayscale' : ''}`}
+                            />
+                          ) : (
+                            <span className={`flex h-full w-full items-center justify-center text-[#00357f]/30 ${soldOut ? 'opacity-60 grayscale' : ''}`}>
+                              <Eye className="h-6 w-6 stroke-[1.5]" />
+                            </span>
+                          )}
+                          {renderBadge(p, true)}
+                        </span>
+                        <span className="block min-w-0 flex-1">
+                          {details.brand && (
+                            <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-[#00509e] transition-colors group-hover:text-[#00357f]">
+                              {details.brand}
+                            </span>
+                          )}
+                          <span className="mt-0.5 block text-[13px] leading-[1.25] font-semibold text-[#111c2d] line-clamp-2 transition-colors group-hover:text-[#00357f]">
+                            {p.name}
+                          </span>
+                          {colorMaterial && (
+                            <span className="mt-0.5 block truncate text-[11px] text-[#5d606f]">{colorMaterial}</span>
+                          )}
+                        </span>
+                        <span className="block shrink-0 text-right">
+                          <span className="block text-[15px] font-extrabold text-[#00357f] tabular-nums">{formatPrice(priceOf(p))}</span>
+                          {discounted && (
+                            <span className="mt-0.5 flex items-center justify-end gap-1.5">
+                              <span className="text-[11px] text-[#737784] line-through tabular-nums">{formatPrice(p.price)}</span>
+                              <span className="rounded-full bg-[#e2f9ee] px-1.5 py-px text-[10px] font-semibold text-[#00422b]">
+                                -{Math.round((1 - priceOf(p) / p.price) * 100)}%
+                              </span>
+                            </span>
+                          )}
+                        </span>
+                        {heartButton}
+                      </motion.div>
+                    )
+                  }
+
                   return (
                     <motion.div
                       layout
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.3 }}
+                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.18 } }}
+                      transition={{ duration: 0.25 }}
                       key={p.id}
                       onClick={() => handleOpenDetailModal(p)}
-                      style={{ '--enter-delay': `${Math.min(index, 11) * 45}ms` } as React.CSSProperties}
-                      className={`anim-stagger-item cursor-pointer bg-white border border-[#cbd5e1] rounded-[20px] p-4 flex flex-col justify-between gap-4 transition-all duration-300 shadow-[0_8px_24px_-12px_rgba(0,53,127,0.18)] hover:-translate-y-1 hover:border-[#00357f]/35 hover:shadow-[0_20px_40px_-16px_rgba(0,53,127,0.4)] group relative overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
-                        layoutMode === 'list' ? 'sm:flex-row sm:items-center' : ''
-                      }`}
+                      style={enterStyle}
+                      className="anim-stagger-item or-shadow-card group relative flex cursor-pointer flex-col rounded-[20px] bg-white p-2.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_2px_6px_rgba(0,53,127,0.06),0_20px_44px_-18px_rgba(0,53,127,0.3)] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] sm:p-3"
                     >
-                      {/* Wishlist Heart */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleWishlist(p.id, e)}
-                        className="absolute top-2.5 right-2.5 z-30 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-white/95 border border-[#cbd5e1] text-[#737784] hover:text-rose-600 hover:shadow-[0_0_0_5px_rgba(244,63,94,0.10)] transition active:scale-90 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-                        title={isFaved ? 'Quitar de favoritos' : 'Añadir a favoritos'}
-                      >
-                        <Heart className={`w-4 h-4 ${isFaved ? 'fill-rose-500 text-rose-500' : 'text-[#737784]'}`} />
-                      </button>
-
-                      {/* Scarcity Trigger */}
-                      {isCriticalStock && (
-                        <div className="absolute top-3 left-3 z-20 bg-[#ffdad6] text-[#ba1a1a] text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-[#ffdad6] animate-pulse">
-                          {p.stock} pz!
-                        </div>
-                      )}
-
-                      {/* Promotion ribbon */}
-                      {p.is_promo && !isCriticalStock && (
-                        <div className="anim-pulse-soft absolute top-3 left-3 z-20 flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-[#2fbf71] text-white text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-md shadow-emerald-500/30">
-                          <Tag className="w-2.5 h-2.5" /> Promo
-                        </div>
-                      )}
-
-                      <div className={`space-y-3 ${layoutMode === 'list' ? 'flex flex-row items-center gap-4 w-full sm:w-auto' : ''}`}>
-                        {/* Image Box */}
-                        {getProductImages(p).length > 0 ? (
-                          <div className={`rounded-[16px] overflow-hidden bg-gradient-to-br from-white via-[#eef4ff] to-[#dee8ff]/70 border border-[#cbd5e1]/40 shrink-0 relative ${
-                            layoutMode === 'list' ? 'w-20 h-20 sm:w-24 sm:h-24' : 'w-full aspect-[4/3]'
-                          }`}>
-                            <img
-                              src={getProductImages(p)[0]}
-                              alt={getProductImageAlt(p)}
-                              loading="lazy"
-                              className="w-full h-full object-contain p-2.5 transition duration-500 group-hover:scale-[1.07] group-active:scale-[1.07] group-hover:brightness-105"
-                            />
-                            <div className="absolute inset-0 bg-[#00357f]/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                              <span className="text-[9px] font-bold uppercase tracking-wider text-white bg-[#00357f]/90 px-2.5 py-1 rounded shadow-sm">
-                                Cotizar
-                              </span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className={`rounded-[16px] bg-[#eef4ff] border border-[#cbd5e1]/40 shrink-0 flex items-center justify-center text-[#737784] relative ${
-                            layoutMode === 'list' ? 'w-16 h-16 sm:w-20 sm:h-20' : 'w-full h-32 sm:h-36'
-                          }`}>
-                            <Compass className="w-8 h-8 opacity-40 group-hover:scale-110 transition-transform" />
-                          </div>
-                        )}
-
-                        <div className="space-y-2 min-w-0 text-left">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[8px] font-black uppercase text-[#00668a] tracking-wider">
-                              {p.category === 'frames' && 'Armazón'}
-                              {p.category === 'lenses' && 'Mica'}
-                              {p.category === 'contact_lenses' && 'Contacto'}
-                              {p.category === 'accessories' && 'Accesorio'}
-                            </span>
-
-                            <span className={`text-[8px] font-bold uppercase px-1 rounded ${
-                              p.stock === 0 ? 'bg-[#ffdad6] text-[#ba1a1a]' :
-                              p.stock < 5 ? 'bg-amber-50 text-amber-600 border border-amber-200' :
-                              'bg-[#49da9f]/20 text-[#00422b]'
-                            }`}>
-                              {p.stock === 0 ? 'Agotado' : p.stock < 5 ? `Últimas ${p.stock}` : 'Disponible'}
-                            </span>
-                          </div>
-
-                          <h3 className="font-bold text-sm text-[#111c2d] group-hover:text-[#00357f] transition-colors line-clamp-2 max-w-full leading-snug">
-                            {p.name}
-                          </h3>
-                          {getProductDetails(p).brand && (
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#737784]">{getProductDetails(p).brand}</p>
-                          )}
-
-                          {layoutMode === 'grid' && (
-                            <p className="text-[11px] sm:text-[10px] text-[#737784] line-clamp-2 leading-relaxed font-medium">
-                              {getProductDescription(p) || 'Armazón oftálmico premium, compatible con graduación.'}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Pricing & Call to Actions — the price leads the card */}
-                      <div className={`border-t border-[#cbd5e1]/30 pt-3 flex items-center justify-between gap-2 w-full ${
-                        layoutMode === 'list' ? 'sm:border-t-0 sm:pt-0 sm:w-auto' : ''
-                      }`}>
-                        <div className={`min-w-0 ${layoutMode === 'list' ? 'sm:text-right' : ''}`}>
-                          <p className="text-[8px] text-[#737784] uppercase tracking-widest font-bold">
-                            {isClient && priceOf(p) < p.price ? 'Precio cliente' : 'Precio sugerido'}
-                          </p>
-                          <p className="font-black text-[#00357f] text-lg leading-tight tabular-nums">{formatPrice(priceOf(p))}</p>
-                          {isClient && priceOf(p) < p.price && (
-                            <p className="flex items-center gap-1.5 text-[9px] text-[#737784] tabular-nums">
-                              <span className="line-through">{formatPrice(p.price)}</span>
-                              <span className="bg-[#49da9f]/20 text-[#00422b] font-black px-1.5 py-px rounded-full">
-                                -{Math.round((1 - priceOf(p) / p.price) * 100)}%
-                              </span>
-                            </p>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleOpenDetailModal(p); }}
-                          className="flex min-h-11 items-center justify-center gap-1.5 bg-[#dee8ff] hover:bg-[#c9d8ff] text-[#00357f] font-bold text-[11px] px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Ver</span>
-                        </button>
-                      </div>
-
+                      {renderCardFace(p, (
+                        <span className="absolute top-1.5 right-1.5 z-30">
+                          {heartButton}
+                        </span>
+                      ))}
                     </motion.div>
                   )
                 })}
@@ -1212,10 +1367,10 @@ function CatalogContent() {
         {selectedProduct && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/35 backdrop-blur-sm">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.25 }}
+              initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 28, scale: 0.97 }}
+              animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+              exit={shouldReduceMotion ? { opacity: 0, transition: { duration: 0.15 } } : { opacity: 0, y: 8, scale: 0.98, transition: { duration: 0.18 } }}
+              transition={{ duration: 0.24, ease: 'easeOut' }}
               className="w-full max-w-lg bg-white border border-[#cbd5e1] rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[94dvh] sm:max-h-[90vh] relative"
             >
               {/* Close trigger */}
@@ -1238,7 +1393,11 @@ function CatalogContent() {
               {getProductImages(selectedProduct).length > 0 && (selectedProduct.category !== 'frames' || wizardStep === 1) && (
                 <div className="space-y-2">
                   <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-2xl border border-[#cbd5e1]/50 bg-gradient-to-br from-white to-[#eef4ff] p-3 shadow-inner">
-                    <img
+                    <motion.img
+                      key={selectedImageIndex}
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.25, ease: 'easeOut' }}
                       src={getProductImages(selectedProduct)[Math.min(selectedImageIndex, getProductImages(selectedProduct).length - 1)]}
                       alt={getProductImageAlt(selectedProduct)}
                       className="h-full w-full object-contain"

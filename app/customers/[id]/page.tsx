@@ -3,9 +3,14 @@
 import * as React from 'react'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, type ReminderConfig } from '@/lib/services'
-import { registerInstallmentPaymentAction } from '@/app/customers/actions'
+import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, getMessageTemplate, type ReminderConfig } from '@/lib/services'
+import { registerInstallmentPaymentAction, registerSaleBalancePaymentAction } from '@/app/customers/actions'
 import { buildReminderMessage } from '@/lib/reminder-config'
+import {
+  PAYMENT_REMINDER_TEMPLATE_KEY,
+  DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+  buildPaymentReminderMessage,
+} from '@/lib/message-templates'
 import { 
   ArrowLeft, 
   User, 
@@ -126,6 +131,104 @@ function InstallmentPayForm({ installment, formatPrice, onDone }: {
   )
 }
 
+// Formulario en línea de abono para una venta con saldo pendiente SIN
+// cuotas — el caso del anticipo parcial del POS: la venta quedó con
+// pending_balance pero sin plan a plazos, y hasta ahora ese adeudo no
+// se podía cobrar desde la app. Mismo formato que el de cuotas (monto +
+// método; la fecha la sella la acción compartida al liquidar), pero
+// llama a registerSaleBalancePaymentAction, que genera la cuota espejo
+// del saldo y aplica el abono con la acción de siempre. Al terminar, el
+// padre recarga y la venta pasa a la lista de cuotas.
+function SaleBalancePayForm({ sale, formatPrice, onDone }: {
+  sale: any
+  formatPrice: (n: number) => string
+  onDone: () => void
+}) {
+  const saldo = Math.max(Number(sale.pending_balance || 0), 0)
+  const [amount, setAmount] = useState<string>(saldo ? saldo.toString() : '')
+  const [method, setMethod] = useState<'cash' | 'card' | 'transfer'>('cash')
+  const [submitting, setSubmitting] = useState(false)
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (submitting) return
+    const val = parseFloat(amount)
+    if (isNaN(val) || val <= 0) {
+      setFeedback({ type: 'error', text: 'Introduce un monto de abono válido.' })
+      return
+    }
+    try {
+      setSubmitting(true)
+      setFeedback(null)
+      const result = await registerSaleBalancePaymentAction(sale.id, val, method)
+      if (result.error) {
+        setFeedback({ type: 'error', text: result.error })
+      } else {
+        setFeedback({ type: 'success', text: result.success || '¡Abono registrado correctamente!' })
+        onDone()
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Error al procesar el abono.' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-[#cbd5e1]/40 pt-3">
+      {feedback && (
+        <div className={`mb-2 p-2 rounded-lg text-[11px] font-bold border ${
+          feedback.type === 'success'
+            ? 'bg-[#e2f9ee] border-[#49da9f]/40 text-[#00422b]'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-600'
+        }`}>
+          {feedback.text}
+        </div>
+      )}
+      <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-2">
+        <div className="flex-1 min-w-[110px]">
+          <label className="block text-[9px] font-bold text-[#434653] uppercase mb-1">
+            Registrar abono (saldo {formatPrice(saldo)})
+          </label>
+          <div className="relative">
+            <DollarSign className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#737784]" />
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg pl-8 pr-2 py-2 text-xs font-bold text-[#111c2d] outline-none focus:border-[#00357f]"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-[9px] font-bold text-[#434653] uppercase mb-1">Método</label>
+          <select
+            value={method}
+            onChange={e => setMethod(e.target.value as any)}
+            className="bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg p-2 text-xs font-semibold outline-none focus:border-[#00357f]"
+          >
+            <option value="cash">Efectivo</option>
+            <option value="card">Tarjeta</option>
+            <option value="transfer">Transferencia</option>
+          </select>
+        </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="py-2 px-3.5 bg-[#00357f] hover:bg-[#004aad] text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+        >
+          {submitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+          Confirmar
+        </button>
+      </form>
+    </div>
+  )
+}
+
 export default function CustomerDetailPage({ params }: PageProps) {
   const { id: customerId } = React.use(params)
 
@@ -137,9 +240,14 @@ export default function CustomerDetailPage({ params }: PageProps) {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'profile' | 'exams' | 'sales' | 'billing'>('profile')
   const [reminderCfg, setReminderCfg] = useState<ReminderConfig | null>(null)
+  // Plantilla del recordatorio de cobranza (fuente única en app_settings,
+  // editable en Configuración → Mensajes); el texto de siempre es el
+  // respaldo mientras carga o si la lectura falla.
+  const [paymentTemplate, setPaymentTemplate] = useState<string>(DEFAULT_PAYMENT_REMINDER_TEMPLATE)
 
   useEffect(() => {
     getReminderConfig().then(setReminderCfg).catch(() => setReminderCfg(null))
+    getMessageTemplate(PAYMENT_REMINDER_TEMPLATE_KEY).then(setPaymentTemplate).catch(() => {})
   }, [])
 
   // El ancla #cobranza (p. ej. desde la página de pagos) abre la ficha
@@ -310,12 +418,9 @@ export default function CustomerDetailPage({ params }: PageProps) {
   const cp = customer.customer_profiles || {}
   const age = calculateAge(cp.date_of_birth)
 
-  // Calculations for total debt
-  const totalPending = sales.reduce((sum, s) => sum + (s.pending_balance || 0), 0)
-
   // Resumen de cobranza: saldo pendiente según las cuotas (saldo por cuota =
-  // monto − abonado), cuántas ventas lo reparten y el próximo vencimiento.
-  // Si no hubiera cuotas pero la venta marcara saldo, manda el total de ventas.
+  // monto − abonado) MÁS el saldo de las ventas sin cuotas (anticipo del
+  // POS), cuántas ventas lo reparten y el próximo vencimiento.
   const billing = (() => {
     const pending = installments
       .filter((i: any) => i.status === 'pending')
@@ -323,16 +428,25 @@ export default function CustomerDetailPage({ params }: PageProps) {
     const fromInstallments = pending.reduce(
       (acc: number, i: any) => acc + Math.max(Number(i.amount || 0) - Number(i.amount_paid || 0), 0), 0)
     const salesWithInstallments = sales.filter((s: any) => installments.some((i: any) => i.sale_id === s.id))
+    // Ventas con saldo pero SIN cuotas (anticipo parcial del POS): su
+    // adeudo vive solo en pending_balance y también es cobrable. Cada
+    // venta cae en un solo grupo (con cuotas o sin cuotas), así que el
+    // total pendiente suma ambas fuentes sin duplicar.
+    const salesWithoutInstallments = sales.filter(
+      (s: any) => Number(s.pending_balance || 0) > 0 && !installments.some((i: any) => i.sale_id === s.id))
+    const fromLooseBalances = salesWithoutInstallments.reduce(
+      (acc: number, s: any) => acc + Number(s.pending_balance || 0), 0)
     const salesWithPending = new Set(pending.map((i: any) => i.sale_id))
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const next = pending[0] || null
     return {
       pending,
-      pendingTotal: installments.length > 0 ? fromInstallments : totalPending,
+      pendingTotal: fromInstallments + fromLooseBalances,
       pendingCount: pending.length,
       pendingSalesCount: salesWithPending.size,
       salesWithInstallments,
+      salesWithoutInstallments,
       nextDue: next ? next.due_date : null,
       nextOverdue: next ? parseLocalDate(next.due_date) < today : false,
     }
@@ -592,7 +706,10 @@ export default function CustomerDetailPage({ params }: PageProps) {
                         onClick={() => {
                           const cleanPhone = cp.phone.replace(/[^\d]/g, '')
                           const phoneWithCode = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone
-                          const message = `Hola ${customer.full_name}, te saludamos de Óptica Rayo. Te recordamos cordialmente que cuentas con un saldo pendiente de ${formatPrice(billing.pendingTotal)} MXN de tu compra. Puedes pasar a liquidarlo a sucursal o realizar una transferencia bancaria. ¡Muchas gracias por tu preferencia!`
+                          const message = buildPaymentReminderMessage(paymentTemplate, {
+                            nombre: customer.full_name,
+                            saldo: formatPrice(billing.pendingTotal),
+                          })
                           window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(message)}`, '_blank')
                         }}
                         type="button"
@@ -1006,6 +1123,13 @@ export default function CustomerDetailPage({ params }: PageProps) {
                     <span className="text-sm font-bold text-[#111c2d] block">
                       {billing.pendingCount} cuota{billing.pendingCount !== 1 ? 's' : ''} pendiente{billing.pendingCount !== 1 ? 's' : ''}
                       {' '}de {billing.pendingSalesCount} venta{billing.pendingSalesCount !== 1 ? 's' : ''}
+                      {billing.salesWithoutInstallments.length > 0 && (
+                        <> + {billing.salesWithoutInstallments.length} venta{billing.salesWithoutInstallments.length !== 1 ? 's' : ''} con saldo sin plan</>
+                      )}
+                    </span>
+                  ) : billing.salesWithoutInstallments.length > 0 ? (
+                    <span className="text-sm font-bold text-[#111c2d] block">
+                      {billing.salesWithoutInstallments.length} venta{billing.salesWithoutInstallments.length !== 1 ? 's' : ''} con saldo pendiente (sin plan a plazos)
                     </span>
                   ) : (
                     <span className="text-sm font-bold text-[#00422b] block">Sin cuotas pendientes</span>
@@ -1029,8 +1153,9 @@ export default function CustomerDetailPage({ params }: PageProps) {
               )}
             </div>
 
-            {/* Cuotas por venta: historial completo (pagadas y pendientes) */}
-            {installments.length === 0 ? (
+            {/* Cuotas por venta: historial completo (pagadas y pendientes),
+                más las ventas con saldo sin plan a plazos (anticipo POS) */}
+            {installments.length === 0 && billing.salesWithoutInstallments.length === 0 ? (
               <div className="bg-white border border-[#cbd5e1] rounded-2xl py-12 text-center space-y-3 shadow-sm p-6">
                 <p className="text-xs text-[#737784] font-semibold">Este cliente no tiene compras a plazos registradas.</p>
               </div>
@@ -1117,6 +1242,47 @@ export default function CustomerDetailPage({ params }: PageProps) {
                     </div>
                   )
                 })}
+
+                {/* Ventas con saldo SIN plan a plazos (anticipo parcial del
+                    POS): no tienen cuotas, así que se cobran directo sobre
+                    el saldo de la venta. Al primer abono se genera su cuota
+                    espejo y pasan a la lista de arriba. */}
+                {billing.salesWithoutInstallments.map((sale: any) => (
+                  <div key={sale.id} className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden">
+                    <div className="bg-[#f9f9ff] border-b border-[#cbd5e1]/40 px-5 py-3.5 flex flex-wrap justify-between items-center gap-2 text-xs font-medium">
+                      <span className="font-bold text-[#00357f]">Orden #{sale.id.slice(0, 6).toUpperCase()}</span>
+                      <span className="text-[#737784]">Total: <strong className="font-mono text-[#111c2d]">{formatPrice(sale.total)}</strong></span>
+                      <span className="text-[#737784]">Abonado: <strong className="font-mono text-[#111c2d]">{formatPrice(Number(sale.paid_amount || 0))}</strong></span>
+                      <span className="text-[#ba1a1a] font-bold">
+                        Resta: {formatPrice(Number(sale.pending_balance || 0))}
+                      </span>
+                    </div>
+
+                    <div className="p-4">
+                      <div className="p-4 border rounded-xl border-[#cbd5e1] bg-white">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1 min-w-0">
+                            <span className="block text-[10px] font-bold text-[#434653]">
+                              Saldo por anticipo parcial
+                            </span>
+                            <span className="block text-[11px] font-bold text-[#00668a]">
+                              Esta venta no tiene plan a plazos: el abono se registra directo sobre su saldo.
+                            </span>
+                          </div>
+                          <span className="shrink-0 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#fef3c7] text-[#92400e]">
+                            Pendiente
+                          </span>
+                        </div>
+
+                        <SaleBalancePayForm
+                          sale={sale}
+                          formatPrice={formatPrice}
+                          onDone={reloadBilling}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

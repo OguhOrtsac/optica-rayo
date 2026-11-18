@@ -8,6 +8,14 @@ import {
   DEFAULT_REMINDER_TEMPLATE,
   addMonthsISO,
 } from './reminder-config'
+import {
+  BIRTHDAY_TEMPLATE_KEY,
+  CATALOG_INQUIRY_TEMPLATE_KEY,
+  LENS_REQUEST_REPLY_TEMPLATE_KEY,
+  PAYMENT_REMINDER_TEMPLATE_KEY,
+  MESSAGE_TEMPLATE_DEFAULTS,
+  type MessageTemplateKey,
+} from './message-templates'
 import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT, effectiveClientPrice } from './pricing'
 import { getPeriodPayments } from './expenses'
 import {
@@ -388,22 +396,47 @@ export async function createSale(
         .single()
       
       if (!saleError && saleData) {
-        const saleItemsToInsert: any[] = items.map(item => {
+        // Rollback for the line-item steps below: if any item insert
+        // fails, the just-created sale row is deleted again (its items
+        // cascade through the sale_items FK) so a failed registration
+        // never leaves a ghost sale behind — an order with totals but
+        // no products, which is exactly what the 2026-11-18 live test
+        // produced. The caller still receives the real insert error.
+        const rollbackSale = async () => {
+          const { error: deleteError } = await supabase
+            .from('sales')
+            .delete()
+            .eq('id', saleData.id)
+          if (deleteError) {
+            console.error(`Rollback of sale ${saleData.id} failed:`, deleteError.message)
+          }
+        }
+
+        // EVERY row of each insert carries EXACTLY the same keys. The
+        // previous single bulk insert mixed 4-key product rows with
+        // 7-key complement rows and PostgREST rejects heterogeneous
+        // bulk inserts (PGRST102 «All object keys must match») — which
+        // is why not even the base products were saved.
+        const productItemsToInsert: any[] = items.map(item => {
           return {
             sale_id: saleData.id,
             product_id: item.productId,
             quantity: item.quantity,
-            price: priceOf(item.productId)
+            price: priceOf(item.productId),
+            is_complement: false,
+            complement_name: null,
+            complement_for: null
           }
         })
         // Each complement persists as its own sale_items row (product_id
         // NULL, is_complement) so it shows in the POS history, the
         // customer's purchases and the customer file.
+        const complementItemsToInsert: any[] = []
         for (const item of items) {
           const parentName = catalog.find(p => p.id === item.productId)?.name || 'Producto'
           for (const c of item.complements || []) {
             if (!c.name?.trim()) continue
-            saleItemsToInsert.push({
+            complementItemsToInsert.push({
               sale_id: saleData.id,
               product_id: null,
               quantity: item.quantity,
@@ -415,11 +448,23 @@ export async function createSale(
           }
         }
 
-        const { error: itemsError } = await supabase.from('sale_items').insert(saleItemsToInsert)
-        if (itemsError) {
-          // The sale row exists but its line items do not: surface it as
-          // an error instead of reporting a clean registration.
-          throw new Error(`La venta quedó registrada (id ${saleData.id}) pero no se pudieron guardar sus partidas: ${itemsError.message}`)
+        // Items are inserted in TWO steps — base products first, then
+        // complements — so a complement failure can never take the
+        // sale's products down with it in a single bulk insert. Either
+        // step failing rolls the whole sale back (see rollbackSale).
+        if (productItemsToInsert.length > 0) {
+          const { error: itemsError } = await supabase.from('sale_items').insert(productItemsToInsert)
+          if (itemsError) {
+            await rollbackSale()
+            throw new Error(`No se pudieron guardar las partidas de la venta: ${itemsError.message}`)
+          }
+        }
+        if (complementItemsToInsert.length > 0) {
+          const { error: complementsError } = await supabase.from('sale_items').insert(complementItemsToInsert)
+          if (complementsError) {
+            await rollbackSale()
+            throw new Error(`No se pudieron guardar los complementos de la venta: ${complementsError.message}`)
+          }
         }
 
         // Decrement stock for what was actually sold (grouped per product).
@@ -1348,6 +1393,52 @@ export async function saveReminderConfig(months: number, template: string): Prom
   await setAppSetting(REMINDER_TEMPLATE_KEY, template)
 }
 
+// ----------------------------------------------------
+// WhatsApp message templates («Mensajes» page)
+// ----------------------------------------------------
+
+/** Every editable WhatsApp template, already resolved against defaults. */
+export interface MessageTemplates {
+  reminder: string
+  birthday: string
+  catalogInquiry: string
+  lensRequestReply: string
+  paymentReminder: string
+}
+
+/**
+ * One editable WhatsApp template: the value saved in app_settings, or the
+ * built-in default (the text the app always used) when nothing is saved.
+ */
+export async function getMessageTemplate(key: MessageTemplateKey): Promise<string> {
+  const saved = await getAppSetting(key)
+  return saved || MESSAGE_TEMPLATE_DEFAULTS[key]
+}
+
+/** All editable WhatsApp templates at once (the «Mensajes» page). */
+export async function getMessageTemplates(): Promise<MessageTemplates> {
+  const [reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder] =
+    await Promise.all([
+      getMessageTemplate(REMINDER_TEMPLATE_KEY),
+      getMessageTemplate(BIRTHDAY_TEMPLATE_KEY),
+      getMessageTemplate(CATALOG_INQUIRY_TEMPLATE_KEY),
+      getMessageTemplate(LENS_REQUEST_REPLY_TEMPLATE_KEY),
+      getMessageTemplate(PAYMENT_REMINDER_TEMPLATE_KEY),
+    ])
+  return { reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder }
+}
+
+/**
+ * Saves one WhatsApp template to app_settings. Goes through setAppSetting,
+ * so a real database error is THROWN and the caller can show it — a
+ * template is never reported as saved when it is not. The reminder
+ * template saved here is the same `reminder_template` key the Reminders
+ * tray modal edits (one source, two doors).
+ */
+export async function saveMessageTemplate(key: MessageTemplateKey, value: string): Promise<void> {
+  await setAppSetting(key, value)
+}
+
 export interface DueReminder {
   id: string
   customer_id: string
@@ -2128,4 +2219,76 @@ export async function deleteMyNotification(id: string): Promise<boolean> {
     return true
   }
   return false
+}
+
+// ----------------------------------------------------
+// Birthday dismissals (panel «Cumpleaños próximos» → «Eliminar»)
+// ----------------------------------------------------
+// Dismissing a birthday hides ONLY the occurrence being shown (its
+// calendar year); next year's occurrence reappears on its own. The
+// table arrives with migration 20261118_birthday_dismissals.sql — until
+// it is applied, reads degrade silently to «nothing dismissed» (the
+// list behaves exactly as before) and a dismissal reports failure, so
+// the row stays put instead of pretending it was hidden forever.
+
+const birthdayDismissalKey = (customerId: string, occurrenceYear: number) =>
+  `${customerId}:${occurrenceYear}`
+
+// Demo mode (no Supabase): dismissals live for the session only.
+const MOCK_BIRTHDAY_DISMISSALS = new Set<string>()
+
+/**
+ * Keys (`customerId:occurrenceYear`) of the birthdays dismissed for the
+ * current cycle. The panel's 7-day window can straddle New Year, so
+ * both this year's and next year's occurrences are read.
+ */
+export async function getBirthdayDismissals(): Promise<Set<string>> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const year = new Date().getFullYear()
+      const { data, error } = await supabase
+        .from('birthday_dismissals')
+        .select('customer_id, occurrence_year')
+        .in('occurrence_year', [year, year + 1])
+      if (!error && data) {
+        return new Set(
+          (data as any[]).map(r => birthdayDismissalKey(r.customer_id, r.occurrence_year))
+        )
+      }
+      if (error) {
+        console.error('Supabase birthday dismissals fetch failed (¿migración 20261118 aplicada?):', error.message)
+      }
+    } catch (e) {
+      console.error('Supabase birthday dismissals fetch failed:', e)
+    }
+    return new Set()
+  }
+  return new Set(MOCK_BIRTHDAY_DISMISSALS)
+}
+
+/**
+ * Persists the dismissal of one birthday occurrence. Returns true only
+ * when the row is proven stored (selected back), mirroring
+ * deleteMyNotification: an RLS block or a missing table must surface as
+ * failure so the UI keeps the row and warns, never as a silent hide.
+ */
+export async function dismissBirthday(customerId: string, occurrenceYear: number): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('birthday_dismissals')
+        .insert([{ customer_id: customerId, occurrence_year: occurrenceYear }])
+        .select('customer_id')
+      if (!error && data && data.length > 0) return true
+      if (!error) console.error('dismissBirthday: 0 rows inserted (possible RLS block) for', customerId, occurrenceYear)
+      return false
+    } catch (e) {
+      console.error('Supabase birthday dismiss failed:', e)
+      return false
+    }
+  }
+  MOCK_BIRTHDAY_DISMISSALS.add(birthdayDismissalKey(customerId, occurrenceYear))
+  return true
 }

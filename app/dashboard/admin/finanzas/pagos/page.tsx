@@ -251,7 +251,7 @@ export default function FinanzasPagosPage() {
 
       {!loading && !loadError && (
         <>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-sm font-bold text-[#111c2d]">Pagos que se repiten</h2>
             <Link
               href="/dashboard/admin/expenses"

@@ -90,13 +90,31 @@ function MonthChart({ days }: { days: MonthSalesDetail['days'] }) {
       )}
       {points.map((p, i) => {
         const anchor = days.length === 1 ? 'middle' : i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'
+        // En pantallas chicas la gráfica se escala y las etiquetas de monto
+        // de puntos vecinos se amontonan: con varios puntos se alterna la
+        // altura de la etiqueta (una arriba, la siguiente más arriba) y se
+        // le da un halo blanco para que se lea aunque se acerque a otra.
+        const wantedLift = points.length > 3 && i % 2 === 1 ? 32 : 15
+        // El punto más alto vive en el borde superior: su etiqueta no
+        // puede subir más allá del lienzo.
+        const labelLift = p.y - wantedLift < 16 ? 15 : wantedLift
         return (
           <g key={p.date}>
-            <text x={p.x} y={p.y - 14} textAnchor={anchor} fontSize="13" fontWeight="800" fill="#00357f">
+            <text
+              x={p.x}
+              y={p.y - labelLift}
+              textAnchor={anchor}
+              fontSize="14"
+              fontWeight="800"
+              fill="#00357f"
+              stroke="#ffffff"
+              strokeWidth="3.5"
+              style={{ paintOrder: 'stroke' }}
+            >
               {moneyCompact.format(p.total)}
             </text>
             <circle cx={p.x} cy={p.y} r="6" fill="#0899c9" stroke="#ffffff" strokeWidth="2.5" />
-            <text x={p.x} y={H - BOTTOM + 24} textAnchor={anchor} fontSize="12" fontWeight="600" fill="#737784">
+            <text x={p.x} y={H - BOTTOM + 24} textAnchor={anchor} fontSize="12.5" fontWeight="600" fill="#737784">
               {formatDayShort(p.date)}
             </text>
           </g>
@@ -273,7 +291,7 @@ export default function FinanzasMesPage() {
       {!loading && !loadError && detail && (
         <>
           {/* Gráfica: solo días con ventas */}
-          <section aria-label="Gráfica de ventas por día" className="bg-white rounded-[20px] or-shadow-card p-5">
+          <section aria-label="Gráfica de ventas por día" className="bg-white rounded-[20px] or-shadow-card p-3.5 sm:p-5">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Ventas por día</h2>
             {detail.days.length === 0 ? (
               <p className="text-sm text-[#434653] font-medium mt-3">
@@ -290,7 +308,7 @@ export default function FinanzasMesPage() {
           </section>
 
           {/* Cifras del mes */}
-          <section aria-label="Cifras del mes" className="bg-white rounded-[20px] or-shadow-card p-5 space-y-3">
+          <section aria-label="Cifras del mes" className="bg-white rounded-[20px] or-shadow-card p-3.5 sm:p-5 space-y-3">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#00357f]">Cifras del mes</h2>
             <dl className="divide-y divide-[#f0f3ff]">
               <div className="flex items-center justify-between gap-3 py-2.5">
