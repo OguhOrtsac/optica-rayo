@@ -12,6 +12,7 @@ import {
   getMemberDiscountPercent
 } from '@/lib/services'
 import { registerCustomerAction } from '@/app/customers/actions'
+import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { Database } from '@/types/database.types'
 import { 
@@ -27,7 +28,9 @@ import {
   User, 
   UserPlus,
   ArrowRight,
-  TrendingDown
+  TrendingDown,
+  X,
+  Pencil
 } from 'lucide-react'
 
 type Product = Database['public']['Tables']['products']['Row']
@@ -35,9 +38,34 @@ type Reminder = Database['public']['Tables']['reminders']['Row']
 type Coupon = Database['public']['Tables']['coupons']['Row']
 type Sale = Database['public']['Tables']['sales']['Row']
 
+// Free-text complement attached to a product at the counter (e.g.
+// «Fotocromático»). price 0 means the complement is free («Gratis»).
+interface CartComplement {
+  name: string
+  price: number
+}
+
 interface CartItem {
   product: Product
   quantity: number
+  complements: CartComplement[]
+  // Stable identity of the line: the product id for plain lines (so
+  // repeat taps merge quantity, as before) and a unique key for lines
+  // carrying complements (each complement set is its own line).
+  cartKey: string
+}
+
+// One persisted sale_items row as the workshop history renders it:
+// product rows and complement rows (is_complement) of the same sale.
+interface SaleItemLine {
+  id: string
+  product_id: string | null
+  product_name: string | null
+  quantity: number
+  price: number
+  is_complement: boolean
+  complement_name: string | null
+  complement_for: string | null
 }
 
 interface CustomerProfile {
@@ -56,7 +84,7 @@ export default function SellerDashboard() {
   const [customers, setCustomers] = useState<CustomerProfile[]>([])
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [memberDiscount, setMemberDiscount] = useState(0)
-  const [sales, setSales] = useState<(Sale & { customer_name?: string; seller_name?: string })[]>([])
+  const [sales, setSales] = useState<(Sale & { customer_name?: string; seller_name?: string; items?: SaleItemLine[] })[]>([])
   
   const [loading, setLoading] = useState(true)
   
@@ -91,6 +119,20 @@ export default function SellerDashboard() {
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'transfer'>('cash')
   const [saleNotes, setSaleNotes] = useState('')
   
+  // Complements modal: tapping a product opens it instead of adding the
+  // product straight away; the pencil on a cart line reopens it in 'edit'
+  // mode with that line's complements loaded. Rows are free text (name +
+  // price; empty or 0 price means the complement is «Gratis»).
+  const [complementModal, setComplementModal] = useState<
+    | { mode: 'add'; product: Product }
+    | { mode: 'edit'; product: Product; cartKey: string }
+    | null
+  >(null)
+  const [complementRows, setComplementRows] = useState<{ name: string; price: string }[]>([])
+
+  // Removing a cart line always asks first (confirmation modal).
+  const [removeCandidate, setRemoveCandidate] = useState<CartItem | null>(null)
+
   // Taller Filter state
   const [tallerFilter, setTallerFilter] = useState<'Todos' | 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado'>('Todos')
   
@@ -98,6 +140,44 @@ export default function SellerDashboard() {
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // Sale line items (products + free-text complements) for the workshop
+  // history cards. getSales does not join items, so they are read here in
+  // one batch and attached to each sale. Any failure (demo mode, or the
+  // complements migration not applied yet) leaves the sales untouched and
+  // the cards render exactly as before, with no items section.
+  const attachSaleItems = async (
+    saleList: (Sale & { customer_name?: string; seller_name?: string })[]
+  ): Promise<(Sale & { customer_name?: string; seller_name?: string; items?: SaleItemLine[] })[]> => {
+    if (saleList.length === 0) return saleList
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('sale_items')
+        .select('id, sale_id, product_id, quantity, price, is_complement, complement_name, complement_for, product:products(name)')
+        .in('sale_id', saleList.map(s => s.id))
+      if (error || !data) return saleList
+      const bySale = new Map<string, SaleItemLine[]>()
+      for (const row of data as any[]) {
+        const line: SaleItemLine = {
+          id: row.id,
+          product_id: row.product_id ?? null,
+          product_name: row.product?.name ?? null,
+          quantity: row.quantity ?? 1,
+          price: Number(row.price ?? 0),
+          is_complement: !!row.is_complement,
+          complement_name: row.complement_name ?? null,
+          complement_for: row.complement_for ?? null
+        }
+        const arr = bySale.get(row.sale_id) ?? []
+        arr.push(line)
+        bySale.set(row.sale_id, arr)
+      }
+      return saleList.map(s => ({ ...s, items: bySale.get(s.id) ?? [] }))
+    } catch {
+      return saleList
+    }
+  }
 
   const loadAllData = async () => {
     try {
@@ -114,7 +194,7 @@ export default function SellerDashboard() {
       setReminders(remindersData)
       setCustomers(customersData)
       setCoupons(couponsData)
-      setSales(salesData)
+      setSales(await attachSaleItems(salesData))
     } catch (e) {
       console.error('Error loading POS data:', e)
     }
@@ -154,38 +234,119 @@ export default function SellerDashboard() {
     })
   }, [sales, tallerFilter])
 
-  const addToCart = (product: Product) => {
-    const existing = cart.find(item => item.product.id === product.id)
-    if (existing) {
-      if (existing.quantity >= product.stock) {
-        showFeedback('error', `Inventario insuficiente. Solo quedan ${product.stock} unidades de este producto.`)
-        return
+  // Adds one unit of a product to the cart. Without complements it keeps
+  // the classic behaviour (repeat taps merge into the plain line and bump
+  // its quantity); with complements the unit becomes its own line so each
+  // complement set stays attached to the unit it was configured for.
+  // Stock is validated against the TOTAL units of the product already in
+  // the cart, across all of its lines. Returns false when stock blocks it.
+  const addToCart = (product: Product, complements: CartComplement[] = []): boolean => {
+    const unitsInCart = cart
+      .filter(item => item.product.id === product.id)
+      .reduce((sum, item) => sum + item.quantity, 0)
+    if (unitsInCart + 1 > product.stock) {
+      showFeedback('error', `Inventario insuficiente. Solo quedan ${product.stock} unidades de este producto.`)
+      return false
+    }
+    if (complements.length === 0) {
+      const existing = cart.find(item => item.product.id === product.id && item.complements.length === 0)
+      if (existing) {
+        setCart(cart.map(item =>
+          item.cartKey === existing.cartKey ? { ...item, quantity: item.quantity + 1 } : item
+        ))
+      } else {
+        setCart([...cart, { product, quantity: 1, complements: [], cartKey: product.id }])
       }
-      setCart(cart.map(item => 
-        item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-      ))
     } else {
-      setCart([...cart, { product, quantity: 1 }])
+      setCart([...cart, { product, quantity: 1, complements, cartKey: `${product.id}__${Date.now()}` }])
     }
     showFeedback('success', `"${product.name}" agregado al carrito.`)
+    return true
   }
 
-  const removeFromCart = (productId: string) => {
-    setCart(cart.filter(item => item.product.id !== productId))
+  // Removing a line takes its complements with it (they live inside the
+  // cart item, never as separate lines).
+  const removeFromCart = (cartKey: string) => {
+    setCart(cart.filter(item => item.cartKey !== cartKey))
   }
 
-  const updateQuantity = (productId: string, qty: number) => {
-    const item = cart.find(i => i.product.id === productId)
+  const updateQuantity = (cartKey: string, qty: number) => {
+    const item = cart.find(i => i.cartKey === cartKey)
     if (!item) return
-    if (qty > item.product.stock) {
+    const otherUnits = cart
+      .filter(i => i.product.id === item.product.id && i.cartKey !== cartKey)
+      .reduce((sum, i) => sum + i.quantity, 0)
+    if (qty + otherUnits > item.product.stock) {
       showFeedback('error', `Solo hay ${item.product.stock} unidades disponibles en inventario.`)
       return
     }
     if (qty <= 0) {
-      removeFromCart(productId)
+      // Dropping to zero removes the line, and removal always asks first.
+      setRemoveCandidate(item)
     } else {
-      setCart(cart.map(i => i.product.id === productId ? { ...i, quantity: qty } : i))
+      setCart(cart.map(i => i.cartKey === cartKey ? { ...i, quantity: qty } : i))
     }
+  }
+
+  // --- Complements modal (add & edit modes) ---
+  const openComplementModal = (product: Product) => {
+    setComplementModal({ mode: 'add', product })
+    setComplementRows([{ name: '', price: '' }])
+  }
+
+  const openEditComplementsModal = (item: CartItem) => {
+    setComplementModal({ mode: 'edit', product: item.product, cartKey: item.cartKey })
+    setComplementRows(
+      item.complements.length > 0
+        ? item.complements.map(c => ({ name: c.name, price: c.price > 0 ? String(c.price) : '' }))
+        : [{ name: '', price: '' }]
+    )
+  }
+
+  const closeComplementModal = () => {
+    setComplementModal(null)
+    setComplementRows([])
+  }
+
+  const updateComplementRow = (index: number, field: 'name' | 'price', value: string) => {
+    setComplementRows(rows => rows.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
+  }
+
+  const removeComplementRow = (index: number) => {
+    setComplementRows(rows => rows.filter((_, i) => i !== index))
+  }
+
+  // Parses the modal rows: rows without a name are ignored, and a price
+  // left empty or at 0 makes the complement «Gratis» (price 0).
+  const parseComplementRows = (): CartComplement[] =>
+    complementRows
+      .map(row => ({ name: row.name.trim(), price: Math.max(0, parseFloat(row.price) || 0) }))
+      .filter(c => c.name.length > 0)
+
+  // Add mode: sends the product (with its complements) to the cart; the
+  // modal only closes when the add succeeded (stock). Edit mode: applies
+  // the corrected complements to that existing cart line and the totals
+  // recalculate from the cart state.
+  const handleConfirmComplementModal = () => {
+    if (!complementModal) return
+    const complements = parseComplementRows()
+    if (complementModal.mode === 'add') {
+      if (addToCart(complementModal.product, complements)) {
+        closeComplementModal()
+      }
+    } else {
+      const cartKey = complementModal.cartKey
+      setCart(cart.map(item => (item.cartKey === cartKey ? { ...item, complements } : item)))
+      showFeedback('success', `"${complementModal.product.name}" actualizado en el carrito.`)
+      closeComplementModal()
+    }
+  }
+
+  // --- Remove-line confirmation ---
+  const confirmRemoveFromCart = () => {
+    if (!removeCandidate) return
+    removeFromCart(removeCandidate.cartKey)
+    setRemoveCandidate(null)
   }
 
   // Member pricing at the counter: when the selected buyer is a registered
@@ -197,8 +358,13 @@ export default function SellerDashboard() {
   const unitPriceOf = (p: Product) =>
     isClientBuyer ? effectiveClientPrice(p.price, p.client_price, memberDiscount) : p.price
 
-  // Real-time mathematics
-  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + (unitPriceOf(item.product) * item.quantity), 0), [cart, isClientBuyer, memberDiscount])
+  // Complements are charged per unit of their product (same rule as the
+  // lens treatments elsewhere in the app); a price of 0 adds nothing.
+  const complementsUnitTotal = (item: CartItem) =>
+    item.complements.reduce((sum, c) => sum + c.price, 0)
+
+  // Real-time mathematics (products + their complements)
+  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + ((unitPriceOf(item.product) + complementsUnitTotal(item)) * item.quantity), 0), [cart, isClientBuyer, memberDiscount])
   
   // Validate and apply coupon
   const handleApplyCoupon = (e: React.FormEvent) => {
@@ -373,7 +539,8 @@ export default function SellerDashboard() {
 
       const items = cart.map(item => ({
         productId: item.product.id,
-        quantity: item.quantity
+        quantity: item.quantity,
+        complements: item.complements.map(c => ({ name: c.name, price: c.price }))
       }))
 
       // Register sale with everything captured on screen: the registered
@@ -453,12 +620,12 @@ export default function SellerDashboard() {
         </div>
 
         {/* Tab Selector: POS vs Taller */}
-        <div className="flex bg-[#f0f3ff] p-1 rounded-xl border border-[#cbd5e1] w-full md:w-auto shadow-sm">
+        <div className="flex bg-white p-1 rounded-full or-shadow-card w-full md:w-auto">
           <button
             onClick={() => setViewMode('pos')}
-            className={`flex-1 md:flex-none text-xs font-bold px-5 py-2.5 rounded-lg transition-colors cursor-pointer ${
+            className={`flex-1 md:flex-none text-sm font-semibold px-5 min-h-[44px] rounded-full transition-colors cursor-pointer ${
               viewMode === 'pos'
-                ? 'bg-[#dee8ff] text-[#00357f] border border-[#cbd5e1]/30 shadow-sm font-black'
+                ? 'bg-[#dee8ff] text-[#00357f] font-bold'
                 : 'text-[#737784] hover:text-[#111c2d]'
             }`}
           >
@@ -466,9 +633,9 @@ export default function SellerDashboard() {
           </button>
           <button
             onClick={() => setViewMode('taller')}
-            className={`flex-1 md:flex-none text-xs font-bold px-5 py-2.5 rounded-lg transition-colors cursor-pointer ${
+            className={`flex-1 md:flex-none text-sm font-semibold px-5 min-h-[44px] rounded-full transition-colors cursor-pointer ${
               viewMode === 'taller'
-                ? 'bg-[#dee8ff] text-[#00357f] border border-[#cbd5e1]/30 shadow-sm font-black'
+                ? 'bg-[#dee8ff] text-[#00357f] font-bold'
                 : 'text-[#737784] hover:text-[#111c2d]'
             }`}
           >
@@ -479,22 +646,22 @@ export default function SellerDashboard() {
 
       {/* Global Feedback Notifications */}
       {successMessage && (
-        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 flex items-center gap-3">
-          <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-          <p className="text-xs font-bold text-emerald-600">{successMessage}</p>
+        <div className="bg-[#e2f9ee] border border-[#00422b]/20 rounded-2xl p-4 flex items-center gap-3">
+          <CheckCircle className="w-5 h-5 text-[#00422b] shrink-0" />
+          <p className="text-sm font-semibold text-[#00422b]">{successMessage}</p>
         </div>
       )}
       {errorMessage && (
-        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-center gap-3">
-          <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
-          <p className="text-xs font-bold text-rose-600">{errorMessage}</p>
+        <div className="bg-[#ffdad6] border border-[#ba1a1a]/25 rounded-2xl p-4 flex items-center gap-3">
+          <ShieldAlert className="w-5 h-5 text-[#ba1a1a] shrink-0" />
+          <p className="text-sm font-semibold text-[#ba1a1a]">{errorMessage}</p>
         </div>
       )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 gap-4">
           <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#00357f] border-t-transparent" />
-          <p className="text-sm text-[#737784] font-bold">Cargando base de datos unificada...</p>
+          <p className="text-sm text-[#737784] font-bold">Cargando ventas...</p>
         </div>
       ) : (
         <>
@@ -502,19 +669,19 @@ export default function SellerDashboard() {
           {viewMode === 'pos' && (
             <>
               {/* Mobile Tabs Header */}
-              <div className="grid grid-cols-2 gap-2 bg-[#f0f3ff] p-1 rounded-xl border border-[#cbd5e1] md:hidden">
+              <div className="grid grid-cols-2 gap-1 bg-white p-1 rounded-full or-shadow-card md:hidden">
                 <button
                   onClick={() => setActiveTab('products')}
-                  className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                    activeTab === 'products' ? 'bg-white text-[#00357f] shadow-sm font-black' : 'text-[#737784]'
+                  className={`min-h-[44px] text-sm font-semibold rounded-full transition-all ${
+                    activeTab === 'products' ? 'bg-[#dee8ff] text-[#00357f] font-bold' : 'text-[#737784]'
                   }`}
                 >
                   1. Catálogo ({filteredProducts.length})
                 </button>
                 <button
                   onClick={() => setActiveTab('cart')}
-                  className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                    activeTab === 'cart' ? 'bg-white text-[#00357f] shadow-sm font-black' : 'text-[#737784]'
+                  className={`min-h-[44px] text-sm font-semibold rounded-full transition-all ${
+                    activeTab === 'cart' ? 'bg-[#dee8ff] text-[#00357f] font-bold' : 'text-[#737784]'
                   }`}
                 >
                   2. Carrito ({cart.reduce((s, i) => s + i.quantity, 0)})
@@ -525,74 +692,80 @@ export default function SellerDashboard() {
                 
                 {/* LEFT: PRODUCTS SEARCH & STOCK HIGHLIGHT */}
                 <div className={`md:col-span-2 space-y-4 ${activeTab === 'products' ? 'block' : 'hidden md:block'}`}>
-                  <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 md:p-6 space-y-4 shadow-sm">
+                  <div className="bg-white rounded-[20px] or-shadow-card p-5 md:p-6 space-y-4">
                     <div className="flex justify-between items-center border-b border-[#f0f3ff] pb-3">
-                      <h2 className="text-xs font-bold uppercase tracking-wider text-[#00357f]">Productos Disponibles</h2>
-                      <span className="text-[10px] bg-[#dee8ff]/60 px-2 py-0.5 rounded text-[#00357f] font-black uppercase">
-                        Filtro Activo
+                      <h2 className="text-base font-bold text-[#111c2d]">Productos Disponibles</h2>
+                      <span className="text-[11px] bg-[#dee8ff] px-2.5 py-1 rounded-full text-[#00357f] font-bold">
+                        {filteredProducts.length} en catálogo
                       </span>
                     </div>
 
                     <div className="relative">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#737784]" />
+                      <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#737784]" />
                       <input
                         type="text"
                         placeholder="Buscar por código, nombre o tipo de lente..."
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}
-                        className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg pl-10 pr-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                        className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-full pl-11 pr-4 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                       />
                     </div>
 
                     {/* Products Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
                       {filteredProducts.length === 0 ? (
-                        <div className="col-span-full py-16 text-center text-xs text-[#737784] font-semibold">
+                        <div className="col-span-full py-16 text-center text-sm text-[#737784] font-semibold">
                           No hay productos coincidentes en el inventario.
                         </div>
                       ) : (
                         filteredProducts.map((p) => (
                           <button
                             key={p.id}
-                            onClick={() => addToCart(p)}
+                            onClick={() => openComplementModal(p)}
                             disabled={p.stock <= 0}
-                            className="bg-[#f9f9ff] border border-[#cbd5e1]/45 hover:border-[#dee8ff] rounded-xl p-4 text-left flex flex-col justify-between transition-all hover:bg-white cursor-pointer min-h-[145px] group disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                            className="bg-[#f9f9ff] border border-[#dee8ff]/70 hover:border-[#00357f]/30 rounded-[20px] p-4 text-left flex flex-col justify-between transition-all hover:bg-white cursor-pointer min-h-[145px] group disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            <div className="w-full space-y-1">
-                              <div className="flex justify-between items-center text-[8px] font-black uppercase tracking-wider text-[#737784]">
+                            <div className="w-full space-y-1.5">
+                              <div className="flex justify-between items-center text-[11px] font-semibold text-[#737784]">
                                 <span>
                                   {p.category === 'frames' && 'Armazón'}
                                   {p.category === 'lenses' && 'Mica'}
                                   {p.category === 'contact_lenses' && 'Contacto'}
                                   {p.category === 'accessories' && 'Accesorio'}
                                 </span>
-                                
+
                                 {p.stock <= 3 ? (
-                                  <span className="bg-[#ffdad6] text-[#ba1a1a] px-2 py-0.5 rounded font-black animate-pulse">
-                                    Stock Crítico: {p.stock}
+                                  <span className="bg-[#ffdad6] text-[#ba1a1a] px-2.5 py-1 rounded-full font-bold">
+                                    Stock crítico: {p.stock}
                                   </span>
                                 ) : (
-                                  <span className="bg-white border border-[#cbd5e1]/40 text-[#434653] px-2 py-0.5 rounded font-bold">
+                                  <span className="bg-white text-[#434653] px-2.5 py-1 rounded-full font-semibold">
                                     Stock: {p.stock}
                                   </span>
                                 )}
                               </div>
-                              <h3 className="text-sm font-bold text-[#111c2d] group-hover:text-[#00357f] transition-colors leading-snug">
+                              <h3 className="text-[15px] font-bold text-[#111c2d] group-hover:text-[#00357f] transition-colors leading-snug">
                                 {p.name}
                               </h3>
                               {p.description && (
-                                <p className="text-[10px] text-[#737784] line-clamp-2 leading-relaxed">
+                                <p className="text-xs text-[#737784] line-clamp-2 leading-relaxed">
                                   {p.description}
                                 </p>
                               )}
                             </div>
-                            <div className="mt-4 flex justify-between items-center w-full pt-2 border-t border-[#cbd5e1]/40">
-                              <span className="text-[9px] text-[#737784] uppercase font-bold">{isClientBuyer && unitPriceOf(p) !== p.price ? 'Precio cliente' : 'Precio'}</span>
-                              <span className="text-xs font-black text-[#00357f] font-mono">
-                                {formatPrice(unitPriceOf(p))}
-                                {isClientBuyer && unitPriceOf(p) !== p.price && (
-                                  <span className="ml-1.5 line-through text-[#737784] font-medium">{formatPrice(p.price)}</span>
-                                )}
+                            <div className="mt-4 flex justify-between items-end w-full pt-3 border-t border-[#dee8ff]/70">
+                              <div className="space-y-0.5">
+                                <span className="block text-[11px] text-[#737784] font-semibold">{isClientBuyer && unitPriceOf(p) !== p.price ? 'Precio cliente' : 'Precio'}</span>
+                                <span className="block text-lg font-extrabold text-[#00357f] tabular-nums leading-none">
+                                  {formatPrice(unitPriceOf(p))}
+                                  {isClientBuyer && unitPriceOf(p) !== p.price && (
+                                    <span className="ml-1.5 text-sm line-through text-[#737784] font-medium">{formatPrice(p.price)}</span>
+                                  )}
+                                </span>
+                              </div>
+                              <span className="flex items-center gap-1 bg-[#00357f] text-white text-xs font-bold pl-2.5 pr-3 min-h-[36px] rounded-full group-hover:bg-[#00509e] transition-colors">
+                                <Plus className="w-4 h-4" />
+                                Agregar
                               </span>
                             </div>
                           </button>
@@ -604,53 +777,96 @@ export default function SellerDashboard() {
 
                 {/* RIGHT: CART CHECKOUT & PAYMENT METHOD */}
                 <div className={`space-y-4 ${activeTab === 'cart' ? 'block' : 'hidden md:block'}`}>
-                  <div className="bg-white border border-[#cbd5e1] rounded-2xl p-5 md:p-6 flex flex-col justify-between min-h-[500px] shadow-sm">
+                  <div className="bg-white rounded-[20px] or-shadow-card p-5 md:p-6 flex flex-col justify-between min-h-[500px]">
                     <div className="space-y-5">
-                      
+
                       <div className="flex items-center justify-between border-b border-[#f0f3ff] pb-3">
-                        <h2 className="text-xs font-bold uppercase tracking-wider text-[#00357f] flex items-center gap-1.5">
-                          <ShoppingCart className="w-4 h-4" /> Carrito
+                        <h2 className="text-base font-bold text-[#111c2d] flex items-center gap-2">
+                          <ShoppingCart className="w-5 h-5 text-[#00357f]" /> Carrito
                         </h2>
-                        <span className="bg-[#00357f] text-white px-2.5 py-0.5 rounded-full font-bold text-[9px]">
+                        <span className="bg-[#00357f] text-white px-2.5 py-1 rounded-full font-bold text-[11px]">
                           {cart.reduce((s, i) => s + i.quantity, 0)} items
                         </span>
                       </div>
 
                       {/* Cart items */}
                       {cart.length === 0 ? (
-                        <div className="text-center py-20 text-xs text-[#737784] font-semibold">
+                        <div className="text-center py-20 text-sm text-[#737784] font-semibold">
                           El carrito está vacío. Agrega artículos a la izquierda.
                         </div>
                       ) : (
-                        <div className="space-y-3 max-h-[170px] overflow-y-auto pr-1">
+                        <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
                           {cart.map((item) => (
-                            <div key={item.product.id} className="flex justify-between items-center bg-[#f9f9ff] border border-[#cbd5e1]/30 rounded-xl p-3 text-xs">
-                              <div className="space-y-0.5 max-w-[130px] text-left">
-                                <h4 className="font-bold text-[#111c2d] truncate">{item.product.name}</h4>
-                                <p className="text-[10px] text-[#737784] font-mono">{formatPrice(unitPriceOf(item.product))}</p>
-                              </div>
-                              
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                                  className="w-6.5 h-6.5 bg-white hover:bg-[#dee8ff] border border-[#cbd5e1] rounded flex items-center justify-center font-bold text-[#00357f] cursor-pointer"
-                                >
-                                  -
-                                </button>
-                                <span className="font-bold text-[#111c2d] px-1 select-none font-mono">{item.quantity}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                                  className="w-6.5 h-6.5 bg-white hover:bg-[#dee8ff] border border-[#cbd5e1] rounded flex items-center justify-center font-bold text-[#00357f] cursor-pointer"
-                                >
-                                  +
-                                </button>
+                            <div key={item.cartKey} className="bg-[#f9f9ff] rounded-2xl p-3 text-sm space-y-2">
+                              <div className="flex justify-between items-start gap-2">
+                                <div className="space-y-0.5 text-left min-w-0">
+                                  <h4 className="font-bold text-[#111c2d] leading-snug">{item.product.name}</h4>
+                                  <p className="text-xs text-[#737784] tabular-nums">{formatPrice(unitPriceOf(item.product))} c/u</p>
+                                </div>
+                                <span className="font-bold text-[#00357f] tabular-nums text-right shrink-0">
+                                  {formatPrice((unitPriceOf(item.product) + complementsUnitTotal(item)) * item.quantity)}
+                                </span>
                               </div>
 
-                              <span className="font-bold text-[#00357f] font-mono text-right min-w-[70px]">
-                                {formatPrice(unitPriceOf(item.product) * item.quantity)}
-                              </span>
+                              {item.complements.length > 0 && (
+                                <ul className="space-y-1 border-t border-[#dee8ff]/70 pt-2">
+                                  {item.complements.map((c, ci) => (
+                                    <li key={ci} className="flex justify-between items-center gap-2 text-xs">
+                                      <span className="text-[#434653] font-medium min-w-0">
+                                        Complemento: <strong className="text-[#111c2d]">{c.name}</strong>
+                                      </span>
+                                      {c.price > 0 ? (
+                                        <span className="tabular-nums text-[#434653] shrink-0">
+                                          {item.quantity > 1 ? `${formatPrice(c.price)} × ${item.quantity} = ` : ''}
+                                          <strong className="text-[#111c2d]">{formatPrice(c.price * item.quantity)}</strong>
+                                        </span>
+                                      ) : (
+                                        <span className="bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded-full font-bold text-[11px] shrink-0">Gratis</span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+
+                              <div className="flex items-center justify-between border-t border-[#dee8ff]/70 pt-1">
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateQuantity(item.cartKey, item.quantity - 1)}
+                                    className="w-8 h-8 bg-white hover:bg-[#dee8ff] border border-[#dee8ff] rounded-full flex items-center justify-center font-bold text-base text-[#00357f] cursor-pointer"
+                                  >
+                                    -
+                                  </button>
+                                  <span className="font-bold text-[#111c2d] px-1 select-none tabular-nums">{item.quantity}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateQuantity(item.cartKey, item.quantity + 1)}
+                                    className="w-8 h-8 bg-white hover:bg-[#dee8ff] border border-[#dee8ff] rounded-full flex items-center justify-center font-bold text-base text-[#00357f] cursor-pointer"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                                <div className="flex items-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditComplementsModal(item)}
+                                    aria-label={`Editar ${item.product.name}`}
+                                    title="Editar artículo"
+                                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-[#00357f] hover:bg-[#dee8ff] transition-colors cursor-pointer"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRemoveCandidate(item)}
+                                    aria-label={`Quitar ${item.product.name} del carrito`}
+                                    title="Quitar del carrito"
+                                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -658,7 +874,7 @@ export default function SellerDashboard() {
 
                       {/* Customer predict selector */}
                       <div className="relative space-y-1 text-left">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#434653] mb-1">
+                        <label className="block text-[13px] font-semibold text-[#434653] mb-1">
                           Buscar Cliente / CRM
                         </label>
                         <div className="relative">
@@ -675,13 +891,13 @@ export default function SellerDashboard() {
                               if (!e.target.value.trim()) setShowWalkInWarning(false)
                             }}
                             onFocus={() => setShowCustomerSuggestions(true)}
-                            className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                           />
                           {selectedCustomer && (
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); setShowWalkInWarning(false); }}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-600 hover:text-rose-800 text-[10px] font-bold cursor-pointer"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#ba1a1a] hover:text-[#93000a] text-xs font-bold cursor-pointer px-1 py-1"
                             >
                               Limpiar
                             </button>
@@ -689,19 +905,19 @@ export default function SellerDashboard() {
                         </div>
 
                         {showCustomerSuggestions && customerSearch.trim() && !selectedCustomer && (
-                          <div className={`absolute left-0 right-0 z-30 mt-1 bg-white border border-[#cbd5e1] rounded-lg overflow-y-auto shadow-lg divide-y divide-[#f0f3ff] ${filteredCustomers.length === 0 ? 'max-h-[380px]' : 'max-h-[160px]'}`}>
+                          <div className={`absolute left-0 right-0 z-30 mt-1 bg-white border border-[#dee8ff] rounded-2xl overflow-y-auto shadow-lg divide-y divide-[#f0f3ff] ${filteredCustomers.length === 0 ? 'max-h-[380px]' : 'max-h-[160px]'}`}>
                             {filteredCustomers.length === 0 ? (
-                              <div className="p-3 space-y-3 text-left">
+                              <div className="p-4 space-y-3 text-left">
                                 {!showQuickAdd ? (
                                   <>
-                                    <p className="text-xs text-[#434653] font-semibold">
+                                    <p className="text-sm text-[#434653] font-semibold">
                                       &ldquo;{customerSearch.trim()}&rdquo; no está registrado.
                                     </p>
                                     <div className="space-y-2">
                                       <button
                                         type="button"
                                         onClick={openQuickAdd}
-                                        className="w-full min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white text-xs font-bold rounded-lg px-3 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                                        className="w-full min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white text-sm font-bold rounded-xl px-3 flex items-center justify-center gap-2 cursor-pointer transition-colors"
                                       >
                                         <UserPlus className="w-4 h-4" />
                                         Agregar cliente rápido
@@ -712,17 +928,17 @@ export default function SellerDashboard() {
                                           setShowCustomerSuggestions(false)
                                           setShowWalkInWarning(true)
                                         }}
-                                        className="w-full min-h-[44px] bg-white border border-[#cbd5e1] text-[#00357f] text-xs font-bold rounded-lg px-3 hover:bg-[#dee8ff]/30 flex items-center justify-center cursor-pointer transition-colors"
+                                        className="w-full min-h-[44px] bg-white border border-[#dee8ff] text-[#00357f] text-sm font-bold rounded-xl px-3 hover:bg-[#dee8ff]/30 flex items-center justify-center cursor-pointer transition-colors"
                                       >
                                         Continuar solo con el nombre
                                       </button>
                                     </div>
                                   </>
                                 ) : (
-                                  <div className="space-y-2">
-                                    <p className="text-xs font-bold text-[#00357f]">Agregar cliente rápido</p>
+                                  <div className="space-y-3">
+                                    <p className="text-sm font-bold text-[#00357f]">Agregar cliente rápido</p>
                                     <div>
-                                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#434653] mb-1">
+                                      <label className="block text-[13px] font-semibold text-[#434653] mb-1">
                                         Nombre *
                                       </label>
                                       <input
@@ -730,11 +946,11 @@ export default function SellerDashboard() {
                                         value={quickName}
                                         onChange={(e) => setQuickName(e.target.value)}
                                         placeholder="Nombre completo del cliente"
-                                        className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-3 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                                        className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                                       />
                                     </div>
                                     <div>
-                                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#434653] mb-1">
+                                      <label className="block text-[13px] font-semibold text-[#434653] mb-1">
                                         Teléfono (opcional)
                                       </label>
                                       <input
@@ -742,11 +958,11 @@ export default function SellerDashboard() {
                                         value={quickPhone}
                                         onChange={(e) => setQuickPhone(e.target.value)}
                                         placeholder="Ej. (555) 123-4567"
-                                        className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-3 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                                        className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                                       />
                                     </div>
                                     <div>
-                                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#434653] mb-1">
+                                      <label className="block text-[13px] font-semibold text-[#434653] mb-1">
                                         Correo (opcional)
                                       </label>
                                       <input
@@ -754,11 +970,11 @@ export default function SellerDashboard() {
                                         value={quickEmail}
                                         onChange={(e) => setQuickEmail(e.target.value)}
                                         placeholder="cliente@correo.com"
-                                        className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-3 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                                        className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                                       />
                                     </div>
                                     {quickError && (
-                                      <p className="bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]/25 rounded-lg px-3 py-2 text-xs font-semibold">
+                                      <p className="bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]/25 rounded-xl px-3 py-2 text-[13px] font-semibold">
                                         {quickError}
                                       </p>
                                     )}
@@ -767,7 +983,7 @@ export default function SellerDashboard() {
                                         type="button"
                                         onClick={handleQuickCreateCustomer}
                                         disabled={quickCreating}
-                                        className="flex-1 min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white text-xs font-bold rounded-lg px-3 flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                                        className="flex-1 min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white text-sm font-bold rounded-xl px-3 flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
                                       >
                                         {quickCreating ? (
                                           <>
@@ -782,7 +998,7 @@ export default function SellerDashboard() {
                                         type="button"
                                         onClick={() => { setShowQuickAdd(false); setQuickError('') }}
                                         disabled={quickCreating}
-                                        className="min-h-[44px] bg-white border border-[#cbd5e1] text-[#737784] text-xs font-bold rounded-lg px-4 hover:bg-[#dee8ff]/30 cursor-pointer transition-colors disabled:opacity-50"
+                                        className="min-h-[44px] bg-white border border-[#dee8ff] text-[#737784] text-sm font-bold rounded-xl px-4 hover:bg-[#dee8ff]/30 cursor-pointer transition-colors disabled:opacity-50"
                                       >
                                         Cancelar
                                       </button>
@@ -800,10 +1016,10 @@ export default function SellerDashboard() {
                                     setShowCustomerSuggestions(false)
                                     setShowWalkInWarning(false)
                                   }}
-                                  className="w-full text-left p-3 hover:bg-[#dee8ff]/30 transition-colors flex justify-between items-center text-xs cursor-pointer"
+                                  className="w-full text-left p-3 min-h-[48px] hover:bg-[#dee8ff]/30 transition-colors flex justify-between items-center text-sm cursor-pointer"
                                 >
                                   <span className="font-bold text-[#111c2d]">{c.full_name}</span>
-                                  <span className="text-[10px] text-[#737784]">
+                                  <span className="text-xs text-[#737784]">
                                     {c.customer_profiles?.phone || 'Sin Tel.'}
                                   </span>
                                 </button>
@@ -814,14 +1030,14 @@ export default function SellerDashboard() {
                       </div>
 
                       {showWalkInWarning && !selectedCustomer && customerSearch.trim() && (
-                        <p className="bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]/25 rounded-lg px-3 py-2 text-xs font-semibold text-left flex items-start gap-2">
+                        <p className="bg-[#ffdad6] text-[#ba1a1a] border border-[#ba1a1a]/25 rounded-xl px-3 py-2.5 text-[13px] font-semibold text-left flex items-start gap-2">
                           <ShieldAlert className="w-4 h-4 shrink-0 mt-px" />
                           Ese cliente no existe: al registrar la venta se creará un perfil básico solo con el nombre, para que lo completes después en Clientes.
                         </p>
                       )}
 
                       {isClientBuyer && (
-                        <p className="text-[10px] font-bold text-[#005c3e] bg-[#49da9f]/10 border border-[#49da9f]/30 rounded-lg px-3 py-2 text-left">
+                        <p className="text-xs font-semibold text-[#00422b] bg-[#e2f9ee] border border-[#00422b]/20 rounded-xl px-3 py-2.5 text-left">
                           Cliente registrado: se aplica su precio de cliente en esta venta.
                         </p>
                       )}
@@ -834,12 +1050,12 @@ export default function SellerDashboard() {
                           value={couponCode}
                           onChange={(e) => setCouponCode(e.target.value)}
                           disabled={subtotal === 0}
-                          className="w-2/3 bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:outline-none min-h-[40px] font-mono uppercase"
+                          className="w-2/3 bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] uppercase transition-colors"
                         />
                         <button
                           type="submit"
                           disabled={subtotal === 0}
-                          className="w-1/3 bg-white border border-[#cbd5e1] text-xs font-bold rounded-lg text-[#00357f] hover:bg-[#dee8ff]/30 min-h-[40px] cursor-pointer transition-colors"
+                          className="w-1/3 bg-white border border-[#dee8ff] text-sm font-bold rounded-xl text-[#00357f] hover:bg-[#dee8ff]/30 min-h-[44px] cursor-pointer transition-colors"
                         >
                           Aplicar
                         </button>
@@ -848,32 +1064,44 @@ export default function SellerDashboard() {
                     </div>
 
                     {/* Payment values */}
-                    <form onSubmit={handleCheckout} className="mt-6 pt-4 border-t border-[#cbd5e1]/40 space-y-4 text-left">
-                      
-                      <div className="space-y-1.5 bg-[#f9f9ff] p-3.5 rounded-xl border border-[#cbd5e1]/40 text-xs font-medium">
+                    <form onSubmit={handleCheckout} className="mt-6 pt-4 border-t border-[#dee8ff] space-y-4 text-left">
+
+                      <div className="space-y-1.5 bg-[#f9f9ff] p-4 rounded-2xl text-sm font-medium">
                         <div className="flex justify-between text-[#737784]">
                           <span>Subtotal</span>
-                          <span>{formatPrice(subtotal)}</span>
+                          <span className="tabular-nums">{formatPrice(subtotal)}</span>
                         </div>
                         {discount > 0 && (
-                          <div className="flex justify-between text-emerald-600 font-bold">
+                          <div className="flex justify-between text-[#00422b] font-bold">
                             <span>Descuento ({activeCoupon?.discount_percent}%)</span>
-                            <span>-{formatPrice(discount)}</span>
+                            <span className="tabular-nums">-{formatPrice(discount)}</span>
                           </div>
                         )}
-                        <div className="flex justify-between text-[#737784] text-[10px]">
-                          <span>Desglose IVA (16%)</span>
-                          <span>{formatPrice(iva)}</span>
+                        {/* Informative VAT breakdown: catalog prices already
+                            include the 16% VAT, so this only splits the
+                            amount to charge (total after coupon) into its
+                            net part (total / 1.16) and its tax part. The
+                            charged total does not change by a cent. */}
+                        <div className="pt-2 mt-1 border-t border-[#dee8ff] border-dashed space-y-1.5">
+                          <p className="text-[11px] font-semibold text-[#737784]">Los precios ya incluyen IVA</p>
+                          <div className="flex justify-between text-[#737784] text-xs">
+                            <span>Precio sin IVA</span>
+                            <span className="tabular-nums">{formatPrice(netSubtotal)}</span>
+                          </div>
+                          <div className="flex justify-between text-[#737784] text-xs">
+                            <span>IVA (16%)</span>
+                            <span className="tabular-nums">{formatPrice(iva)}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between text-[#111c2d] font-bold pt-1.5 border-t border-[#cbd5e1]/50 border-dashed">
-                          <span>Total Neto</span>
-                          <span className="text-sm font-black text-[#00357f] font-mono">{formatPrice(total)}</span>
+                        <div className="flex justify-between items-baseline text-[#111c2d] font-bold pt-2 border-t border-[#dee8ff] border-dashed">
+                          <span className="text-base">Total</span>
+                          <span className="text-xl font-black text-[#00357f] tabular-nums">{formatPrice(total)}</span>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[9px] font-bold uppercase tracking-wider text-[#737784] mb-1.5">
+                          <label className="block text-[13px] font-semibold text-[#434653] mb-1.5">
                             Anticipo Recibido
                           </label>
                           <input
@@ -883,21 +1111,21 @@ export default function SellerDashboard() {
                             value={paidAmountInput}
                             onChange={(e) => setPaidAmountInput(e.target.value)}
                             disabled={subtotal === 0}
-                            className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] focus:outline-none min-h-[44px] font-mono"
+                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] tabular-nums transition-colors"
                           />
                         </div>
                         <div>
-                          <label className="block text-[9px] font-bold uppercase tracking-wider text-[#737784] mb-1.5">
+                          <label className="block text-[13px] font-semibold text-[#434653] mb-1.5">
                             Saldo Pendiente
                           </label>
-                          <div className="w-full bg-[#ffdad6] border border-[#ba1a1a]/20 rounded-lg px-4 py-3 text-xs font-black text-[#ba1a1a] min-h-[44px] flex items-center justify-center font-mono">
+                          <div className="w-full bg-[#ffdad6] border border-[#ba1a1a]/20 rounded-xl px-4 py-3 text-sm font-black text-[#ba1a1a] min-h-[44px] flex items-center justify-center tabular-nums">
                             {formatPrice(pendingBalance)}
                           </div>
                         </div>
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="block text-[9px] font-bold uppercase tracking-wider text-[#737784]">
+                        <label className="block text-[13px] font-semibold text-[#434653]">
                           Método de Pago
                         </label>
                         <div className="grid grid-cols-3 gap-2">
@@ -911,10 +1139,10 @@ export default function SellerDashboard() {
                               type="button"
                               onClick={() => setPaymentMethod(m.id as any)}
                               disabled={subtotal === 0}
-                              className={`py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer min-h-[44px] flex items-center justify-center ${
+                              className={`py-2 text-sm font-semibold rounded-full border transition-all cursor-pointer min-h-[44px] flex items-center justify-center ${
                                 paymentMethod === m.id
-                                  ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f] font-black'
-                                  : 'bg-white border-[#cbd5e1] text-[#737784] hover:bg-[#dee8ff]/30'
+                                  ? 'bg-[#dee8ff] border-[#00357f]/40 text-[#00357f] font-bold'
+                                  : 'bg-white border-[#dee8ff] text-[#737784] hover:bg-[#dee8ff]/30'
                               }`}
                             >
                               {m.label}
@@ -924,20 +1152,20 @@ export default function SellerDashboard() {
                       </div>
 
                       <div className="pt-1">
-                        <input 
-                          type="text" 
-                          placeholder="Notas de la receta / observaciones..." 
+                        <input
+                          type="text"
+                          placeholder="Notas de la receta / observaciones..."
                           value={saleNotes}
                           onChange={(e) => setSaleNotes(e.target.value)}
                           disabled={subtotal === 0}
-                          className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:outline-none"
+                          className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                         />
                       </div>
 
                       <button
                         type="submit"
                         disabled={cart.length === 0 || submitting}
-                        className="w-full bg-[#00357f] hover:bg-[#004aad] text-white font-bold py-4 px-4 rounded-xl text-xs shadow-sm cursor-pointer transition-all disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-2"
+                        className="w-full bg-[#00357f] hover:bg-[#00509e] text-white font-bold py-4 px-4 rounded-2xl text-[15px] cursor-pointer transition-all disabled:opacity-50 min-h-[48px] flex items-center justify-center gap-2"
                       >
                         {submitting ? (
                           <>
@@ -968,18 +1196,17 @@ export default function SellerDashboard() {
                 {[
                   { id: 'Todos', label: 'Todos' },
                   { id: 'Cotizacion', label: 'Cotización' },
-                  { id: 'Anticipo_Pagado', label: 'Con Anticipo' },
-                  { id: 'En_Taller', label: 'En Taller' },
-                  { id: 'Listo_Entrega', label: 'Listo para Entrega' },
-                  { id: 'Entregado', label: 'Entregados' }
+                  { id: 'En_Taller', label: 'En taller' },
+                  { id: 'Listo_Entrega', label: 'Listo para entrega' },
+                  { id: 'Entregado', label: 'Entregado' }
                 ].map(tab => (
                   <button
                     key={tab.id}
                     onClick={() => setTallerFilter(tab.id as any)}
-                    className={`text-[10px] font-bold px-4 py-2.5 rounded-lg border transition-all cursor-pointer min-h-[34px] ${
+                    className={`text-[13px] font-semibold px-4 py-2.5 rounded-full border transition-all cursor-pointer min-h-[40px] ${
                       tallerFilter === tab.id
-                        ? 'bg-[#dee8ff] border-[#00357f] text-[#00357f] font-black'
-                        : 'bg-white border-[#cbd5e1] text-[#737784] hover:bg-[#f0f3ff]'
+                        ? 'bg-[#dee8ff] border-[#00357f]/40 text-[#00357f] font-bold'
+                        : 'bg-white border-[#dee8ff] text-[#737784] hover:bg-[#f9f9ff]'
                     }`}
                   >
                     {tab.label}
@@ -990,40 +1217,44 @@ export default function SellerDashboard() {
               {/* Orders list */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredSales.length === 0 ? (
-                  <div className="col-span-full py-20 text-center text-xs text-[#737784] bg-white border border-[#cbd5e1] rounded-2xl shadow-sm font-semibold">
+                  <div className="col-span-full py-20 text-center text-sm text-[#737784] bg-white rounded-[20px] or-shadow-card font-semibold">
                     No hay órdenes de taller bajo este estado.
                   </div>
                 ) : (
                   filteredSales.map((sale) => {
                     const balance = sale.pending_balance !== undefined ? sale.pending_balance : 0
                     const paid = sale.paid_amount !== undefined ? sale.paid_amount : sale.total
+                    const productLines = (sale.items ?? []).filter(i => !i.is_complement)
+                    const orphanComplements = (sale.items ?? []).filter(c =>
+                      c.is_complement && !productLines.some(i => (i.product_name || '') === (c.complement_for || ''))
+                    )
 
                     return (
                       <div
                         key={sale.id}
-                        className="bg-white border border-[#cbd5e1] rounded-2xl p-5 flex flex-col justify-between gap-4 shadow-sm hover:shadow-md transition-shadow text-left"
+                        className="bg-white rounded-[20px] or-shadow-card p-5 flex flex-col justify-between gap-4 text-left"
                       >
                         <div className="space-y-3">
-                          <div className="flex justify-between items-start">
+                          <div className="flex justify-between items-start gap-2">
                             <div>
-                              <span className="text-[9px] text-[#737784] block font-bold uppercase">Orden #{sale.id.slice(2, 8).toUpperCase()}</span>
-                              <h3 className="font-extrabold text-sm text-[#111c2d] mt-0.5 leading-snug">
+                              <span className="text-xs text-[#737784] block font-semibold">Orden #{sale.id.slice(2, 8).toUpperCase()}</span>
+                              <h3 className="font-extrabold text-base text-[#111c2d] mt-0.5 leading-snug">
                                 {sale.customer_name || 'Cliente Externo'}
                               </h3>
                             </div>
-                            
+
                             {/* Status Badge */}
-                            <span className={`px-2.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${
-                              sale.status === 'Cotizacion' ? 'bg-[#f0f3ff] text-[#434653] border-[#cbd5e1]' :
-                              sale.status === 'Anticipo_Pagado' ? 'bg-[#dee8ff] text-[#00357f] border-[#00357f]/20' :
-                              sale.status === 'En_Taller' ? 'bg-[#c4e7ff] text-[#004c69] border-[#004c69]/20' :
-                              sale.status === 'Listo_Entrega' ? 'bg-[#49da9f]/20 text-[#00422b] border-[#49da9f]/30 animate-pulse' :
-                              'bg-[#f9f9ff] text-[#737784] border-[#cbd5e1]'
+                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0 ${
+                              sale.status === 'Cotizacion' ? 'bg-[#dee8ff] text-[#00357f]' :
+                              sale.status === 'Anticipo_Pagado' ? 'bg-[#fef3c7] text-[#92400e]' :
+                              sale.status === 'En_Taller' ? 'bg-[#fef3c7] text-[#92400e]' :
+                              sale.status === 'Listo_Entrega' ? 'bg-[#dee8ff] text-[#00357f]' :
+                              'bg-[#e2f9ee] text-[#00422b]'
                             }`}>
                               {sale.status === 'Cotizacion' && 'Cotización'}
                               {sale.status === 'Anticipo_Pagado' && 'Anticipo'}
-                              {sale.status === 'En_Taller' && 'En Taller'}
-                              {sale.status === 'Listo_Entrega' && 'Listo'}
+                              {sale.status === 'En_Taller' && 'En taller'}
+                              {sale.status === 'Listo_Entrega' && 'Listo para entrega'}
                               {sale.status === 'Entregado' && 'Entregado'}
                             </span>
                           </div>
@@ -1031,40 +1262,78 @@ export default function SellerDashboard() {
                           <div className="h-px bg-[#f0f3ff]" />
 
                           {/* Financial info */}
-                          <div className="grid grid-cols-3 gap-2 text-[10px] text-center font-medium">
-                            <div className="bg-[#f9f9ff] p-2 rounded-xl border border-[#cbd5e1]/40">
-                              <span className="block text-[#737784] uppercase font-bold text-[8px] mb-0.5">Total</span>
-                              <span className="font-bold text-[#111c2d] font-mono">{formatPrice(sale.total)}</span>
+                          <div className="grid grid-cols-3 gap-2 text-sm text-center font-medium">
+                            <div className="bg-[#f9f9ff] p-2.5 rounded-xl">
+                              <span className="block text-[#737784] font-semibold text-[11px] mb-0.5">Total</span>
+                              <span className="font-bold text-[#111c2d] tabular-nums">{formatPrice(sale.total)}</span>
                             </div>
-                            <div className="bg-[#f9f9ff] p-2 rounded-xl border border-[#cbd5e1]/40">
-                              <span className="block text-[#737784] uppercase font-bold text-[8px] mb-0.5">Anticipo</span>
-                              <span className="font-bold text-emerald-600 font-mono">{formatPrice(paid)}</span>
+                            <div className="bg-[#f9f9ff] p-2.5 rounded-xl">
+                              <span className="block text-[#737784] font-semibold text-[11px] mb-0.5">Anticipo</span>
+                              <span className="font-bold text-[#00422b] tabular-nums">{formatPrice(paid)}</span>
                             </div>
-                            <div className="bg-[#f9f9ff] p-2 rounded-xl border border-[#cbd5e1]/40">
-                              <span className="block text-[#737784] uppercase font-bold text-[8px] mb-0.5">Adeudo</span>
-                              <span className={`font-bold font-mono ${balance > 0 ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
+                            <div className="bg-[#f9f9ff] p-2.5 rounded-xl">
+                              <span className="block text-[#737784] font-semibold text-[11px] mb-0.5">Adeudo</span>
+                              <span className={`font-bold tabular-nums ${balance > 0 ? 'text-[#ba1a1a]' : 'text-[#737784]'}`}>
                                 {formatPrice(balance)}
                               </span>
                             </div>
                           </div>
 
                           {sale.notes && (
-                            <p className="text-[10px] text-[#434653] bg-[#f9f9ff] p-2.5 rounded-lg border border-[#cbd5e1]/40 truncate font-medium" title={sale.notes}>
+                            <p className="text-xs text-[#434653] bg-[#f9f9ff] p-2.5 rounded-xl truncate font-medium" title={sale.notes}>
                               <strong>Nota:</strong> {sale.notes}
                             </p>
+                          )}
+
+                          {/* Sold items with their free-text complements */}
+                          {sale.items && sale.items.length > 0 && (
+                            <div className="space-y-1.5 bg-[#f9f9ff] p-2.5 rounded-xl text-xs">
+                              {productLines.map(line => (
+                                <div key={line.id}>
+                                  <div className="flex justify-between gap-2">
+                                    <span className="font-semibold text-[#111c2d]">{line.product_name || 'Producto'}</span>
+                                    <span className="tabular-nums text-[#434653] shrink-0">{line.quantity} × {formatPrice(line.price)}</span>
+                                  </div>
+                                  {(sale.items ?? []).filter(c => c.is_complement && (c.complement_for || '') === (line.product_name || '')).map(c => (
+                                    <div key={c.id} className="flex justify-between items-center gap-2 pl-3 pt-0.5">
+                                      <span className="text-[#434653] font-medium">
+                                        Complemento: <strong className="text-[#111c2d]">{c.complement_name || 'Complemento'}</strong>
+                                      </span>
+                                      {c.price > 0 ? (
+                                        <span className="tabular-nums text-[#434653] shrink-0">{formatPrice(c.price * c.quantity)}</span>
+                                      ) : (
+                                        <span className="bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded-full font-bold text-[10px] shrink-0">Gratis</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                              {orphanComplements.map(c => (
+                                <div key={c.id} className="flex justify-between items-center gap-2">
+                                  <span className="text-[#434653] font-medium">
+                                    Complemento: <strong className="text-[#111c2d]">{c.complement_name || 'Complemento'}</strong>
+                                  </span>
+                                  {c.price > 0 ? (
+                                    <span className="tabular-nums text-[#434653] shrink-0">{formatPrice(c.price * c.quantity)}</span>
+                                  ) : (
+                                    <span className="bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded-full font-bold text-[10px] shrink-0">Gratis</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
 
                         {/* ACTION SELECT ENGINE FOR WORKSHOP */}
                         <div className="space-y-1.5 pt-2 border-t border-[#f0f3ff]">
-                          <label className="block text-[8px] font-black uppercase tracking-wider text-[#737784]">
+                          <label className="block text-xs font-semibold text-[#434653]">
                             Cambiar Estado de Laboratorio
                           </label>
-                          
+
                           <select
                             value={sale.status}
                             onChange={(e) => handleStatusChange(sale.id, e.target.value)}
-                            className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-3 py-2 text-xs text-[#111c2d] focus:outline-none min-h-[40px] font-bold cursor-pointer"
+                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2 text-sm text-[#111c2d] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] font-semibold cursor-pointer transition-colors"
                           >
                             <option value="Cotizacion">Cotización (Sin pago)</option>
                             <option value="Anticipo_Pagado">Anticipo Pagado (Espera taller)</option>
@@ -1082,6 +1351,164 @@ export default function SellerDashboard() {
             </div>
           )}
         </>
+      )}
+
+      {/* COMPLEMENTS MODAL (add mode from the catalog, edit mode from a
+          cart line). Cancel discards everything; the confirm button adds
+          the product with its complements or applies the corrections to
+          the cart line. */}
+      {complementModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#111c2d]/50 p-0 sm:p-4"
+          onClick={closeComplementModal}
+          role="dialog"
+          aria-modal="true"
+          aria-label={complementModal.mode === 'edit' ? 'Editar artículo del carrito' : 'Agregar artículo al carrito'}
+        >
+          <div
+            className="bg-white rounded-t-[20px] sm:rounded-[20px] or-shadow-card w-full max-w-md max-h-[92dvh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Product header */}
+            <div className="p-5 pb-4 border-b border-[#f0f3ff] space-y-1.5 text-left">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-base font-bold text-[#111c2d] leading-snug">{complementModal.product.name}</h3>
+                <button
+                  type="button"
+                  onClick={closeComplementModal}
+                  aria-label="Cerrar"
+                  className="min-w-[44px] min-h-[44px] -mr-2 -mt-2 shrink-0 flex items-center justify-center rounded-full text-[#737784] hover:bg-[#dee8ff]/50 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <p className="text-xs font-semibold text-[#737784]">
+                {complementModal.product.category === 'frames' && 'Armazón'}
+                {complementModal.product.category === 'lenses' && 'Mica'}
+                {complementModal.product.category === 'contact_lenses' && 'Contacto'}
+                {complementModal.product.category === 'accessories' && 'Accesorio'}
+                {' · '}Stock: {complementModal.product.stock}
+                {complementModal.mode === 'edit' && ' · Editando la línea del carrito'}
+              </p>
+              {complementModal.product.description && (
+                <p className="text-sm text-[#434653] leading-relaxed">{complementModal.product.description}</p>
+              )}
+              <p className="text-lg font-extrabold text-[#00357f] tabular-nums">
+                {formatPrice(unitPriceOf(complementModal.product))}
+                {isClientBuyer && unitPriceOf(complementModal.product) !== complementModal.product.price && (
+                  <span className="ml-1.5 text-sm line-through text-[#737784] font-medium">{formatPrice(complementModal.product.price)}</span>
+                )}
+              </p>
+            </div>
+
+            {/* Complements editor */}
+            <div className="p-5 space-y-3 text-left">
+              <h4 className="text-sm font-bold text-[#111c2d]">Complementos</h4>
+              {complementRows.map((row, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={row.name}
+                    onChange={(e) => updateComplementRow(idx, 'name', e.target.value)}
+                    placeholder="Nombre (ej. Fotocromático)"
+                    aria-label="Nombre del complemento"
+                    className="flex-1 min-w-0 bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={row.price}
+                    onChange={(e) => updateComplementRow(idx, 'price', e.target.value)}
+                    placeholder="Precio"
+                    aria-label="Precio del complemento"
+                    className="w-24 shrink-0 bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] tabular-nums transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeComplementRow(idx)}
+                    aria-label="Quitar complemento"
+                    className="min-w-[44px] min-h-[44px] shrink-0 flex items-center justify-center rounded-full text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setComplementRows(rows => [...rows, { name: '', price: '' }])}
+                className="min-h-[44px] px-3 flex items-center gap-1.5 text-sm font-bold text-[#00357f] hover:bg-[#dee8ff]/40 rounded-xl transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Agregar complemento
+              </button>
+              <p className="text-xs text-[#737784] font-medium">
+                Precio en 0 o vacío = <strong className="text-[#00422b]">Gratis</strong>. Sin complementos, el producto se agrega como siempre.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 pt-3 border-t border-[#f0f3ff] flex gap-2">
+              <button
+                type="button"
+                onClick={closeComplementModal}
+                className="flex-1 min-h-[48px] rounded-xl bg-[#ffdad6] hover:bg-[#ffc9c4] text-[#ba1a1a] font-bold text-sm transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmComplementModal}
+                className="flex-1 min-h-[48px] rounded-xl bg-[#00357f] hover:bg-[#00509e] text-white font-bold text-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                {complementModal.mode === 'edit' ? 'Confirmar' : 'Enviar a carrito'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REMOVE LINE CONFIRMATION: removing a cart line (trash button or
+          quantity dropping to zero) always asks first; confirming removes
+          the line together with its complements. */}
+      {removeCandidate && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#111c2d]/50 p-0 sm:p-4"
+          onClick={() => setRemoveCandidate(null)}
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Confirmar quitar artículo del carrito"
+        >
+          <div
+            className="bg-white rounded-t-[20px] sm:rounded-[20px] or-shadow-card w-full max-w-sm p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1.5 text-left">
+              <h3 className="text-base font-bold text-[#111c2d] leading-snug">¿Seguro que quieres quitar este artículo del carrito?</h3>
+              <p className="text-sm text-[#434653] font-medium">
+                {removeCandidate.product.name}
+                {removeCandidate.complements.length > 0 && ' (se quitan también sus complementos)'}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRemoveCandidate(null)}
+                className="flex-1 min-h-[48px] rounded-xl bg-white border border-[#dee8ff] text-[#00357f] font-bold text-sm hover:bg-[#dee8ff]/30 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmRemoveFromCart}
+                className="flex-1 min-h-[48px] rounded-xl bg-[#ba1a1a] hover:bg-[#93000a] text-white font-bold text-sm transition-colors cursor-pointer"
+              >
+                Sí, quitar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </main>

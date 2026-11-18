@@ -276,7 +276,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
       return acc + Number(it.quantity || 0) * (Number(it.price || 0) + Number(it.lens_material_price || 0) + treatments)
     }, 0)
     const hasComponents = items.some((it: any) =>
-      Number(it.lens_material_price || 0) > 0 || (it.sale_item_treatments || []).length > 0)
+      Number(it.lens_material_price || 0) > 0 || (it.sale_item_treatments || []).length > 0 || !!it.is_complement)
     return { sum, hasComponents }
   }
 
@@ -870,10 +870,11 @@ export default function CustomerDetailPage({ params }: PageProps) {
                     <div className="space-y-2 text-left">
                       <span className="text-[9px] font-black text-[#737784] uppercase tracking-wider block">Productos</span>
                       <div className="space-y-1.5">
-                        {sale.sale_items?.map((item: any, idx: number) => {
+                        {sale.sale_items?.filter((item: any) => !item.is_complement).map((item: any, idx: number) => {
                           const treatments = item.sale_item_treatments || []
                           const materialPrice = Number(item.lens_material_price || 0)
                           const showMaterial = !!item.lens_material?.name && materialPrice > 0
+                          const itemComplements = (sale.sale_items || []).filter((c: any) => c.is_complement && c.complement_for === item.product?.name)
                           return (
                             <div key={idx} className="text-xs bg-[#f9f9ff] px-3.5 py-2.5 rounded-xl border border-[#cbd5e1]/40 space-y-1.5">
                               <div className="flex justify-between items-center">
@@ -885,7 +886,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                                   {item.quantity} x <strong className="font-mono text-[#00357f]">{formatPrice(item.price)}</strong>
                                 </span>
                               </div>
-                              {(showMaterial || treatments.length > 0) && (
+                              {(showMaterial || treatments.length > 0 || itemComplements.length > 0) && (
                                 <div className="border-t border-[#cbd5e1]/40 pt-1.5 space-y-1">
                                   {showMaterial && (
                                     <div className="flex justify-between items-center text-[11px] pl-3">
@@ -903,11 +904,34 @@ export default function CustomerDetailPage({ params }: PageProps) {
                                       </span>
                                     </div>
                                   ))}
+                                  {itemComplements.map((c: any, ci: number) => (
+                                    <div key={`comp-${ci}`} className="flex justify-between items-center text-[11px] pl-3">
+                                      <span className="text-[#434653] font-medium">Complemento: <strong className="text-[#111c2d]">{c.complement_name || 'Complemento'}</strong></span>
+                                      {Number(c.price) > 0 ? (
+                                        <span className="font-mono text-[#434653]">
+                                          {(c.quantity || 1) > 1 ? `${c.quantity} x ${formatPrice(Number(c.price))} = ` : ''}{formatPrice(Number(c.price) * (c.quantity || 1))}
+                                        </span>
+                                      ) : (
+                                        <span className="bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded-full font-bold text-[10px]">Gratis</span>
+                                      )}
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </div>
                           )
                         })}
+                        {/* Complements whose parent product is no longer listed */}
+                        {(sale.sale_items || []).filter((c: any) => c.is_complement && !(sale.sale_items || []).some((i: any) => !i.is_complement && i.product?.name === c.complement_for)).map((c: any, ci: number) => (
+                          <div key={`orphan-${ci}`} className="text-xs bg-[#f9f9ff] px-3.5 py-2.5 rounded-xl border border-[#cbd5e1]/40 flex justify-between items-center">
+                            <span className="text-[#434653] font-medium">Complemento: <strong className="text-[#111c2d]">{c.complement_name || 'Complemento'}</strong></span>
+                            {Number(c.price) > 0 ? (
+                              <span className="font-mono text-[#434653]">{formatPrice(Number(c.price) * (c.quantity || 1))}</span>
+                            ) : (
+                              <span className="bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded-full font-bold text-[10px]">Gratis</span>
+                            )}
+                          </div>
+                        ))}
                       </div>
                       {saleBreakdown(sale).hasComponents && (
                         <div className="flex flex-wrap gap-x-4 gap-y-1 justify-between items-center text-[11px] bg-[#dee8ff]/30 border border-[#cbd5e1]/40 rounded-xl px-3.5 py-2">

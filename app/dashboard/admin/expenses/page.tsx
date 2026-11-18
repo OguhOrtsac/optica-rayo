@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft,
+  CheckCircle2,
   Lock,
   Plus,
   Receipt,
@@ -20,13 +21,17 @@ import {
   createFixedExpense,
   deleteDailyExpense,
   deleteFixedExpense,
+  fixedPaymentState,
   getDailyExpenses,
   getFixedExpenses,
+  nextDueDate,
+  registerFixedPayment,
   setFixedExpenseActive,
   updateDailyExpense,
   updateFixedExpense,
   type DailyExpense,
   type FixedExpense,
+  type FixedPaymentState,
 } from '@/lib/expenses'
 
 // Expenses are managed ONLY by the administrator (owner / super_admin),
@@ -53,8 +58,34 @@ const CATEGORY_CHIP: Record<string, string> = {
   'Cristales y material': 'bg-[#e6f5fb] text-[#0077a3]',
   Limpieza: 'bg-[#e2f9ee] text-[#00422b]',
   Servicios: 'bg-[#fef3c7] text-[#92400e]',
+  Honorarios: 'bg-[#dee8ff] text-[#00509e]',
   Equipo: 'bg-[#f0f3ff] text-[#00357f]',
   Otro: 'bg-[#f0f3ff] text-[#737784]',
+}
+
+const FIXED_STATE_META: Record<FixedPaymentState, { label: string; chip: string }> = {
+  al_corriente: { label: 'Al corriente', chip: 'bg-[#e2f9ee] text-[#00422b]' },
+  por_vencer: { label: 'Por vencer', chip: 'bg-[#fef3c7] text-[#92400e]' },
+  vencido: { label: 'Vencido', chip: 'bg-[#ffdad6] text-[#ba1a1a]' },
+}
+
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: 'Lunes' },
+  { value: 2, label: 'Martes' },
+  { value: 3, label: 'Miércoles' },
+  { value: 4, label: 'Jueves' },
+  { value: 5, label: 'Viernes' },
+  { value: 6, label: 'Sábado' },
+  { value: 7, label: 'Domingo' },
+]
+
+/** «mié 3 dic» de la próxima fecha de pago de un fijo. */
+function formatNextDue(fixed: FixedExpense): string {
+  return nextDueDate(fixed, new Date()).toLocaleDateString('es-MX', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
 }
 
 const money = new Intl.NumberFormat('es-MX', {
@@ -117,6 +148,8 @@ interface FixedForm {
   amount: string
   periodicity: Periodicity
   is_active: boolean
+  /** Día de pago como texto del formulario ('' = sin configurar). */
+  due_day: string
 }
 
 const EMPTY_FIXED_FORM: FixedForm = {
@@ -124,6 +157,7 @@ const EMPTY_FIXED_FORM: FixedForm = {
   amount: '',
   periodicity: 'monthly',
   is_active: true,
+  due_day: '',
 }
 
 function emptyDailyForm(): DailyForm {
@@ -374,6 +408,7 @@ export default function AdminExpensesPage() {
       amount: String(fixed.amount),
       periodicity: (fixed.periodicity as Periodicity) || 'monthly',
       is_active: fixed.is_active,
+      due_day: fixed.due_day !== null && fixed.due_day !== undefined ? String(fixed.due_day) : '',
     })
     setFixedFormError(null)
     setConfirmDeleteFixed(false)
@@ -392,6 +427,23 @@ export default function AdminExpensesPage() {
       return
     }
 
+    // Día de pago: vacío = sin configurar (null). Semanal admite
+    // 1-7 (lun-dom); mensual y anual, 1-31.
+    let dueDay: number | null = null
+    if (fixedForm.due_day.trim() !== '') {
+      const parsed = Math.trunc(Number(fixedForm.due_day))
+      const maxDay = fixedForm.periodicity === 'weekly' ? 7 : 31
+      if (!Number.isFinite(parsed) || parsed < 1 || parsed > maxDay) {
+        setFixedFormError(
+          fixedForm.periodicity === 'weekly'
+            ? 'El día de pago semanal debe ser del 1 (lunes) al 7 (domingo).'
+            : 'El día de pago debe ser del 1 al 31.',
+        )
+        return
+      }
+      dueDay = parsed
+    }
+
     // FixedExpenseInput does not carry is_active: the active flag is a
     // separate operation (setFixedExpenseActive), both on edit and on
     // create (new rows are born active in the base).
@@ -399,6 +451,7 @@ export default function AdminExpensesPage() {
       concept,
       amount,
       periodicity: fixedForm.periodicity,
+      due_day: dueDay,
     }
 
     try {
@@ -452,6 +505,25 @@ export default function AdminExpensesPage() {
     } finally {
       setDeletingFixed(false)
       setConfirmDeleteFixed(false)
+    }
+  }
+
+  const handleRegisterFixedPayment = async (fixed: FixedExpense) => {
+    try {
+      setBusyFixedId(fixed.id)
+      await registerFixedPayment(fixed.id)
+      setFeedbackMsg({
+        type: 'success',
+        text: `Pago registrado: ${fixed.concept}. Quedó en los gastos de hoy.`,
+      })
+      await Promise.all([refreshFixed(), refreshDaily()])
+    } catch (err: any) {
+      setFeedbackMsg({
+        type: 'error',
+        text: err?.message || 'No se pudo registrar el pago del gasto fijo.',
+      })
+    } finally {
+      setBusyFixedId(null)
     }
   }
 
@@ -725,31 +797,55 @@ export default function AdminExpensesPage() {
           ) : (
             <>
               <div className="bg-white border border-[#cbd5e1] rounded-2xl shadow-sm overflow-hidden divide-y divide-[#f0f3ff]">
-                {fixedExpenses.map(fixed => (
+                {fixedExpenses.map(fixed => {
+                  const stateMeta = FIXED_STATE_META[fixedPaymentState(fixed, new Date())]
+                  return (
                   <div
                     key={fixed.id}
-                    className={`w-full flex items-center gap-3 px-4 py-3 min-h-[48px] transition-colors ${fixed.is_active ? '' : 'opacity-60'}`}
+                    className={`w-full px-4 py-3 transition-colors ${fixed.is_active ? '' : 'opacity-60'}`}
                   >
-                    <button
-                      onClick={() => openEditFixed(fixed)}
-                      className="flex-1 min-w-0 flex items-center gap-3 text-left cursor-pointer"
-                    >
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-sm font-bold text-[#111c2d] truncate">{fixed.concept}</span>
-                        <span className="block text-xs text-[#737784] font-medium mt-0.5">
-                          {periodicityLabel(fixed.periodicity)} · ≈ {formatMoney(monthlyEquivalent(fixed))}/mes
+                    <div className="flex items-center gap-3 min-h-[48px]">
+                      <button
+                        onClick={() => openEditFixed(fixed)}
+                        className="flex-1 min-w-0 flex items-center gap-3 text-left cursor-pointer"
+                      >
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-bold text-[#111c2d] truncate">{fixed.concept}</span>
+                          <span className="block text-xs text-[#737784] font-medium mt-0.5">
+                            {periodicityLabel(fixed.periodicity)} · ≈ {formatMoney(monthlyEquivalent(fixed))}/mes
+                          </span>
                         </span>
-                      </span>
-                      <span className="text-base font-extrabold text-[#111c2d] shrink-0">{formatMoney(fixed.amount)}</span>
-                    </button>
-                    {renderToggle(
-                      fixed.is_active,
-                      () => handleToggleFixedActive(fixed),
-                      fixed.is_active ? `Desactivar ${fixed.concept}` : `Activar ${fixed.concept}`,
-                      busyFixedId === fixed.id,
+                        <span className="text-base font-extrabold text-[#111c2d] shrink-0">{formatMoney(fixed.amount)}</span>
+                      </button>
+                      {renderToggle(
+                        fixed.is_active,
+                        () => handleToggleFixedActive(fixed),
+                        fixed.is_active ? `Desactivar ${fixed.concept}` : `Activar ${fixed.concept}`,
+                        busyFixedId === fixed.id,
+                      )}
+                    </div>
+                    {fixed.is_active && (
+                      <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${stateMeta.chip}`}>
+                          {stateMeta.label}
+                        </span>
+                        <span className="text-[11px] text-[#737784] font-semibold capitalize">
+                          Próximo pago: {formatNextDue(fixed)}
+                          {fixed.last_paid_on && <> · Último: {formatDayHeader(fixed.last_paid_on)}</>}
+                        </span>
+                        <button
+                          onClick={() => void handleRegisterFixedPayment(fixed)}
+                          disabled={busyFixedId === fixed.id}
+                          className="ml-auto inline-flex items-center gap-1.5 min-h-[36px] px-3 py-1.5 rounded-lg bg-[#00422b] hover:bg-[#00331f] text-white text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {busyFixedId === fixed.id ? 'Registrando…' : 'Registrar pago'}
+                        </button>
+                      </div>
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
               <div className="bg-[#dee8ff]/50 border border-[#cbd5e1] rounded-2xl px-5 py-4 flex items-center justify-between gap-3">
                 <p className="text-xs font-black uppercase tracking-wider text-[#00357f]">Total fijo mensual equivalente</p>
@@ -963,6 +1059,41 @@ export default function AdminExpensesPage() {
                   Equivale a ≈ {formatMoney(Number(fixedForm.amount) * PERIODICITY_META[fixedForm.periodicity].monthlyFactor)}/mes.
                 </p>
               )}
+              <div className="space-y-1.5">
+                <label htmlFor="fixed-due-day" className="text-xs font-bold text-[#111c2d]">Día de pago</label>
+                {fixedForm.periodicity === 'weekly' ? (
+                  <select
+                    id="fixed-due-day"
+                    value={fixedForm.due_day}
+                    onChange={e => setFixedForm({ ...fixedForm, due_day: e.target.value })}
+                    className="w-full bg-[#f9f9ff] border border-[#cbd5e1] rounded-xl px-3.5 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none"
+                  >
+                    <option value="">Sin configurar</option>
+                    {WEEKDAY_OPTIONS.map(d => (
+                      <option key={d.value} value={d.value}>{d.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="fixed-due-day"
+                    value={fixedForm.due_day}
+                    onChange={e => setFixedForm({ ...fixedForm, due_day: e.target.value })}
+                    placeholder="Sin configurar"
+                    min={1}
+                    max={31}
+                    step={1}
+                    className="w-full bg-[#f9f9ff] border border-[#cbd5e1] rounded-xl px-3.5 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none"
+                    type="number"
+                  />
+                )}
+                <p className="text-[11px] text-[#737784] font-semibold">
+                  {fixedForm.periodicity === 'weekly'
+                    ? 'El día de la semana en que se paga. Sirve para avisarte en la campanita cuando toca.'
+                    : fixedForm.periodicity === 'yearly'
+                      ? 'El día del mes del aniversario (el mes en que se dio de alta). Sirve para avisarte en la campanita cuando toca.'
+                      : 'El día del mes en que se paga (si el mes es más corto, toca su último día). Sirve para avisarte en la campanita cuando toca.'}
+                </p>
+              </div>
               <div className="flex items-center justify-between p-3.5 bg-[#f0f3ff] border border-[#cbd5e1] rounded-xl select-none">
                 <div>
                   <span className="block text-xs font-bold text-[#111c2d]">Gasto fijo activo</span>

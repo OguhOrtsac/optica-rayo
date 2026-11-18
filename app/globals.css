@@ -18,12 +18,12 @@
    ========================================== */
 :root {
   color-scheme: light;
-  --background: #f2f5fa;
+  --background: #e9f0fd;
   --foreground: #111c2d;
   --or-primary: #00357f;
   --or-primary-support: #00509e;
   --or-accent: #0899c9;
-  --or-bg: #f2f5fa;
+  --or-bg: #e9f0fd;
   --or-surface: #ffffff;
   --or-ok-bg: #e2f9ee;
   --or-ok-text: #00422b;
@@ -51,15 +51,17 @@
 }
 
 body {
-  /* Fondo con presencia de marca (2026-11-17, a pedido del dueño: el color
-     plano se veía «igual de plano»): degradado fijo que nace en un azul de
-     marca más presente arriba y se desvanece al fondo base, con un resplandor
-     celeste suave en la esquina superior. Las tarjetas blancas flotan encima
-     y la legibilidad no cambia. */
+  /* Fondo v3 (2026-11-18, el dueño rechazó el v2 por «muy opaco» y pidió algo
+     más llamativo y novedoso): malla de marca en capas fijas — una franja
+     azul viva arriba que se desvanece, un resplandor celeste fuerte en la
+     esquina superior derecha y un halo del azul primario a la izquierda —
+     sobre una base más profunda (#e9f0fd). Las tarjetas blancas flotan
+     encima y la legibilidad no cambia. */
   background-color: var(--background);
   background-image:
-    radial-gradient(640px 320px at 88% -60px, rgba(8, 153, 201, 0.16), rgba(8, 153, 201, 0) 70%),
-    linear-gradient(180deg, #d5e4fb 0%, #e4edfc 220px, var(--background) 560px);
+    radial-gradient(720px 360px at 88% -80px, rgba(8, 153, 201, 0.30), rgba(8, 153, 201, 0) 70%),
+    radial-gradient(560px 320px at -80px -60px, rgba(0, 53, 127, 0.18), rgba(0, 53, 127, 0) 70%),
+    linear-gradient(180deg, #b9d2fb 0%, #d3e2fd 240px, var(--background) 600px);
   background-attachment: fixed;
   background-repeat: no-repeat;
   color: var(--foreground);

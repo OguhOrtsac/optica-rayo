@@ -327,6 +327,7 @@ export default function CustomerDashboard() {
   const saleOptionsSummary = (sale: any): string[] => {
     const options: string[] = []
     sale.sale_items?.forEach((item: any) => {
+      if (item.is_complement && item.complement_name) options.push(item.complement_name)
       if (item.lens_material?.name) options.push(`Mica: ${item.lens_material.name}`)
       item.sale_item_treatments?.forEach((t: any) => {
         if (t.treatment?.name) options.push(t.treatment.name)
@@ -823,7 +824,7 @@ export default function CustomerDashboard() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="font-bold text-xs text-[#111c2d] mb-1 group-hover:text-[#00357f] transition-colors truncate">
-                          {sale.sale_items?.map((i: any) => i.product?.name).join(', ') || 'Compra en Óptica'}
+                          {sale.sale_items?.filter((i: any) => !i.is_complement).map((i: any) => i.product?.name).filter(Boolean).join(', ') || 'Compra en Óptica'}
                         </p>
                         <p className="text-[10px] text-[#737784] font-medium">
                           Adquirido el {new Date(sale.created_at).toLocaleDateString('es-MX')}
@@ -1223,7 +1224,7 @@ export default function CustomerDashboard() {
               <div className="space-y-3">
                 <h4 className="font-extrabold text-[#00357f] uppercase text-[9px] tracking-wider">Productos Adquiridos</h4>
                 <div className="space-y-2.5">
-                  {selectedSaleDetail.sale_items?.map((item: any) => {
+                  {selectedSaleDetail.sale_items?.filter((item: any) => !item.is_complement).map((item: any) => {
                     const baseFramePrice = item.price - (item.lens_material_price || 0) - (item.sale_item_treatments?.reduce((sum: number, t: any) => sum + t.price, 0) || 0)
                     return (
                       <div key={item.id} className="bg-[#f9f9ff] border border-[#cbd5e1]/30 p-3 rounded-xl space-y-2">
@@ -1255,9 +1256,33 @@ export default function CustomerDashboard() {
                             ))}
                           </div>
                         )}
+
+                        {/* Free-text complements added at the counter */}
+                        {selectedSaleDetail.sale_items?.filter((c: any) => c.is_complement && c.complement_for === item.product?.name).map((c: any, ci: number) => (
+                          <div key={`comp-${ci}`} className="flex justify-between items-center text-[10px] pl-3 border-l-2 border-[#cbd5e1] py-0.5">
+                            <span className="text-[#434653] font-medium">Complemento: {c.complement_name || 'Complemento'}</span>
+                            {Number(c.price) > 0 ? (
+                              <span className="text-[#111c2d] font-semibold font-mono">+{formatPrice(Number(c.price) * (c.quantity || 1))}</span>
+                            ) : (
+                              <span className="bg-[#e2f9ee] text-[#00422b] px-1.5 py-0.5 rounded font-black text-[8px] uppercase tracking-wide">Gratis</span>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     )
                   })}
+
+                  {/* Complements whose parent product is no longer listed */}
+                  {selectedSaleDetail.sale_items?.filter((c: any) => c.is_complement && !selectedSaleDetail.sale_items?.some((i: any) => !i.is_complement && i.product?.name === c.complement_for)).map((c: any, ci: number) => (
+                    <div key={`orphan-${ci}`} className="bg-[#f9f9ff] border border-[#cbd5e1]/30 p-3 rounded-xl flex justify-between items-center">
+                      <span className="font-bold text-[#111c2d]">Complemento: {c.complement_name || 'Complemento'}</span>
+                      {Number(c.price) > 0 ? (
+                        <span className="font-bold text-[#111c2d] font-mono">{formatPrice(Number(c.price) * (c.quantity || 1))}</span>
+                      ) : (
+                        <span className="bg-[#e2f9ee] text-[#00422b] px-1.5 py-0.5 rounded font-black text-[8px] uppercase tracking-wide">Gratis</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
 

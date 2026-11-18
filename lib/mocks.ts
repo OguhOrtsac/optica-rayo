@@ -364,21 +364,30 @@ export let MOCK_SALE_ITEMS: SaleItem[] = [
     sale_id: 's1',
     product_id: 'p1',
     quantity: 1,
-    price: 1899.00
+    price: 1899.00,
+    is_complement: false,
+    complement_name: null,
+    complement_for: null
   },
   {
     id: 'si2',
     sale_id: 's1',
     product_id: 'p2',
     quantity: 1,
-    price: 1200.00
+    price: 1200.00,
+    is_complement: false,
+    complement_name: null,
+    complement_for: null
   },
   {
     id: 'si3',
     sale_id: 's2',
     product_id: 'p4',
     quantity: 1,
-    price: 2450.00
+    price: 2450.00,
+    is_complement: false,
+    complement_name: null,
+    complement_for: null
   }
 ]
 
@@ -419,7 +428,10 @@ export function addMockSale(
         sale_id: saleId,
         product_id: item.productId,
         quantity: item.quantity,
-        price
+        price,
+        is_complement: false,
+        complement_name: null,
+        complement_for: null
       })
       // Decrement stock
       updateMockProductStock(item.productId, Math.max(0, product.stock - item.quantity))

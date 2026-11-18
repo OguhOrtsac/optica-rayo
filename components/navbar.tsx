@@ -35,11 +35,12 @@ export default async function Navbar() {
   }
 
   // Setup navigation items based on the canonical role model.
-  // La hamburguesa lleva SOLO destinos secundarios: todo lo que ya vive
-  // en la barra inferior (Inicio, Registrar Pago, Clientes, Realizar
-  // Venta, Perfil) no se repite aquí — cada destino vive en un solo
-  // mecanismo. «Agenda» (staff) y «Agendar examen gratis» (pública) son
-  // destinos distintos, con etiqueta e icono distintos.
+  // La hamburguesa lleva los destinos secundarios (Catálogo, Productos,
+  // Gastos, Reportes, Usuarios…). La barra inferior móvil lleva el trabajo
+  // diario: Inicio · Realizar Venta · Registrar Pago · Agenda · Perfil
+  // (orden del dueño, 2026-11-18: «Clientes» sale de la barra inferior y
+  // «Agenda» entra en ella). «Agenda» (staff) y «Agendar examen gratis»
+  // (pública) son destinos distintos, con etiqueta e icono distintos.
   const getNavLinks = (): MainMenuLink[] => {
     if (!isAuthenticated) {
       return [
@@ -182,8 +183,8 @@ export default async function Navbar() {
             <div className="w-8 h-8 rounded-full bg-[#d9e2ff] flex items-center justify-center text-[#00357f] font-bold overflow-hidden">
               {initials || "OR"}
             </div>
-            <span className="text-lg font-bold tracking-tight text-[#00357f] transition-colors">
-              Óptica Rayo
+            <span className="text-xl font-extrabold tracking-tight text-[#00357f] transition-colors">
+              Óptica <span className="text-[#0899c9]">Rayo</span>
             </span>
           </Link>
 
@@ -202,9 +203,6 @@ export default async function Navbar() {
             </div>
 
             <div className="h-4 w-px bg-[#c3c6d5] mx-2" />
-
-            {/* Staff notification bell (renders nothing for guests/customers) */}
-            <NotificationBell role={role} />
 
             {/* Auth Profile / Login */}
             {isAuthenticated ? (
@@ -230,38 +228,39 @@ export default async function Navbar() {
                 Entrar o crear cuenta
               </Link>
             )}
+
+            {/* Staff notification bell, hasta la derecha (renders nothing for guests/customers) */}
+            <NotificationBell role={role} />
           </div>
         </div>
       </nav>
 
-      {/* Mobile Top Header (Minimalist for PWA view) */}
-      <header className="site-nav relative w-full bg-[#f9f9ff]/95 backdrop-blur border-b border-[#c3c6d5] sticky top-0 z-50 px-4 py-2.5 flex md:hidden justify-between items-center shadow-sm">
-        <Link href="/" className="flex min-h-11 items-center gap-1.5 rounded-xl px-2 -ml-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
-          <span className="text-sm font-bold tracking-tight text-[#00357f]">
-            Óptica Rayo
-          </span>
-        </Link>
-
-        <div className="flex items-center gap-2">
-          {/* Staff notification bell (renders nothing for guests/customers) */}
-          <NotificationBell role={role} />
-          {isAuthenticated && (
-            <Link
-              href="/profile"
-              aria-label={`Abrir perfil de ${displayName}`}
-              className="flex min-h-11 min-w-11 items-center justify-center rounded-xl transition hover:bg-[#dee8ff]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]"
-            >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-[#c3c6d5] bg-[#d9e2ff]">
-                <span className="text-[10px] font-bold text-[#00357f]">{initials}</span>
-              </span>
-            </Link>
-          )}
+      {/* Mobile Top Header (Minimalist for PWA view) — orden del dueño
+          2026-11-18: hamburguesa a la izquierda, marca centrada y
+          campanita hasta la derecha. El botón de iniciales que llevaba
+          al perfil salió de la barra: el Perfil vive en la barra
+          inferior. La rejilla 1fr/auto/1fr mantiene la marca centrada
+          aunque un lado vaya vacío (la campanita no se pinta para
+          invitados ni clientes). */}
+      <header className="site-nav relative w-full bg-[#f9f9ff]/95 backdrop-blur border-b border-[#c3c6d5] sticky top-0 z-50 px-4 py-2.5 grid grid-cols-[1fr_auto_1fr] items-center md:hidden shadow-sm">
+        <div className="flex items-center justify-start">
           <MainMenu
             links={navLinks}
             isAuthenticated={isAuthenticated}
             displayName={displayName}
             initials={initials}
           />
+        </div>
+
+        <Link href="/" className="flex min-h-11 items-center justify-center justify-self-center rounded-xl px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f]">
+          <span className="text-xl font-extrabold tracking-tight text-[#00357f]">
+            Óptica <span className="text-[#0899c9]">Rayo</span>
+          </span>
+        </Link>
+
+        <div className="flex items-center justify-end">
+          {/* Staff notification bell (renders nothing for guests/customers) */}
+          <NotificationBell role={role} />
         </div>
       </header>
 
