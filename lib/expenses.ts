@@ -259,36 +259,30 @@ export interface PeriodReport {
   avgTicket: number
   dailyExpensesTotal: number
   expensesByCategory: { category: string; total: number }[]
-  fixedMonthlyTotal: number
-  fixedProrated: number
+  /** Parte de dailyExpensesTotal que son pagos de gastos fijos ya
+   *  registrados en el periodo. Dato informativo: YA está incluida
+   *  en dailyExpensesTotal, no se suma ni se resta aparte. */
+  fixedPaymentsRegisteredTotal: number
   profit: number
   salesByDay: { date: string; total: number; count: number }[]
   topProducts: { name: string; units: number; total: number }[]
 }
 
-/** A fixed expense converted to its monthly equivalent. */
-function toMonthlyEquivalent(expense: FixedExpense): number {
-  switch (expense.periodicity) {
-    case 'weekly':
-      return (expense.amount * 52) / 12
-    case 'yearly':
-      return expense.amount / 12
-    default:
-      return expense.amount
-  }
-}
-
-/** Inclusive number of days between two YYYY-MM-DD dates. */
-function inclusiveDays(startISO: string, endISO: string): number {
-  const start = new Date(`${startISO}T12:00:00`)
-  const end = new Date(`${endISO}T12:00:00`)
-  const diff = Math.round((end.getTime() - start.getTime()) / 86_400_000)
-  return Math.max(1, diff + 1)
-}
+/**
+ * Nota con la que registerFixedPayment deja marcado el gasto del día
+ * que crea. Los reportes identifican por esta nota cuánto de los
+ * gastos del día de un periodo fueron pagos de gastos fijos.
+ */
+export const FIXED_PAYMENT_REGISTERED_NOTE =
+  'Pago de gasto fijo registrado desde Finanzas.'
 
 /**
- * Period report: sales minus daily expenses minus the prorated
- * share of fixed expenses for the range [startISO, endISO].
+ * Period report: sales minus daily expenses for the range
+ * [startISO, endISO]. Fixed expenses follow the owner's cash model
+ * (2026-11-19): they count ONLY when their payment is registered,
+ * and registerFixedPayment already turns a registered payment into
+ * a daily expense — so there is no proration on top, and a paid
+ * fixed expense counts exactly once.
  * Quotes (status 'Cotizacion') never count as sales.
  */
 export async function getPeriodReport(
@@ -343,16 +337,19 @@ export async function getPeriodReport(
     .map(([category, total]) => ({ category, total }))
     .sort((a, b) => b.total - a.total)
 
-  // --- Gastos fijos prorrateados ---
-  const fixedExpenses = (await getFixedExpenses()).filter((f) => f.is_active)
-  const fixedMonthlyTotal = round2(
-    fixedExpenses.reduce((sum, f) => sum + toMonthlyEquivalent(f), 0)
-  )
-  const fixedProrated = round2(
-    (fixedMonthlyTotal * inclusiveDays(startISO, endISO)) / 30
+  // --- Pagos de gastos fijos ya registrados en el periodo ---
+  // Modelo de caja del dueño (2026-11-19): un gasto fijo cuenta SOLO
+  // cuando se registra su pago, y ese registro ya vive como gasto
+  // del día dentro de dailyExpensesTotal. Esta cifra es solo el
+  // desglose informativo de cuánto de los gastos del día fueron
+  // pagos fijos; NO se suma ni se resta aparte.
+  const fixedPaymentsRegisteredTotal = round2(
+    dailyExpenses
+      .filter(e => e.notes === FIXED_PAYMENT_REGISTERED_NOTE)
+      .reduce((sum, e) => sum + e.amount, 0)
   )
 
-  const profit = round2(salesTotal - dailyExpensesTotal - fixedProrated)
+  const profit = round2(salesTotal - dailyExpensesTotal)
 
   // --- Productos más vendidos del período ---
   // sale_items NO tiene columna unit_price: el precio del renglón es
@@ -388,8 +385,7 @@ export async function getPeriodReport(
     avgTicket,
     dailyExpensesTotal,
     expensesByCategory,
-    fixedMonthlyTotal,
-    fixedProrated,
+    fixedPaymentsRegisteredTotal,
     profit,
     salesByDay,
     topProducts,
@@ -573,7 +569,7 @@ export async function registerFixedPayment(id: string): Promise<void> {
       amount: toAmount(fixed.amount),
       category: (fixed as any).category || 'Servicios',
       expense_date: todayISO,
-      notes: 'Pago de gasto fijo registrado desde Finanzas.',
+      notes: FIXED_PAYMENT_REGISTERED_NOTE,
       created_by: await currentUserId(),
     },
   ])
@@ -661,18 +657,20 @@ export async function ensureFixedPaymentNotifications(): Promise<number> {
 export interface PeriodPayments {
   /** Gastos del día (expenses) fechados dentro del rango. */
   dailyExpensesTotal: number
-  /** Equivalente mensual de los fijos activos. */
-  fixedMonthlyTotal: number
-  /** Fijos prorrateados por los días del rango (misma regla que
-   *  getPeriodReport: mensual × días ÷ 30). */
-  fixedProrated: number
-  /** dailyExpensesTotal + fixedProrated. */
+  /** Parte de dailyExpensesTotal que son pagos de gastos fijos ya
+   *  registrados en el rango. Dato informativo: YA está incluida
+   *  en dailyExpensesTotal, no se suma aparte. */
+  fixedPaymentsRegisteredTotal: number
+  /** = dailyExpensesTotal: los fijos cuentan solo al registrarse. */
   total: number
 }
 
 /**
- * Money out for a range: daily expenses dated inside [fromISO, toISO]
- * plus the prorated share of active fixed expenses.
+ * Money out for a range, owner's cash model (2026-11-19): ONLY the
+ * daily expenses dated inside [fromISO, toISO]. A fixed expense
+ * counts when (and only when) its payment is registered, because
+ * registerFixedPayment already records it as a daily expense — no
+ * proration of active fixed expenses is added on top.
  */
 export async function getPeriodPayments(
   fromISO: string,
@@ -680,19 +678,15 @@ export async function getPeriodPayments(
 ): Promise<PeriodPayments> {
   const daily = await getDailyExpenses(fromISO, toISO)
   const dailyExpensesTotal = round2(daily.reduce((sum, e) => sum + e.amount, 0))
-
-  const fixedExpenses = (await getFixedExpenses()).filter((f) => f.is_active)
-  const fixedMonthlyTotal = round2(
-    fixedExpenses.reduce((sum, f) => sum + toMonthlyEquivalent(f), 0)
-  )
-  const fixedProrated = round2(
-    (fixedMonthlyTotal * inclusiveDays(fromISO, toISO)) / 30
+  const fixedPaymentsRegisteredTotal = round2(
+    daily
+      .filter(e => e.notes === FIXED_PAYMENT_REGISTERED_NOTE)
+      .reduce((sum, e) => sum + e.amount, 0)
   )
 
   return {
     dailyExpensesTotal,
-    fixedMonthlyTotal,
-    fixedProrated,
-    total: round2(dailyExpensesTotal + fixedProrated),
+    fixedPaymentsRegisteredTotal,
+    total: dailyExpensesTotal,
   }
 }

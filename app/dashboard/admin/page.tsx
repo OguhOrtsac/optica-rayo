@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
+  ensureTodayAppointmentNotifications,
   getProducts,
   getSales,
   getLensRequests,
@@ -186,6 +187,10 @@ export default function AdminDashboard() {
         // bloquear el render; cualquier fallo es silencioso.
         if (admin) {
           ensureFixedPaymentNotifications().catch(() => {})
+          // Avisos del día de las citas de HOY en la campanita (pedido
+          // del dueño, 2026-11-19): mismo patrón ensure, sin bloquear
+          // el render; la campanita también lo invoca al cargar.
+          ensureTodayAppointmentNotifications().catch(() => {})
         }
       })
       .catch(() => setIsAdmin(false))

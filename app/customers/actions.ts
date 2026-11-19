@@ -6,7 +6,9 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
 import * as mockDb from '@/lib/mocks'
 import { addMonthsISO, DEFAULT_REMINDER_MONTHS, REMINDER_MONTHS_KEY } from '@/lib/reminder-config'
+import { buildClinicalHistoryFromFormData, hasClinicalHistory } from '@/lib/clinical-history'
 import { effectiveClientPrice, MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT } from '@/lib/pricing'
+import { isStaffRole } from '@/lib/roles'
 
 /**
  * True when a real Supabase project is configured (same env check the
@@ -357,10 +359,18 @@ export async function createClinicalExamAction(currentState: CreateExamState, fo
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
+    // Fecha de la hoja (punto 1): el formulario la manda como
+    // yyyy-mm-dd; se ancla al mediodía para que no se mueva de día
+    // por husos horarios. Sin fecha en el formulario, hoy y ahora.
+    const examDateRaw = (formData.get('exam_date') as string) || ''
+    const examDate = /^\d{4}-\d{2}-\d{2}$/.test(examDateRaw)
+      ? new Date(`${examDateRaw}T12:00:00`).toISOString()
+      : new Date().toISOString()
+
     examPayload = {
       customer_id: customerId,
       examiner_id: user?.id || null,
-      exam_date: new Date().toISOString(),
+      exam_date: examDate,
     }
 
     // OD fields
@@ -410,14 +420,70 @@ export async function createClinicalExamAction(currentState: CreateExamState, fo
     if (clinicalNotes) examPayload.clinical_notes = clinicalNotes
     if (nextExamDate) examPayload.next_exam_date = nextExamDate
 
-    const { data, error } = await supabase
+    // ——— Historia clínica (la hoja en papel del negocio) ———
+    // Todo lo del formato que no es la RX Final viaja junto en la
+    // columna JSONB clinical_history (ver lib/clinical-history.ts).
+    // La RX Final ya quedó arriba en las columnas de siempre, que son
+    // las que alimentan ventas e historial.
+    const clinicalHistory = buildClinicalHistoryFromFormData(formData)
+    if (hasClinicalHistory(clinicalHistory)) {
+      examPayload.clinical_history = clinicalHistory
+    }
+
+    // La agudeza por ojo de las columnas de siempre se alimenta de la
+    // tabla de la hoja: AV C/C Lejos (con corrección, de lejos) es la
+    // agudeza que acompaña a la graduación final en la ficha.
+    if (!examPayload.od_visual_acuity && clinicalHistory.vaCcFar.od) {
+      examPayload.od_visual_acuity = clinicalHistory.vaCcFar.od
+    }
+    if (!examPayload.oi_visual_acuity && clinicalHistory.vaCcFar.oi) {
+      examPayload.oi_visual_acuity = clinicalHistory.vaCcFar.oi
+    }
+
+    let { data, error } = await supabase
       .from('clinical_exams')
       .insert([examPayload])
       .select()
       .single()
 
+    // Degradación silenciosa: si la columna clinical_history aún no
+    // existe (migración 20261119 sin aplicar), se reintenta SIN la
+    // historia en vez de perder el examen — mismo patrón que
+    // products.display_order. Cualquier otro error sí es real.
+    if (error && examPayload.clinical_history && error.message.includes('clinical_history')) {
+      const { clinical_history: _omit, ...payloadWithoutHistory } = examPayload
+      examPayload = payloadWithoutHistory
+      ;({ data, error } = await supabase
+        .from('clinical_exams')
+        .insert([examPayload])
+        .select()
+        .single())
+    }
+
     if (error) {
       throw new Error(error.message)
+    }
+
+    // Fecha de nacimiento capturada en el examen (solo si el
+    // expediente no tenía ninguna): queda guardada en su perfil.
+    // Best-effort: jamás debe tumbar un examen ya guardado.
+    const patientDob = (formData.get('patient_dob') as string) || ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(patientDob)) {
+      try {
+        const { data: cp } = await supabase
+          .from('customer_profiles')
+          .select('date_of_birth')
+          .eq('id', customerId)
+          .single()
+        if (cp && !cp.date_of_birth) {
+          await supabase
+            .from('customer_profiles')
+            .update({ date_of_birth: patientDob })
+            .eq('id', customerId)
+        }
+      } catch {
+        // La fecha se podrá capturar de nuevo en el siguiente examen.
+      }
     }
 
     // Update or create reminder based on next_exam_date
@@ -450,25 +516,44 @@ export async function createClinicalExamAction(currentState: CreateExamState, fo
       id: mockExamId,
       customer_id: customerId,
       examiner_id: 'opt-1',
-      exam_date: new Date().toISOString(),
+      exam_date: examPayload.exam_date || new Date().toISOString(),
       next_exam_date: examPayload.next_exam_date || null,
       od_sphere: examPayload.od_sphere || null,
       od_cylinder: examPayload.od_cylinder || null,
       od_axis: examPayload.od_axis || null,
       od_add: examPayload.od_add || null,
+      od_visual_acuity: examPayload.od_visual_acuity || null,
       oi_sphere: examPayload.oi_sphere || null,
       oi_cylinder: examPayload.oi_cylinder || null,
       oi_axis: examPayload.oi_axis || null,
       oi_add: examPayload.oi_add || null,
+      oi_visual_acuity: examPayload.oi_visual_acuity || null,
       pd_distance: examPayload.pd_distance || null,
+      pd_near: examPayload.pd_near || null,
+      intraocular_pressure_od: examPayload.intraocular_pressure_od || null,
+      intraocular_pressure_oi: examPayload.intraocular_pressure_oi || null,
       lens_type: examPayload.lens_type || null,
       frame_recommendation: examPayload.frame_recommendation || null,
       treatment: examPayload.treatment || null,
-      clinical_notes: examPayload.clinical_notes || null
+      clinical_notes: examPayload.clinical_notes || null,
+      clinical_history: examPayload.clinical_history || null
     }
 
     const mockDb = require('@/lib/mocks')
     mockDb.MOCK_CLINICAL_EXAMS.unshift(mockExam)
+
+    // Fecha de nacimiento capturada en el examen (demo): se guarda en
+    // el perfil mock solo si no tenía ninguna.
+    const mockPatientDob = (formData.get('patient_dob') as string) || ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(mockPatientDob)) {
+      const cpIndex = mockDb.MOCK_CUSTOMER_PROFILES.findIndex((p: any) => p.id === customerId)
+      if (cpIndex >= 0 && !mockDb.MOCK_CUSTOMER_PROFILES[cpIndex].date_of_birth) {
+        mockDb.MOCK_CUSTOMER_PROFILES[cpIndex] = {
+          ...mockDb.MOCK_CUSTOMER_PROFILES[cpIndex],
+          date_of_birth: mockPatientDob,
+        }
+      }
+    }
 
     if (examPayload.next_exam_date) {
       const mockReminder = {
@@ -1457,3 +1542,128 @@ export async function registerSaleBalancePaymentAction(
 }
 
 
+
+/**
+ * Updates ONLY the general data of a customer (nombre, teléfono,
+ * fecha de nacimiento y dirección) — the «Actualizar datos» modal on
+ * the customer file. Deliberately narrower than updateCustomerAction:
+ * it never touches the auth account, the username/email or the role,
+ * so completing a quick-registered customer can never lock them out
+ * of their account.
+ *
+ * Roles: only staff (super_admin / owner / optometrist / seller) may
+ * edit a customer's data. The write goes through the admin client
+ * because the RLS policies only let owner/dev update profiles and
+ * customer_profiles from the browser client; the caller's staff role
+ * is verified here, server-side, before any write happens.
+ */
+export async function updateCustomerGeneralDataAction(customerId: string, data: {
+  fullName: string
+  phone?: string
+  dateOfBirth?: string
+  address?: string
+}): Promise<{ success: string | null; error: string | null }> {
+  const fullName = (data.fullName || '').trim()
+  const phone = (data.phone || '').trim()
+  const dateOfBirth = (data.dateOfBirth || '').trim()
+  const address = (data.address || '').trim()
+
+  if (!customerId) {
+    return { success: null, error: 'ID de cliente requerido.' }
+  }
+  if (!fullName) {
+    return { success: null, error: 'El nombre completo es obligatorio.' }
+  }
+  if (phone) {
+    const digits = phone.replace(/[^\d]/g, '')
+    if (digits.length < 10) {
+      return { success: null, error: 'El teléfono debe tener al menos 10 dígitos.' }
+    }
+  }
+  if (dateOfBirth) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+      return { success: null, error: 'La fecha de nacimiento no es válida.' }
+    }
+    const parsed = new Date(`${dateOfBirth}T12:00:00`)
+    if (isNaN(parsed.getTime()) || parsed.getTime() > Date.now()) {
+      return { success: null, error: 'La fecha de nacimiento no es válida.' }
+    }
+  }
+
+  if (!isSupabaseConfigured()) {
+    // Demo mode: mirror the edit in the in-memory mocks (the client
+    // services layer applies the same change to the browser copy).
+    mockDb.updateMockCustomerGeneralData(customerId, {
+      full_name: fullName,
+      phone: phone || null,
+      date_of_birth: dateOfBirth || null,
+      address: address || null,
+    })
+    revalidatePath('/customers', 'layout')
+    revalidatePath(`/customers/${customerId}`, 'layout')
+    return { success: 'Datos del cliente actualizados con éxito.', error: null }
+  }
+
+  try {
+    // 1. Verify the caller is signed in and holds a staff role.
+    const sessionClient = await createClient()
+    const { data: { user } } = await sessionClient.auth.getUser()
+    if (!user) {
+      return { success: null, error: 'Sesión no válida. Vuelve a iniciar sesión.' }
+    }
+
+    const adminClient = createAdminClient() as any
+    const { data: callerProfile } = await adminClient
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (!isStaffRole(callerProfile?.role)) {
+      return { success: null, error: 'Solo el personal de la óptica puede editar los datos de un cliente.' }
+    }
+
+    // 2. Nombre (profiles). The update must come back with the row:
+    // zero rows back means the customer does not exist (or the write
+    // was blocked) and must surface as an error, never as success.
+    const { data: updatedProfile, error: profileError } = await adminClient
+      .from('profiles')
+      .update({ full_name: fullName })
+      .eq('id', customerId)
+      .select('id')
+
+    if (profileError) {
+      return { success: null, error: `Error al actualizar el nombre: ${profileError.message}` }
+    }
+    if (!updatedProfile || updatedProfile.length === 0) {
+      return { success: null, error: 'No se encontró el cliente a actualizar.' }
+    }
+
+    // 3. Datos generales (customer_profiles). Upsert with ONLY these
+    // columns: on conflict the rest of the row (ocupación, antecedentes,
+    // contacto de emergencia) keeps its stored values.
+    const { data: upsertedCp, error: cpError } = await adminClient
+      .from('customer_profiles')
+      .upsert({
+        id: customerId,
+        phone: phone || null,
+        date_of_birth: dateOfBirth || null,
+        address: address || null,
+      })
+      .select('id')
+
+    if (cpError) {
+      return { success: null, error: `Error al actualizar los datos: ${cpError.message}` }
+    }
+    if (!upsertedCp || upsertedCp.length === 0) {
+      return { success: null, error: 'No se pudieron guardar los datos del cliente.' }
+    }
+
+    revalidatePath('/customers', 'layout')
+    revalidatePath(`/customers/${customerId}`, 'layout')
+    return { success: 'Datos del cliente actualizados con éxito.', error: null }
+  } catch (err: any) {
+    console.error('updateCustomerGeneralDataAction failed:', err)
+    return { success: null, error: `No se pudieron actualizar los datos: ${err.message || 'error inesperado.'}` }
+  }
+}

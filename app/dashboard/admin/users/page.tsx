@@ -10,7 +10,8 @@ import {
   adminDeleteUserAction
 } from '@/app/auth/actions'
 import { Database } from '@/types/database.types'
-import { GUEST_ROLE_DEFINITION, ROLE_DEFINITIONS, roleLabel, type UserRole } from '@/lib/roles'
+import { GUEST_ROLE_DEFINITION, ROLE_DEFINITIONS, normalizeRole, roleLabel, type AccessRole, type UserRole } from '@/lib/roles'
+import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { 
   User, 
   Settings, 
@@ -65,6 +66,15 @@ function ToggleSwitch({ checked, onChange, label, description }: ToggleSwitchPro
 export default function RegisterUsersPage() {
   const [loading, setLoading] = useState(true)
   const [users, setUsers] = useState<Profile[]>([])
+  // Rol de quien está mirando la pantalla. EXCEPCIÓN DE USUARIOS
+  // (regla del dueño, 2026-11-19): el administrador (owner) tiene los
+  // mismos permisos que el Super Administrador en todo el sistema,
+  // EXCEPTO aquí — para él las cuentas super_admin no existen: no
+  // aparecen en la lista ni en los conteos. Solo un visor identificado
+  // positivamente como super_admin las ve; cualquier otro caso
+  // (owner, error de lectura, modo demo sin sesión) las oculta.
+  const [viewerRole, setViewerRole] = useState<AccessRole | null>(null)
+  const viewerIsSuperAdmin = viewerRole === 'super_admin'
   const [business, setBusiness] = useState<BusinessSettings | null>(null)
   const [userSearch, setUserSearch] = useState('')
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -134,10 +144,41 @@ export default function RegisterUsersPage() {
     setEditIsOptometrist(roleType === 'optometrist')
   }
 
+  // Rol del visor, con el patrón de la casa (p. ej. Gastos): la fila de
+  // profiles manda y user_metadata es el respaldo. Sin sesión (modo
+  // demo) o ante cualquier fallo devuelve 'guest' — es decir, NO
+  // super_admin — y las cuentas de plataforma quedan ocultas.
+  const resolveViewerRole = async (): Promise<AccessRole> => {
+    try {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return 'guest'
+      let roleValue: string | null = user.user_metadata?.role || null
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle()
+        if (profile?.role) roleValue = profile.role
+      } catch {
+        // keep the metadata fallback
+      }
+      return normalizeRole(roleValue)
+    } catch {
+      return 'guest'
+    }
+  }
+
   const loadUsersData = async () => {
     try {
       setLoading(true)
-      const data = await getAllProfiles()
+      // El rol del visor se resuelve ANTES de mostrar la lista: la
+      // pantalla de carga cubre la espera y ninguna tarjeta (en
+      // particular la del Super Administrador) se pinta ni un instante
+      // para un visor que no debe verla.
+      const [role, data] = await Promise.all([resolveViewerRole(), getAllProfiles()])
+      setViewerRole(role)
       setUsers(data)
     } catch (e) {
       showFeedback('error', 'Error al cargar los usuarios del sistema.')
@@ -313,15 +354,24 @@ export default function RegisterUsersPage() {
     }
   }
 
+  // Cuentas visibles para ESTE visor: si no es super_admin, las
+  // cuentas de plataforma (super_admin, incluido el alias heredado
+  // dev, que normalizeRole convierte a super_admin) se excluyen aquí,
+  // antes de cualquier lista, búsqueda o conteo de la pantalla.
+  const visibleUsers = useMemo(() => {
+    if (viewerIsSuperAdmin) return users
+    return users.filter(u => normalizeRole(u.role) !== 'super_admin')
+  }, [users, viewerIsSuperAdmin])
+
   // Filter staff profiles only (role !== 'customer')
   const filteredStaff = useMemo(() => {
-    return users
+    return visibleUsers
       .filter(u => u.role !== 'customer')
-      .filter(u => 
+      .filter(u =>
         u.full_name.toLowerCase().includes(userSearch.toLowerCase()) ||
         u.email.toLowerCase().includes(userSearch.toLowerCase())
       )
-  }, [users, userSearch])
+  }, [visibleUsers, userSearch])
 
   // Get active user initials
   const getInitials = (name: string) => {
@@ -405,7 +455,9 @@ export default function RegisterUsersPage() {
                   <span className="hidden text-[10px] font-bold normal-case tracking-normal text-[#737784] group-open:inline">Ocultar</span>
                 </summary>
                 <div className="grid gap-3 border-t border-[#e7eeff] p-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {Object.values(ROLE_DEFINITIONS).map(role => (
+                  {Object.entries(ROLE_DEFINITIONS)
+                    .filter(([key]) => viewerIsSuperAdmin || key !== 'super_admin')
+                    .map(([, role]) => (
                     <article key={role.label} className="rounded-xl bg-[#f9f9ff] p-3">
                       <h3 className="text-xs font-black text-[#111c2d]">{role.label}</h3>
                       <p className="mt-1 text-[11px] leading-relaxed text-[#434653]">{role.description}</p>
@@ -416,9 +468,11 @@ export default function RegisterUsersPage() {
                     <p className="mt-1 text-[11px] leading-relaxed text-[#434653]">{GUEST_ROLE_DEFINITION.description}</p>
                   </article>
                 </div>
-                <p className="border-t border-[#e7eeff] px-4 py-3 text-[11px] font-semibold text-[#737784]">
-                  El rol Super Administrador está reservado al equipo desarrollador y no se asigna desde este panel.
-                </p>
+                {viewerIsSuperAdmin && (
+                  <p className="border-t border-[#e7eeff] px-4 py-3 text-[11px] font-semibold text-[#737784]">
+                    El rol Super Administrador está reservado al equipo desarrollador y no se asigna desde este panel.
+                  </p>
+                )}
               </details>
               
               {/* Staff Title & Add button */}
@@ -626,13 +680,13 @@ export default function RegisterUsersPage() {
                   checked={uIsSeller}
                   onChange={(val) => handleAddToggleChange('seller', val)}
                   label="Vendedor POS / Cajero"
-                  description="Registra ventas, abonos y alta de clientes."
+                  description="Registra ventas y abonos, alta de clientes y productos, ajusta precios y agenda citas; sin finanzas ni cuentas."
                 />
                 <ToggleSwitch
                   checked={uIsOptometrist}
                   onChange={(val) => handleAddToggleChange('optometrist', val)}
                   label="Optometrista"
-                  description="Expedientes, exámenes y graduaciones; sin finanzas ni cuentas."
+                  description="Expedientes, exámenes, graduaciones y agenda; sin ventas, cobros ni finanzas."
                 />
                 <ToggleSwitch
                   checked={uIsCustomer}
@@ -715,13 +769,13 @@ export default function RegisterUsersPage() {
                   checked={editIsSeller}
                   onChange={(val) => handleEditToggleChange('seller', val)}
                   label="Vendedor POS / Cajero"
-                  description="Registra ventas, abonos y alta de clientes."
+                  description="Registra ventas y abonos, alta de clientes y productos, ajusta precios y agenda citas; sin finanzas ni cuentas."
                 />
                 <ToggleSwitch
                   checked={editIsOptometrist}
                   onChange={(val) => handleEditToggleChange('optometrist', val)}
                   label="Optometrista"
-                  description="Expedientes, exámenes y graduaciones; sin finanzas ni cuentas."
+                  description="Expedientes, exámenes, graduaciones y agenda; sin ventas, cobros ni finanzas."
                 />
                 <ToggleSwitch
                   checked={editIsCustomer}

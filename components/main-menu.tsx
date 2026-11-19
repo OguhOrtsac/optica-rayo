@@ -12,8 +12,10 @@ import {
   CalendarRange,
   ChevronDown,
   Coins,
+  Eye,
   Glasses,
   History,
+  Home,
   LogIn,
   Menu,
   MessageSquare,
@@ -35,7 +37,7 @@ export type MainMenuIcon =
   | 'catalog' | 'agenda' | 'agendar' | 'products' | 'users' | 'promotions'
   | 'expenses' | 'reports' | 'pos' | 'history' | 'clients' | 'messages'
   | 'store' | 'wallet' | 'coins' | 'calendarRange' | 'calendarClock'
-  | 'trendingUp' | 'settings'
+  | 'trendingUp' | 'settings' | 'home' | 'exam'
 
 export interface MainMenuLink {
   label: string
@@ -61,6 +63,8 @@ export function isMenuGroup(item: MainMenuItem): item is MainMenuGroup {
 // Iconos por destino — «Agenda» (la del staff) y «Agendar examen gratis»
 // (la pública) son destinos distintos y llevan iconos distintos.
 const ICONS = {
+  home: Home,
+  exam: Eye,
   catalog: Glasses,
   agenda: CalendarDays,
   agendar: CalendarPlus,
@@ -95,6 +99,8 @@ interface MenuColor {
 }
 
 const ICON_COLORS: Record<MainMenuIcon, MenuColor> = {
+  home: { bg: '#dee8ff', fg: '#00357f' }, // Inicio: azul de marca
+  exam: { bg: '#e6f7fb', fg: '#0899c9' }, // Realizar examen: cian de acento (familia Agenda)
   catalog: { bg: '#e0f2fe', fg: '#0284c7' }, // Catálogo: celeste
   agenda: { bg: '#e6f7fb', fg: '#0899c9' }, // Agenda: cian de acento
   agendar: { bg: '#e6f7fb', fg: '#0899c9' }, // Agendar: cian de acento

@@ -29,6 +29,40 @@ function extractUsername(email: string): string {
     : email
 }
 
+/** True when a real Supabase project is configured for this server. */
+function isSupabaseConfiguredServer(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  )
+}
+
+/**
+ * Verifies that `currentPassword` really is the signed-in user's
+ * CURRENT password, by re-authenticating with their own email
+ * (owner's order, 2026-11-19: a self-service password change that
+ * only asks for the new password is unsafe — anyone holding an open
+ * session could take the account over). Returns an error message
+ * when it does not match or cannot be checked; null when it checks
+ * out. Nothing is modified when this returns an error.
+ */
+async function verifyCurrentPassword(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  email: string,
+  currentPassword: string
+): Promise<string | null> {
+  if (!email) {
+    return 'No se pudo verificar la sesión actual.'
+  }
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password: currentPassword,
+  })
+  if (error) {
+    return 'La contraseña actual no es correcta. No se hizo ningún cambio.'
+  }
+  return null
+}
+
 export interface LoginState {
   error: string | null
 }
@@ -190,10 +224,11 @@ export async function logout() {
  * and updates public.profiles temporal_password_changed state.
  */
 export async function changePassword(currentState: any, formData: FormData) {
+  const currentPassword = formData.get('currentPassword') as string
   const password = formData.get('password') as string
   const confirmPassword = formData.get('confirmPassword') as string
 
-  if (!password || !confirmPassword) {
+  if (!currentPassword || !password || !confirmPassword) {
     return { error: 'Todos los campos de contraseña son obligatorios.' }
   }
 
@@ -205,6 +240,10 @@ export async function changePassword(currentState: any, formData: FormData) {
     return { error: 'Las contraseñas no coinciden.' }
   }
 
+  if (!isSupabaseConfiguredServer()) {
+    return { error: 'Modo demo: sin una base de datos conectada no se puede cambiar la contraseña.' }
+  }
+
   const supabase = await createClient()
 
   // Get current session user
@@ -212,6 +251,16 @@ export async function changePassword(currentState: any, formData: FormData) {
 
   if (userError || !user) {
     return { error: 'No se pudo obtener el usuario de la sesión actual.' }
+  }
+
+  // 0. The CURRENT password is verified by re-authenticating BEFORE
+  // anything changes (owner's order, 2026-11-19). In the forced
+  // first-login flow the «current» password is the temporal one the
+  // user just signed in with, so the flow is unchanged for them —
+  // they only have to type it once more.
+  const verifyError = await verifyCurrentPassword(supabase, user.email || '', currentPassword)
+  if (verifyError) {
+    return { error: verifyError }
   }
 
   // 1. Update Password in Supabase Auth and set metadata temporal_password_changed = true
@@ -261,6 +310,27 @@ export async function createUserAction(currentState: any, formData: FormData) {
 
   try {
     const adminClient = createAdminClient() as any
+
+    // Caller gate, the same one its sibling actions
+    // (adminUpdateUserAction / adminDeleteUserAction) already enforce:
+    // only owner / super_admin (o el alias heredado dev) create accounts.
+    const supabase = await createClient()
+    const { data: { user: currentUser } } = await supabase.auth.getUser()
+    const { data: callerProfile } = await adminClient
+      .from('profiles')
+      .select('role')
+      .eq('id', currentUser?.id || '')
+      .single()
+    const callerRole = currentUser?.user_metadata?.role || callerProfile?.role
+    if (!callerRole || !['owner', 'dev', 'super_admin'].includes(callerRole)) {
+      return { error: 'No tienes permisos para crear usuarios.', success: null }
+    }
+
+    // The platform role is never assigned from this panel — the rule
+    // the Usuarios page itself prints — for any caller.
+    if (normalizeRole(role) === 'super_admin') {
+      return { error: 'El rol Super Administrador está reservado al equipo desarrollador y no se asigna desde este panel.', success: null }
+    }
 
     // 1. Create the user inside Supabase Auth
     const { data: { user }, error: authError } = await adminClient.auth.admin.createUser({
@@ -354,20 +424,30 @@ export async function getProfileData() {
 export async function updateProfile(currentState: any, formData: FormData) {
   const fullName = (formData.get('fullName') as string)?.trim()
   const rawUsername = (formData.get('username') as string)?.trim().toLowerCase()
+  const currentPassword = formData.get('currentPassword') as string
   const newPassword = formData.get('newPassword') as string
   const confirmNewPassword = formData.get('confirmNewPassword') as string
+
+  if (!isSupabaseConfiguredServer()) {
+    return { error: 'Modo demo: sin una base de datos conectada no se pueden guardar los cambios del perfil.', success: null }
+  }
 
   if (!fullName || !rawUsername) {
     return { error: 'El nombre completo y el nombre de usuario son obligatorios.', success: null }
   }
 
-  // If password fields provided, validate them
+  // If password fields provided, validate them — and demand the
+  // CURRENT password: it is re-authenticated below before anything
+  // changes (owner's order, 2026-11-19).
   if (newPassword || confirmNewPassword) {
     if (newPassword !== confirmNewPassword) {
       return { error: 'Las contraseñas no coinciden.', success: null }
     }
     if (newPassword.length < 6) {
       return { error: 'La contraseña debe tener al menos 6 caracteres.', success: null }
+    }
+    if (!currentPassword) {
+      return { error: 'Para cambiar tu contraseña, escribe tu contraseña actual.', success: null }
     }
   }
 
@@ -381,6 +461,17 @@ export async function updateProfile(currentState: any, formData: FormData) {
 
     if (userError || !user) {
       return { error: 'No se pudo verificar la sesión actual.', success: null }
+    }
+
+    // Password change: the CURRENT password is verified by
+    // re-authenticating with the user's own email BEFORE the admin
+    // update runs. If it does not match, nothing changes at all —
+    // not even the name or username sent in the same form.
+    if (newPassword) {
+      const verifyError = await verifyCurrentPassword(supabase, user.email || '', currentPassword)
+      if (verifyError) {
+        return { error: verifyError, success: null }
+      }
     }
 
     // Use admin client to bypass rate limits on email/password changes
@@ -499,12 +590,19 @@ export async function adminUpdateUserAction(userId: string, data: { fullName: st
 
     // Protected account: the Super Admin's role never changes from this
     // panel, and the account itself is managed only from its own profile.
+    // EXCEPCIÓN DE USUARIOS (regla del dueño, 2026-11-19): para cualquier
+    // otro visor — incluido el administrador (owner) — la cuenta de
+    // plataforma no existe en esta sección, así que la respuesta es
+    // genérica y no confirma ni su existencia ni su rol.
     const { data: targetProfile } = await adminClient
       .from('profiles')
       .select('role')
       .eq('id', userId)
       .single()
     if (targetProfile && normalizeRole(targetProfile.role as string) === 'super_admin') {
+      if (normalizeRole(userRole) !== 'super_admin') {
+        return { error: 'No se encontró el usuario o no tienes permisos para modificarlo.' }
+      }
       return { error: 'La cuenta de Super Administrador está protegida: su rol no se puede cambiar desde el panel.' }
     }
 
@@ -581,12 +679,17 @@ export async function adminDeleteUserAction(userId: string) {
     }
 
     // Protected account: the Super Admin can never be deleted from the panel.
+    // Misma excepción de Usuarios que en la edición: para un visor que no
+    // es super_admin la respuesta es genérica y no confirma la cuenta.
     const { data: targetProfile } = await adminClient
       .from('profiles')
       .select('role')
       .eq('id', userId)
       .single()
     if (targetProfile && normalizeRole(targetProfile.role as string) === 'super_admin') {
+      if (normalizeRole(userRole) !== 'super_admin') {
+        return { error: 'No se encontró el usuario o no tienes permisos para eliminarlo.' }
+      }
       return { error: 'La cuenta de Super Administrador está protegida y no se puede eliminar.' }
     }
 

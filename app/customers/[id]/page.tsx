@@ -3,9 +3,19 @@
 import * as React from 'react'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, getMessageTemplate, type ReminderConfig } from '@/lib/services'
+import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, getMessageTemplate, updateCustomerGeneralData, type ReminderConfig } from '@/lib/services'
+import { createClient as createBrowserClient } from '@/utils/supabase/client'
+import { normalizeRole, type AccessRole } from '@/lib/roles'
 import { registerInstallmentPaymentAction, registerSaleBalancePaymentAction } from '@/app/customers/actions'
 import { buildReminderMessage } from '@/lib/reminder-config'
+import {
+  normalizeClinicalHistory,
+  hasClinicalHistory,
+  HYPERTENSION_DIABETES_LABELS,
+  CLINICAL_LEAD_NAME,
+  CLINICAL_LEAD_FOLIO,
+  type ClinicalHistory,
+} from '@/lib/clinical-history'
 import { orderCodeFromSaleId } from '@/lib/ticket'
 import {
   PAYMENT_REMINDER_TEMPLATE_KEY,
@@ -31,7 +41,9 @@ import {
   CreditCard,
   DollarSign,
   Check,
-  RefreshCw
+  RefreshCw,
+  Pencil,
+  X
 } from 'lucide-react'
 
 interface PageProps {
@@ -230,6 +242,165 @@ function SaleBalancePayForm({ sale, formatPrice, onDone }: {
   )
 }
 
+// Modal «Actualizar datos» de la tarjeta Datos Generales (pedido del
+// dueño, 2026-11-19): edita SOLO nombre, teléfono (el de WhatsApp),
+// fecha de nacimiento y dirección — los datos que se capturan al dar
+// de alta al cliente y que los registros rápidos (POS, agenda, examen)
+// dejan incompletos a propósito. Guarda por updateCustomerGeneralData
+// (acción de servidor con verificación de rol staff; en demo, mocks)
+// y al terminar el padre recarga el registro del cliente.
+function EditCustomerDataModal({ customer, onClose, onSaved }: {
+  customer: any
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const cp = customer.customer_profiles || {}
+  const [fullName, setFullName] = useState(customer.full_name || '')
+  const [phone, setPhone] = useState(cp.phone || '')
+  const [dateOfBirth, setDateOfBirth] = useState(cp.date_of_birth ? String(cp.date_of_birth).slice(0, 10) : '')
+  const [address, setAddress] = useState(cp.address || '')
+  const [submitting, setSubmitting] = useState(false)
+  const [feedback, setFeedback] = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (submitting) return
+    const name = fullName.trim()
+    if (!name) {
+      setFeedback('El nombre completo es obligatorio.')
+      return
+    }
+    const phoneValue = phone.trim()
+    if (phoneValue && phoneValue.replace(/[^\d]/g, '').length < 10) {
+      setFeedback('El teléfono debe tener al menos 10 dígitos.')
+      return
+    }
+    if (dateOfBirth) {
+      const parsed = new Date(`${dateOfBirth}T12:00:00`)
+      if (isNaN(parsed.getTime()) || parsed.getTime() > Date.now()) {
+        setFeedback('La fecha de nacimiento no es válida.')
+        return
+      }
+    }
+    try {
+      setSubmitting(true)
+      setFeedback(null)
+      const result = await updateCustomerGeneralData(customer.id, {
+        fullName: name,
+        phone: phoneValue,
+        dateOfBirth,
+        address: address.trim(),
+      })
+      if (!result.success) {
+        setFeedback(result.error || 'No se pudieron guardar los datos.')
+      } else {
+        onSaved()
+      }
+    } catch (err: any) {
+      setFeedback(err.message || 'Error al guardar los datos.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const inputClass = 'w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]'
+  const labelClass = 'block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-[#111c2d]/50" role="dialog" aria-modal="true" aria-label="Actualizar datos del cliente">
+      <div className="bg-white rounded-[20px] or-shadow-card w-full max-w-lg p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150 text-left max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold text-[#111c2d]">Actualizar datos</h4>
+            <p className="text-[11px] text-[#737784] font-medium mt-0.5">
+              Nombre, teléfono (WhatsApp), fecha de nacimiento y dirección del cliente.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="w-9 h-9 shrink-0 rounded-lg border border-[#cbd5e1] text-[#737784] hover:text-[#111c2d] flex items-center justify-center transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {feedback && (
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 text-[11px] font-bold">
+            {feedback}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className={labelClass}>Nombre Completo *</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={e => setFullName(e.target.value)}
+              required
+              disabled={submitting}
+              placeholder="Ej. Ana Sofía Gómez"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Teléfono (WhatsApp)</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              disabled={submitting}
+              placeholder="Ej. 444 123 4567"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Fecha de Nacimiento</label>
+            <input
+              type="date"
+              value={dateOfBirth}
+              onChange={e => setDateOfBirth(e.target.value)}
+              disabled={submitting}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Dirección</label>
+            <input
+              type="text"
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              disabled={submitting}
+              placeholder="Calle, número, colonia, ciudad..."
+              className={inputClass}
+            />
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="min-h-[44px] px-4 rounded-xl border border-[#cbd5e1] text-[#434653] text-sm font-bold transition-colors hover:bg-[#f0f3ff] cursor-pointer disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="min-h-[44px] px-4 rounded-xl bg-[#00357f] hover:bg-[#004aad] text-white text-sm font-bold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+            >
+              {submitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Guardar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function CustomerDetailPage({ params }: PageProps) {
   const { id: customerId } = React.use(params)
 
@@ -240,24 +411,70 @@ export default function CustomerDetailPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'profile' | 'exams' | 'sales' | 'billing'>('profile')
+  // Rol de quien mira la ficha: la pestaña Cobranza NO se pinta para
+  // el OPTOMETRISTA y su contenido no es alcanzable para él (decisión
+  // del dueño, 2026-11-19: su mundo es el expediente clínico, sin
+  // dinero). Mientras el rol no se resuelve, la pestaña se trata como
+  // oculta: solo aparece cuando el rol ya probó NO ser optometrista.
+  // En modo demo no hay sesión: el visor demo es el administrador.
+  const [viewerRole, setViewerRole] = useState<AccessRole | null>(null)
   const [reminderCfg, setReminderCfg] = useState<ReminderConfig | null>(null)
   // Plantilla del recordatorio de cobranza (fuente única en app_settings,
   // editable en Configuración → Mensajes); el texto de siempre es el
   // respaldo mientras carga o si la lectura falla.
   const [paymentTemplate, setPaymentTemplate] = useState<string>(DEFAULT_PAYMENT_REMINDER_TEMPLATE)
+  // Modal «Actualizar datos» de la tarjeta Datos Generales y su aviso
+  // breve de confirmación (pedido del dueño, 2026-11-19).
+  const [showEditDataModal, setShowEditDataModal] = useState(false)
+  const [dataUpdated, setDataUpdated] = useState(false)
 
   useEffect(() => {
     getReminderConfig().then(setReminderCfg).catch(() => setReminderCfg(null))
     getMessageTemplate(PAYMENT_REMINDER_TEMPLATE_KEY).then(setPaymentTemplate).catch(() => {})
   }, [])
 
-  // El ancla #cobranza (p. ej. desde la página de pagos) abre la ficha
-  // directamente en la pestaña de Cobranza.
+  // Rol del visitante (mismo patrón que la Agenda: la fila de
+  // `profiles` manda, la metadata respalda, demo = administrador).
   useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      let resolved: AccessRole = 'guest'
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          let roleValue: string | null = user.user_metadata?.role || null
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', user.id)
+              .maybeSingle()
+            if (profile?.role) roleValue = profile.role
+          } catch {
+            // keep the metadata fallback
+          }
+          resolved = normalizeRole(roleValue)
+        } else if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+          resolved = 'owner'
+        }
+      } catch {
+        // stays 'guest': Cobranza simply never opens for this viewer
+      }
+      if (!cancelled) setViewerRole(resolved)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // El ancla #cobranza (p. ej. desde la página de pagos) abre la ficha
+  // directamente en la pestaña de Cobranza — salvo para el
+  // optometrista: para él esa pestaña no existe ni por enlace.
+  useEffect(() => {
+    if (viewerRole === null || viewerRole === 'optometrist') return
     if (window.location.hash === '#cobranza') {
       setActiveTab('billing')
     }
-  }, [])
+  }, [viewerRole])
 
   // La pestaña activa se auto-desplaza hasta quedar visible en su fila
   // (clave al abrir con #cobranza: Cobranza es la última y quedaría
@@ -297,6 +514,26 @@ export default function CustomerDetailPage({ params }: PageProps) {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  // Recarga solo el registro del cliente tras «Actualizar datos» (sin
+  // el spinner de pantalla completa de la carga inicial).
+  const refreshCustomer = useCallback(async () => {
+    try {
+      const custData = await getCustomerById(customerId)
+      if (custData) setCustomer(custData)
+    } catch {
+      // Si la recarga falla, la recarga completa sigue disponible.
+    }
+  }, [customerId])
+
+  // Al guardar en el modal: cerrarlo, mostrar la confirmación breve y
+  // refrescar el registro para que la tarjeta muestre los datos nuevos.
+  const handleDataSaved = useCallback(() => {
+    setShowEditDataModal(false)
+    setDataUpdated(true)
+    refreshCustomer()
+    setTimeout(() => setDataUpdated(false), 4000)
+  }, [refreshCustomer])
 
   // Recarga solo datos de dinero tras registrar un abono.
   const reloadBilling = useCallback(async () => {
@@ -387,6 +624,128 @@ export default function CustomerDetailPage({ params }: PageProps) {
     const hasComponents = items.some((it: any) =>
       Number(it.lens_material_price || 0) > 0 || (it.sale_item_treatments || []).length > 0 || !!it.is_complement)
     return { sum, hasComponents }
+  }
+
+  // Historia clínica capturada con el examen (la hoja en papel del
+  // negocio, ver lib/clinical-history.ts), en el orden de la hoja.
+  // Esta ficha es vista de personal: el cliente nunca ve su
+  // graduación ni su historia clínica.
+  const renderClinicalHistory = (exam: any) => {
+    const history = normalizeClinicalHistory(exam.clinical_history)
+    if (!hasClinicalHistory(history)) return null
+    const h = history as ClinicalHistory
+    const yesNo = (v: string | null) => (v === 'si' ? 'Sí' : v === 'no' ? 'No' : '—')
+    const antecedents: { label: string; value: string }[] = [
+      { label: '¿Le molestan las luces?', value: yesNo(h.bothersLights) },
+      { label: '¿Ha usado lentes antes?', value: yesNo(h.usedGlassesBefore) },
+      ...(h.glassesTime ? [{ label: 'Tiempo con ellos', value: h.glassesTime }] : []),
+      { label: 'Fecha del último examen', value: h.lastExamDate ? formatDate(h.lastExamDate) : '—' },
+      { label: '¿A qué se dedica?', value: h.occupation || '—' },
+      {
+        label: '¿Cirugías en sus ojos?',
+        value: h.eyeSurgeryDetail ? `${yesNo(h.eyeSurgery)} — ${h.eyeSurgeryDetail}` : yesNo(h.eyeSurgery),
+      },
+      {
+        label: 'Hipertensión o diabetes',
+        value: h.hypertensionDiabetes ? HYPERTENSION_DIABETES_LABELS[h.hypertensionDiabetes] : '—',
+      },
+      {
+        label: '¿Toma medicamentos?',
+        value: h.medicationsDetail ? `${yesNo(h.medications)} — ${h.medicationsDetail}` : yesNo(h.medications),
+      },
+      { label: '¿Algún familiar usa lentes?', value: yesNo(h.familyUsesGlasses) },
+      { label: 'Uso de aparatos electrónicos', value: h.screenTime || '—' },
+    ]
+    const vaRows = [
+      { label: 'AV S/C Lejos', v: h.vaScFar },
+      { label: 'AV S/C Cerca', v: h.vaScNear },
+      { label: 'AV C/C Lejos', v: h.vaCcFar },
+      { label: 'AV C/C Cerca', v: h.vaCcNear },
+    ]
+    const hasVa = vaRows.some(r => r.v.od || r.v.oi || r.v.ao)
+    const gradLine = (g: { sphere: number | null; cylinder: number | null; axis: number | null; add: number | null }) =>
+      `Esf ${formatExamValue(g.sphere)} · Cil ${formatExamValue(g.cylinder)} · Eje ${g.axis !== null && g.axis !== undefined ? `${g.axis}°` : '--'} · Add ${formatAddValue(g.add)}`
+    const hasRx = [h.rx.od, h.rx.oi].some(g => g.sphere !== null || g.cylinder !== null || g.axis !== null || g.add !== null)
+
+    return (
+      <div className="border-t border-[#cbd5e1]/40 pt-4 space-y-4 text-left">
+        <div>
+          <span className="text-[10px] font-black text-[#00357f] uppercase tracking-wider">Historia clínica</span>
+          <p className="text-[10px] text-[#737784] font-semibold mt-0.5">
+            Responsable clínico: {CLINICAL_LEAD_NAME} · Folio SEP CONOCER {CLINICAL_LEAD_FOLIO}
+          </p>
+        </div>
+
+        {/* Antecedentes, en el orden de la hoja */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+          {antecedents.map(item => (
+            <div key={item.label} className="flex items-baseline justify-between gap-3 bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-lg px-3 py-2">
+              <span className="text-[10px] text-[#737784] font-bold">{item.label}</span>
+              <span className="text-[11px] font-bold text-[#111c2d] text-right">{item.value}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Agudeza visual */}
+        {hasVa && (
+          <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl p-3">
+            <span className="block text-[8px] text-[#737784] font-bold uppercase tracking-wider mb-2">Agudeza visual</span>
+            <div className="grid grid-cols-[1.2fr_1fr_1fr_1fr] gap-1 text-center text-[11px]">
+              <div />
+              {['OD', 'OI', 'AO'].map(col => (
+                <div key={col} className="font-black text-[#00357f] bg-[#eef4ff] rounded-md py-1">{col}</div>
+              ))}
+              {vaRows.map(row => (
+                <div key={row.label} className="contents">
+                  <span className="text-left font-bold text-[#434653] py-1">{row.label}</span>
+                  {[row.v.od, row.v.oi, row.v.ao].map((val, idx) => (
+                    <span key={idx} className="bg-white border border-[#cbd5e1]/40 rounded-md py-1 font-semibold text-[#111c2d]">{val || '—'}</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Retinoscopía y DIP por ojo */}
+        {(h.retinoscopy.od || h.retinoscopy.oi || h.dipOd !== null || h.dipOi !== null) && (
+          <div className="flex flex-wrap gap-1.5">
+            {(h.retinoscopy.od || h.retinoscopy.oi) && (
+              <span className="bg-[#f0f3ff] px-2.5 py-1 rounded-full text-[11px] font-semibold text-[#434653]">
+                Retinoscopía: OD {h.retinoscopy.od || '—'} · OI {h.retinoscopy.oi || '—'}
+              </span>
+            )}
+            {(h.dipOd !== null || h.dipOi !== null) && (
+              <span className="bg-[#f0f3ff] px-2.5 py-1 rounded-full text-[11px] font-semibold text-[#434653]">
+                DIP por ojo: OD {h.dipOd !== null ? `${h.dipOd} mm` : '—'} · OI {h.dipOi !== null ? `${h.dipOi} mm` : '—'}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* RX inicial (la vigente es la RX Final de la receta de arriba) */}
+        {hasRx && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl px-3 py-2.5">
+              <span className="block text-[8px] text-[#737784] font-bold uppercase tracking-wider">RX inicial · OD</span>
+              <span className="text-[11px] font-mono font-bold text-[#434653]">{gradLine(h.rx.od)}</span>
+            </div>
+            <div className="bg-[#f9f9ff] border border-[#cbd5e1]/40 rounded-xl px-3 py-2.5">
+              <span className="block text-[8px] text-[#737784] font-bold uppercase tracking-wider">RX inicial · OI</span>
+              <span className="text-[11px] font-mono font-bold text-[#434653]">{gradLine(h.rx.oi)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Observaciones de la hoja */}
+        {h.observations && (
+          <div className="text-xs bg-[#f9f9ff] border border-[#cbd5e1]/40 p-3 rounded-xl">
+            <span className="font-bold text-[#737784] block mb-0.5">Observaciones (historia clínica):</span>
+            <span className="text-[#434653] leading-relaxed block font-medium">{h.observations}</span>
+          </div>
+        )}
+      </div>
+    )
   }
 
 
@@ -492,6 +851,13 @@ export default function CustomerDetailPage({ params }: PageProps) {
     { key: 'billing', label: 'Cobranza', Icon: Wallet, badge: billing.pendingCount, badgeClass: 'bg-[#ffdad6] text-[#ba1a1a]' },
   ] as const
 
+  // Cobranza se pinta solo cuando el rol ya probó NO ser optometrista
+  // (con el rol sin resolver también queda fuera: aparece al resolverse).
+  const visibleFichaTabs =
+    viewerRole === null || viewerRole === 'optometrist'
+      ? fichaTabs.filter((tab) => tab.key !== 'billing')
+      : fichaTabs
+
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-6 max-w-4xl mx-auto pb-24 md:pb-8 text-left">
       
@@ -586,7 +952,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
                 Agendar examen
               </Link>
             </div>
-            {billing.pendingTotal > 0 && (
+            {billing.pendingTotal > 0 && viewerRole !== null && viewerRole !== 'optometrist' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('billing')}
@@ -610,7 +976,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
           role="tablist"
           className="flex overflow-x-auto bg-white rounded-t-xl border-b border-[#cbd5e1] shadow-sm"
         >
-          {fichaTabs.map(({ key, label, Icon, badge, badgeClass }) => {
+          {visibleFichaTabs.map(({ key, label, Icon, badge, badgeClass }) => {
             const isActive = activeTab === key
             return (
               <button
@@ -656,10 +1022,26 @@ export default function CustomerDetailPage({ params }: PageProps) {
                   </span>
                   Datos Generales
                 </h3>
-                <span className="text-[10px] bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded font-black uppercase">
-                  CRM Activo
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] bg-[#e2f9ee] text-[#00422b] px-2 py-0.5 rounded font-black uppercase">
+                    CRM Activo
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowEditDataModal(true)}
+                    className="inline-flex items-center gap-1.5 min-h-[32px] px-3 rounded-lg bg-[#dee8ff] hover:bg-[#c9dbff] text-[#00357f] text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Actualizar datos
+                  </button>
+                </div>
               </div>
+
+              {dataUpdated && (
+                <p className="text-[11px] font-bold text-[#00422b] bg-[#e2f9ee] border border-[#49da9f]/40 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0" /> Datos del cliente actualizados.
+                </p>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs">
                 <div>
@@ -924,6 +1306,9 @@ export default function CustomerDetailPage({ params }: PageProps) {
                         </div>
                       </div>
 
+                      {/* Historia clínica (la hoja en papel), si el examen la trae */}
+                      {renderClinicalHistory(exam)}
+
                       {/* Recomendación de Armazón & Notas Clínicas */}
                       {(exam.frame_recommendation || exam.clinical_notes) && (
                         <div className="border-t border-[#cbd5e1]/40 pt-4 space-y-3 text-left">
@@ -1101,7 +1486,7 @@ export default function CustomerDetailPage({ params }: PageProps) {
         )}
 
         {/* TAB: BILLING (COBRANZA) */}
-        {activeTab === 'billing' && (
+        {activeTab === 'billing' && viewerRole !== null && viewerRole !== 'optometrist' && (
           <div className="space-y-6" id="cobranza">
             <div className="flex justify-between items-center">
               <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00357f]">
@@ -1295,6 +1680,14 @@ export default function CustomerDetailPage({ params }: PageProps) {
           </div>
         )}
       </div>
+
+      {showEditDataModal && customer && (
+        <EditCustomerDataModal
+          customer={customer}
+          onClose={() => setShowEditDataModal(false)}
+          onSaved={handleDataSaved}
+        />
+      )}
     </main>
   )
 }

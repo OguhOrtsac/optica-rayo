@@ -91,7 +91,7 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     label: 'Optometrista',
     shortLabel: 'Optometrista',
     description:
-      'Personal clínico. Consulta expedientes, registra exámenes y graduaciones y da seguimiento a revisiones; no administra finanzas ni cuentas.',
+      'Personal clínico. Consulta expedientes completos, registra exámenes y graduaciones, atiende la Agenda y da seguimiento a revisiones. Sin dinero: no vende, no cobra y no ve finanzas.',
     dashboardHref: '/customers',
     sections: STAFF_CLINICAL,
   },
@@ -99,12 +99,13 @@ export const ROLE_DEFINITIONS: Record<UserRole, RoleDefinition> = {
     label: 'Vendedor POS / Cajero',
     shortLabel: 'Vendedor',
     description:
-      'Personal de mostrador. Registra ventas y abonos, da de alta clientes y consulta el catálogo e inventario necesario para vender.',
+      'Personal de mostrador y apoyo del administrador. Registra ventas y abonos, da de alta clientes y productos, ajusta precios y ve y agenda citas; no entra a finanzas, gastos, reportes ni cuentas.',
     dashboardHref: '/dashboard/seller',
     sections: [
       'pos',
       'payments',
       'customers',
+      'catalog_management',
       'reminders',
       'own_account',
       'public_catalog',
