@@ -20,6 +20,7 @@ export const BIRTHDAY_TEMPLATE_KEY = 'birthday_template'
 export const CATALOG_INQUIRY_TEMPLATE_KEY = 'catalog_inquiry_template'
 export const LENS_REQUEST_REPLY_TEMPLATE_KEY = 'lens_request_reply_template'
 export const PAYMENT_REMINDER_TEMPLATE_KEY = 'payment_reminder_template'
+export const TICKET_TEMPLATE_KEY = 'ticket_template'
 
 /**
  * Birthday greeting (panel → «Cumpleaños próximos» → Felicitar).
@@ -57,6 +58,41 @@ export const DEFAULT_LENS_REQUEST_REPLY_TEMPLATE =
 export const DEFAULT_PAYMENT_REMINDER_TEMPLATE =
   'Hola {nombre}, te saludamos de Óptica Rayo. Te recordamos cordialmente que cuentas con un saldo pendiente de {saldo} MXN de tu compra. Puedes pasar a liquidarlo a sucursal o realizar una transferencia bancaria. ¡Muchas gracias por tu preferencia!'
 
+/**
+ * Purchase ticket (POS → tarjeta de éxito → «Enviar ticket por
+ * WhatsApp»). Placeholders: {nombre} — the buyer's name (empty when
+ * the sale carries no name: the greeting loses the «, {nombre}» so it
+ * reads «¡Gracias por su compra!»); {orden} — order code without '#';
+ * {fecha} — long sale date; {articulos} — the item block (products
+ * with their complements as sub-lines); {subtotal} / {total} /
+ * {anticipo} / {saldo} — amounts already formatted as currency
+ * ({saldo} expands to nothing when there is no pending balance);
+ * {descuentos} — the discount block INCLUDING its trailing line break
+ * (nothing when there is no discount, so «*Total*» follows the
+ * subtotal directly); {plan} — the deferred-balance line («Su saldo
+ * de … quedó diferido a N pagos …» with a plan, «Saldo pendiente: …»
+ * without one, nothing when the sale is fully paid); {meses} — the
+ * configured exam-reminder period. The composition and the cleanup of
+ * empty blocks live in lib/ticket.ts (buildTicketMessage); when
+ * nothing has been saved this default IS the ticket, word for word.
+ */
+export const DEFAULT_TICKET_TEMPLATE = `*Óptica Rayo* — Ticket de compra
+Orden #{orden} · {fecha}
+
+¡Gracias por su compra, {nombre}!
+
+*Artículos comprados*
+{articulos}
+
+Subtotal: {subtotal}
+{descuentos}*Total: {total}*
+Anticipo: {anticipo}
+{plan}
+Los precios ya incluyen IVA.
+
+¡Lo esperamos de vuelta!
+Lo volvemos a esperar en {meses} meses para su examen de vista.`
+
 /** Every editable template key, for validation in the services layer. */
 export const MESSAGE_TEMPLATE_KEYS = [
   REMINDER_TEMPLATE_KEY,
@@ -64,6 +100,7 @@ export const MESSAGE_TEMPLATE_KEYS = [
   CATALOG_INQUIRY_TEMPLATE_KEY,
   LENS_REQUEST_REPLY_TEMPLATE_KEY,
   PAYMENT_REMINDER_TEMPLATE_KEY,
+  TICKET_TEMPLATE_KEY,
 ] as const
 
 export type MessageTemplateKey = (typeof MESSAGE_TEMPLATE_KEYS)[number]
@@ -75,6 +112,7 @@ export const MESSAGE_TEMPLATE_DEFAULTS: Record<MessageTemplateKey, string> = {
   [CATALOG_INQUIRY_TEMPLATE_KEY]: DEFAULT_CATALOG_INQUIRY_TEMPLATE,
   [LENS_REQUEST_REPLY_TEMPLATE_KEY]: DEFAULT_LENS_REQUEST_REPLY_TEMPLATE,
   [PAYMENT_REMINDER_TEMPLATE_KEY]: DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+  [TICKET_TEMPLATE_KEY]: DEFAULT_TICKET_TEMPLATE,
 }
 
 /** Builds the birthday greeting from the editable template. */

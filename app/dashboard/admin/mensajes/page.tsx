@@ -11,6 +11,7 @@ import {
   Lock,
   MessagesSquare,
   MessageSquare,
+  Receipt,
   Save,
   Search,
   TrendingDown,
@@ -30,6 +31,7 @@ import {
   CATALOG_INQUIRY_TEMPLATE_KEY,
   LENS_REQUEST_REPLY_TEMPLATE_KEY,
   PAYMENT_REMINDER_TEMPLATE_KEY,
+  TICKET_TEMPLATE_KEY,
   type MessageTemplateKey,
 } from '@/lib/message-templates'
 
@@ -50,7 +52,7 @@ import {
 // and Promotions: the seller sells; the owner words the messages. RLS on
 // app_settings enforces the same rule in the database.
 
-type TemplateField = 'reminder' | 'birthday' | 'catalogInquiry' | 'lensRequestReply' | 'paymentReminder'
+type TemplateField = 'reminder' | 'birthday' | 'catalogInquiry' | 'lensRequestReply' | 'paymentReminder' | 'ticket'
 
 interface MessageCardSpec {
   field: TemplateField
@@ -162,6 +164,34 @@ const MESSAGE_CARDS: MessageCardSpec[] = [
       { token: '{nombre}', meaning: 'nombre completo del cliente' },
       { token: '{saldo}', meaning: 'saldo pendiente, ya con formato de moneda' },
     ],
+  },
+  {
+    field: 'ticket',
+    settingKey: TICKET_TEMPLATE_KEY,
+    title: 'Ticket de compra',
+    icon: Receipt,
+    chip: 'bg-[#e0f2fe] text-[#0369a1]',
+    bar: 'bg-[#e0f2fe]/70',
+    soft: 'bg-[#f0f9ff]',
+    border: 'border-[#0369a1]/25',
+    toneText: 'text-[#0369a1]',
+    focus: 'focus:ring-[#0369a1]/30 focus:border-[#0369a1]',
+    where:
+      'Es el texto del ticket que el punto de venta envía por WhatsApp al registrar una venta, con el botón «Enviar ticket por WhatsApp» de la tarjeta de éxito (viaja junto con la imagen del ticket). Si se deja vacío, se usa el texto predefinido.',
+    variables: [
+      { token: '{nombre}', meaning: 'nombre del comprador; si la venta no lleva nombre, el saludo queda «¡Gracias por su compra!» sin la coma' },
+      { token: '{orden}', meaning: 'código de la orden (sin el #)' },
+      { token: '{fecha}', meaning: 'fecha de la venta' },
+      { token: '{articulos}', meaning: 'el bloque de artículos comprados, con sus complementos' },
+      { token: '{subtotal}', meaning: 'subtotal, ya con formato de moneda' },
+      { token: '{descuentos}', meaning: 'el bloque de descuentos aplicados; si no hubo descuento, no aparece nada' },
+      { token: '{total}', meaning: 'total de la venta, ya con formato de moneda' },
+      { token: '{anticipo}', meaning: 'lo que el cliente pagó al momento, ya con formato de moneda' },
+      { token: '{saldo}', meaning: 'saldo pendiente, ya con formato de moneda; si no quedó saldo, no aparece nada' },
+      { token: '{plan}', meaning: 'la línea del saldo: «quedó diferido a N pagos…» con plan de pagos, «Saldo pendiente: …» sin plan, y nada si pagó completo' },
+      { token: '{meses}', meaning: 'meses para su próximo examen (el periodo configurado en «Recordatorio de examen»)' },
+    ],
+    note: 'La imagen del ticket que acompaña a este texto se genera siempre con el mismo contenido de la venta (artículos, total, anticipo y plan); esta plantilla manda solo en el texto.',
   },
 ]
 
@@ -369,6 +399,7 @@ export default function MensajesPage() {
     catalogInquiry: '',
     lensRequestReply: '',
     paymentReminder: '',
+    ticket: '',
   })
   const [reminderMonths, setReminderMonths] = useState(6)
 

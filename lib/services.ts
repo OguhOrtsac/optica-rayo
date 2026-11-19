@@ -13,6 +13,7 @@ import {
   CATALOG_INQUIRY_TEMPLATE_KEY,
   LENS_REQUEST_REPLY_TEMPLATE_KEY,
   PAYMENT_REMINDER_TEMPLATE_KEY,
+  TICKET_TEMPLATE_KEY,
   MESSAGE_TEMPLATE_DEFAULTS,
   type MessageTemplateKey,
 } from './message-templates'
@@ -726,7 +727,12 @@ export async function createSale(
     couponId: options?.couponId ?? null,
     discountApplied: options?.discountApplied ?? 0,
     notes: options?.notes ?? null,
-    plan: options?.paymentPlan && options?.customerId ? options.paymentPlan : null
+    plan: options?.paymentPlan && options?.customerId ? options.paymentPlan : null,
+    // Same member-pricing input the real branch uses, so the mock sale
+    // totals match the POS preview for registered customers.
+    memberDiscountPercent: options?.customerId && !options?.chargeAsWalkIn
+      ? await getMemberDiscountPercent()
+      : 0
   })
 }
 
@@ -2039,23 +2045,32 @@ export async function ensureCustomerNotifications(): Promise<number> {
 }
 
 /**
- * Service to mark notification as read.
+ * Service to mark notification as read. Solo las PROPIAS (dictado
+ * 2026-11-19): el update filtra por `user_id` además del id — la
+ * campanita es por usuario — y el éxito se prueba con las filas de
+ * vuelta, como en deleteMyNotification (un update bloqueado por RLS
+ * no devuelve error, pero no toca ninguna fila).
  */
 export async function markNotificationRead(id: string): Promise<boolean> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', id)
-      
-      if (!error) return true
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data, error } = await supabase
+          .from('notifications')
+          .update({ is_read: true })
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .select('id')
+        if (!error && data && data.length > 0) return true
+        if (!error) return false
+      }
     } catch (e) {
       console.error('Supabase mark read failed:', e)
     }
   }
-  
+
   const notif = mockDb.MOCK_NOTIFICATIONS.find(n => n.id === id)
   if (notif) {
     notif.is_read = true
@@ -2155,6 +2170,7 @@ export interface MessageTemplates {
   catalogInquiry: string
   lensRequestReply: string
   paymentReminder: string
+  ticket: string
 }
 
 /**
@@ -2168,15 +2184,16 @@ export async function getMessageTemplate(key: MessageTemplateKey): Promise<strin
 
 /** All editable WhatsApp templates at once (the «Mensajes» page). */
 export async function getMessageTemplates(): Promise<MessageTemplates> {
-  const [reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder] =
+  const [reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder, ticket] =
     await Promise.all([
       getMessageTemplate(REMINDER_TEMPLATE_KEY),
       getMessageTemplate(BIRTHDAY_TEMPLATE_KEY),
       getMessageTemplate(CATALOG_INQUIRY_TEMPLATE_KEY),
       getMessageTemplate(LENS_REQUEST_REPLY_TEMPLATE_KEY),
       getMessageTemplate(PAYMENT_REMINDER_TEMPLATE_KEY),
+      getMessageTemplate(TICKET_TEMPLATE_KEY),
     ])
-  return { reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder }
+  return { reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder, ticket }
 }
 
 /**
@@ -2996,26 +3013,48 @@ export async function deleteMyNotification(id: string): Promise<boolean> {
 // it is applied, reads degrade silently to «nothing dismissed» (the
 // list behaves exactly as before) and a dismissal reports failure, so
 // the row stays put instead of pretending it was hidden forever.
+//
+// PERSONAL since the owner's dictation of 2026-11-19 (migration
+// 20261119_notification_independence.sql adds `user_id`): each staff
+// member dismisses only for THEMSELVES — the row stays visible for
+// everyone else. Reads filter by the current user; the legacy rows
+// with user_id NULL (from the global-dismissal era) are ignored from
+// now on. If the column does not exist yet, the read degrades to
+// «nothing dismissed by me» instead of breaking.
 
 const birthdayDismissalKey = (customerId: string, occurrenceYear: number) =>
   `${customerId}:${occurrenceYear}`
 
-// Demo mode (no Supabase): dismissals live for the session only.
+/**
+ * Identity of the demo-mode viewer: the mock base's administrator
+ * (super-1). In production the identity comes from the real session.
+ */
+function demoCurrentUser(): { id: string; name: string } {
+  const profile = mockDb.MOCK_PROFILES.find(p => p.id === 'super-1')
+  return { id: 'super-1', name: profile?.full_name || 'Super Administrador' }
+}
+
+// Demo mode (no Supabase): dismissals live for the session only, keyed
+// per user (`userId|customerId:year`) so the personal filter is real.
 const MOCK_BIRTHDAY_DISMISSALS = new Set<string>()
 
 /**
- * Keys (`customerId:occurrenceYear`) of the birthdays dismissed for the
- * current cycle. The panel's 7-day window can straddle New Year, so
- * both this year's and next year's occurrences are read.
+ * Keys (`customerId:occurrenceYear`) of the birthdays dismissed BY THE
+ * CURRENT USER for the current cycle. The panel's 7-day window can
+ * straddle New Year, so both this year's and next year's occurrences
+ * are read.
  */
 export async function getBirthdayDismissals(): Promise<Set<string>> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return new Set()
       const year = new Date().getFullYear()
       const { data, error } = await supabase
         .from('birthday_dismissals')
         .select('customer_id, occurrence_year')
+        .eq('user_id', user.id)
         .in('occurrence_year', [year, year + 1])
       if (!error && data) {
         return new Set(
@@ -3023,29 +3062,38 @@ export async function getBirthdayDismissals(): Promise<Set<string>> {
         )
       }
       if (error) {
-        console.error('Supabase birthday dismissals fetch failed (¿migración 20261118 aplicada?):', error.message)
+        console.error('Supabase birthday dismissals fetch failed (¿migración 20261119 aplicada?):', error.message)
       }
     } catch (e) {
       console.error('Supabase birthday dismissals fetch failed:', e)
     }
     return new Set()
   }
-  return new Set(MOCK_BIRTHDAY_DISMISSALS)
+  const me = demoCurrentUser()
+  const prefix = `${me.id}|`
+  return new Set(
+    [...MOCK_BIRTHDAY_DISMISSALS]
+      .filter(k => k.startsWith(prefix))
+      .map(k => k.slice(prefix.length))
+  )
 }
 
 /**
- * Persists the dismissal of one birthday occurrence. Returns true only
- * when the row is proven stored (selected back), mirroring
- * deleteMyNotification: an RLS block or a missing table must surface as
- * failure so the UI keeps the row and warns, never as a silent hide.
+ * Persists the dismissal of one birthday occurrence FOR THE CURRENT
+ * USER. Returns true only when the row is proven stored (selected
+ * back), mirroring deleteMyNotification: an RLS block or a missing
+ * table/column must surface as failure so the UI keeps the row and
+ * warns, never as a silent hide.
  */
 export async function dismissBirthday(customerId: string, occurrenceYear: number): Promise<boolean> {
   if (isSupabaseConfigured()) {
     try {
       const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return false
       const { data, error } = await supabase
         .from('birthday_dismissals')
-        .insert([{ customer_id: customerId, occurrence_year: occurrenceYear }])
+        .insert([{ customer_id: customerId, occurrence_year: occurrenceYear, user_id: user.id }])
         .select('customer_id')
       if (!error && data && data.length > 0) return true
       if (!error) console.error('dismissBirthday: 0 rows inserted (possible RLS block) for', customerId, occurrenceYear)
@@ -3055,8 +3103,150 @@ export async function dismissBirthday(customerId: string, occurrenceYear: number
       return false
     }
   }
-  MOCK_BIRTHDAY_DISMISSALS.add(birthdayDismissalKey(customerId, occurrenceYear))
+  const me = demoCurrentUser()
+  MOCK_BIRTHDAY_DISMISSALS.add(`${me.id}|${birthdayDismissalKey(customerId, occurrenceYear)}`)
   return true
+}
+
+// ----------------------------------------------------
+// Registro de envíos (message_send_log) — sello «ya enviado»
+// ----------------------------------------------------
+// Dictado del dueño (2026-11-19): hasta hoy NO existía registro de
+// quién envió una felicitación de cumpleaños o un recordatorio de
+// cobro. logMessageSend() lo asienta al tocar el botón de WhatsApp
+// (kind, cliente, venta si aplica, quién y cuándo) y las pantallas lo
+// leen para pintar el sello «ya enviado por {nombre} · {fecha}»,
+// visible para TODO el personal. La tabla llega con la migración
+// 20261119_notification_independence.sql: si aún no existe, la lectura
+// degrada a vacío y el registro devuelve null — el envío por WhatsApp
+// NUNCA se bloquea por el registro (mismo criterio que
+// logActivityEvent).
+
+export type MessageSendKind = 'birthday' | 'payment_reminder'
+
+export interface MessageSendEntry {
+  id: string
+  kind: MessageSendKind
+  customer_id: string
+  sale_id: string | null
+  sent_by: string | null
+  sent_by_name: string
+  sent_at: string
+}
+
+// Demo mode (no Supabase): los envíos viven en memoria, solo durante
+// la sesión, igual que los descartes de cumpleaños.
+const MOCK_MESSAGE_SEND_LOG: MessageSendEntry[] = []
+
+/** Visible name + id of the signed-in sender (real session). */
+async function resolveCurrentSender(
+  supabase: ReturnType<typeof createBrowserClient>
+): Promise<{ id: string; name: string } | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+    let name = (user.user_metadata?.full_name as string | undefined) || ''
+    if (!name) {
+      const names = await resolveProfileNames(supabase as any, [user.id])
+      name = names.get(user.id) || ''
+    }
+    return { id: user.id, name: name || user.email || 'Personal de Óptica Rayo' }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Registra un envío de WhatsApp del personal. Devuelve la entrada
+ * creada (para que la pantalla pinte el sello al momento) o null si no
+ * se pudo guardar; NUNCA lanza ni bloquea el envío.
+ */
+export async function logMessageSend(
+  kind: MessageSendKind,
+  opts: { customerId: string; saleId?: string | null }
+): Promise<MessageSendEntry | null> {
+  if (!isSupabaseConfigured()) {
+    const me = demoCurrentUser()
+    const entry: MessageSendEntry = {
+      id: `mock-send-${Date.now()}`,
+      kind,
+      customer_id: opts.customerId,
+      sale_id: opts.saleId ?? null,
+      sent_by: me.id,
+      sent_by_name: me.name,
+      sent_at: new Date().toISOString(),
+    }
+    MOCK_MESSAGE_SEND_LOG.unshift(entry)
+    return entry
+  }
+  try {
+    const supabase = createBrowserClient()
+    const sender = await resolveCurrentSender(supabase)
+    const { data, error } = await supabase
+      .from('message_send_log')
+      .insert([{
+        kind,
+        customer_id: opts.customerId,
+        sale_id: opts.saleId ?? null,
+        sent_by: sender?.id ?? null,
+        sent_by_name: sender?.name ?? 'Personal de Óptica Rayo',
+      }])
+      .select('id, kind, customer_id, sale_id, sent_by, sent_by_name, sent_at')
+      .single()
+    if (error) {
+      console.error('logMessageSend insert failed (¿migración 20261119 aplicada?):', error.message)
+      return null
+    }
+    return data as unknown as MessageSendEntry
+  } catch (e) {
+    console.error('logMessageSend failed:', e)
+    return null
+  }
+}
+
+/**
+ * Envíos registrados de un tipo (los más recientes primero), para
+ * todos o para un cliente. Sin tabla (migración sin aplicar) o ante
+ * cualquier fallo devuelve []: el sello simplemente no se pinta.
+ */
+export async function getMessageSends(
+  kind: MessageSendKind,
+  opts: { customerId?: string; limit?: number } = {}
+): Promise<MessageSendEntry[]> {
+  const limit = opts.limit ?? 50
+  if (!isSupabaseConfigured()) {
+    return MOCK_MESSAGE_SEND_LOG
+      .filter(e => e.kind === kind && (!opts.customerId || e.customer_id === opts.customerId))
+      .slice(0, limit)
+  }
+  try {
+    const supabase = createBrowserClient()
+    let query = supabase
+      .from('message_send_log')
+      .select('id, kind, customer_id, sale_id, sent_by, sent_by_name, sent_at')
+      .eq('kind', kind)
+      .order('sent_at', { ascending: false })
+      .limit(limit)
+    if (opts.customerId) query = query.eq('customer_id', opts.customerId)
+    const { data, error } = await query
+    if (error) {
+      console.error('Supabase message sends fetch failed (¿migración 20261119 aplicada?):', error.message)
+      return []
+    }
+    return (data as unknown as MessageSendEntry[]) ?? []
+  } catch (e) {
+    console.error('Supabase message sends fetch failed:', e)
+    return []
+  }
+}
+
+/** El envío más reciente de un tipo para un cliente (o null). */
+export async function getLatestMessageSend(
+  kind: MessageSendKind,
+  customerId: string
+): Promise<MessageSendEntry | null> {
+  const [latest] = await getMessageSends(kind, { customerId, limit: 1 })
+  return latest ?? null
 }
 
 // ---------------------------------------------------------------------------

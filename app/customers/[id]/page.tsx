@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, getMessageTemplate, updateCustomerGeneralData, getSaleRefinancings, restructureSalePayments, type ReminderConfig } from '@/lib/services'
+import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, getMessageTemplate, updateCustomerGeneralData, getSaleRefinancings, restructureSalePayments, getLatestMessageSend, logMessageSend, type MessageSendEntry, type ReminderConfig } from '@/lib/services'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { isAdminRole, normalizeRole, type AccessRole } from '@/lib/roles'
 import {
@@ -658,6 +658,10 @@ export default function CustomerDetailPage({ params }: PageProps) {
   // editable en Configuración → Mensajes); el texto de siempre es el
   // respaldo mientras carga o si la lectura falla.
   const [paymentTemplate, setPaymentTemplate] = useState<string>(DEFAULT_PAYMENT_REMINDER_TEMPLATE)
+  // Sello «ya enviado» del recordatorio de cobro (dictado 2026-11-19):
+  // el último envío registrado a este cliente, visible para todo el
+  // personal junto a la sección de recordatorios.
+  const [lastPaymentSend, setLastPaymentSend] = useState<MessageSendEntry | null>(null)
   // Modal «Actualizar datos» de la tarjeta Datos Generales y su aviso
   // breve de confirmación (pedido del dueño, 2026-11-19).
   const [showEditDataModal, setShowEditDataModal] = useState(false)
@@ -672,6 +676,10 @@ export default function CustomerDetailPage({ params }: PageProps) {
     getReminderConfig().then(setReminderCfg).catch(() => setReminderCfg(null))
     getMessageTemplate(PAYMENT_REMINDER_TEMPLATE_KEY).then(setPaymentTemplate).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    getLatestMessageSend('payment_reminder', customerId).then(setLastPaymentSend).catch(() => {})
+  }, [customerId])
 
   // Rol del visitante (mismo patrón que la Agenda: la fila de
   // `profiles` manda, la metadata respalda, demo = administrador).
@@ -1042,6 +1050,16 @@ export default function CustomerDetailPage({ params }: PageProps) {
   const cp = customer.customer_profiles || {}
   const age = calculateAge(cp.date_of_birth)
 
+  // La venta con saldo más reciente: es la que se asienta en el
+  // registro cuando se manda el recordatorio de cobro (si la hay).
+  const latestBalanceSale = (() => {
+    const withBalance = sales.filter((s: any) => Number(s.pending_balance || 0) > 0)
+    if (withBalance.length === 0) return null
+    return [...withBalance].sort(
+      (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+  })()
+
   // Resumen de cobranza: saldo pendiente según las cuotas (saldo por cuota =
   // monto − abonado) MÁS el saldo de las ventas sin cuotas (anticipo del
   // POS), cuántas ventas lo reparten y el próximo vencimiento.
@@ -1357,6 +1375,17 @@ export default function CustomerDetailPage({ params }: PageProps) {
                         onClick={() => {
                           const phoneWithCode = toWhatsAppNumber(cp.phone)
                           if (!phoneWithCode) return
+                          // El envío queda registrado (message_send_log)
+                          // con quién lo mandó y la venta con saldo más
+                          // reciente; el sello se actualiza al momento
+                          // y el registro NUNCA bloquea la apertura de
+                          // WhatsApp.
+                          void logMessageSend('payment_reminder', {
+                            customerId,
+                            saleId: latestBalanceSale?.id ?? null,
+                          }).then(entry => {
+                            if (entry) setLastPaymentSend(entry)
+                          })
                           const message = buildPaymentReminderMessage(paymentTemplate, {
                             nombre: customer.full_name,
                             saldo: formatPrice(billing.pendingTotal),
@@ -1371,6 +1400,16 @@ export default function CustomerDetailPage({ params }: PageProps) {
                       </button>
                     )}
                   </div>
+                  {lastPaymentSend && (
+                    <p className="text-[11px] font-bold text-[#00422b]">
+                      Último recordatorio enviado por {lastPaymentSend.sent_by_name} ·{' '}
+                      {new Date(lastPaymentSend.sent_at).toLocaleDateString('es-MX', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      }).replace(/\.$/, '')}
+                    </p>
+                  )}
                 </div>
               )}
             </div>

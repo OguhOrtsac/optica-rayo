@@ -5,6 +5,7 @@ import {
   type PaymentPlanInput,
   type PaymentPlanSummary,
 } from './payment-plan'
+import { effectiveClientPrice } from './pricing'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Coupon = Database['public']['Tables']['coupons']['Row']
@@ -486,9 +487,19 @@ export function addMockSale(
     discountApplied?: number
     notes?: string | null
     plan?: PaymentPlanInput | null
+    memberDiscountPercent?: number
   }
 ): { sale: (typeof MOCK_SALES)[number]; items: SaleItem[]; paymentPlan: PaymentPlanSummary | null } {
   const customerId = extras?.customerId || 'cust_' + Math.random().toString(36).substr(2, 9)
+
+  // Member pricing mirrors the real createSale: a sale linked to a
+  // registered mock customer charges the client price (special
+  // client_price or the member discount over the list price), so the
+  // demo totals, pending balance and plan installments match what the
+  // POS preview showed. Walk-in sales keep list prices.
+  const buyerIsRegisteredCustomer =
+    !!extras?.customerId && MOCK_CUSTOMER_PROFILES.some(c => c.id === extras.customerId)
+  const memberPct = buyerIsRegisteredCustomer ? (extras?.memberDiscountPercent ?? 0) : 0
 
   let grossTotal = 0
   const saleId = 's_' + Math.random().toString(36).substr(2, 9)
@@ -497,7 +508,9 @@ export function addMockSale(
   items.forEach(item => {
     const product = MOCK_PRODUCTS.find(p => p.id === item.productId)
     if (product) {
-      const price = product.price
+      const price = buyerIsRegisteredCustomer
+        ? effectiveClientPrice(product.price, product.client_price, memberPct)
+        : product.price
       grossTotal += price * item.quantity
       itemsToAdd.push({
         id: 'si_' + Math.random().toString(36).substr(2, 9),
