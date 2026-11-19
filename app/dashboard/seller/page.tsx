@@ -9,6 +9,7 @@ import {
   getCoupons,
   getMemberDiscountPercent,
   getReminderConfig,
+  getMessageTemplate,
   COUPON_LIMIT_MESSAGE,
   isCouponExhausted
 } from '@/lib/services'
@@ -27,7 +28,9 @@ import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDetails } from '@/lib/product-data'
 import { DEFAULT_REMINDER_MONTHS } from '@/lib/reminder-config'
 import { toWhatsAppNumber } from '@/lib/phone'
-import { buildTicketMessage, orderCodeFromSaleId, type TicketLine } from '@/lib/ticket'
+import { buildTicketMessage, orderCodeFromSaleId, type TicketData, type TicketLine } from '@/lib/ticket'
+import { renderTicketImageBlob, ticketImageFileName } from '@/lib/ticket-image'
+import { TICKET_TEMPLATE_KEY } from '@/lib/message-templates'
 import { Database } from '@/types/database.types'
 import {
   Search,
@@ -107,6 +110,11 @@ interface LastSaleTicket {
   reminderMonths: number
   /** Plan de pagos generado con la venta (null si no se creó). */
   paymentPlan: PaymentPlanSummary | null
+  /**
+   * Plantilla del ticket guardada en «Mensajes», leída al cobrar: el
+   * texto del ticket (y el que acompaña a la imagen) sale de ahí.
+   */
+  ticketTemplate: string
 }
 
 export default function SellerDashboard() {
@@ -478,8 +486,9 @@ export default function SellerDashboard() {
         ? 'Descuento por precio final'
         : 'Descuento'
   const taxableBase = useMemo(() => subtotal - discount, [subtotal, discount])
-  const netSubtotal = useMemo(() => taxableBase / 1.16, [taxableBase])
-  const iva = useMemo(() => taxableBase - netSubtotal, [taxableBase, netSubtotal])
+  // Sin desglose de IVA (dictado del dueño, 2026-11-19): los precios
+  // ya lo incluyen y el resumen solo lo anota con una línea de texto;
+  // el total cobrado no cambia por un centavo.
   const total = useMemo(() => taxableBase, [taxableBase])
 
   // Payment inputs and balance calculations. Derived explicitly from
@@ -496,12 +505,16 @@ export default function SellerDashboard() {
   // Plan de pagos (dictado 2026-11-19): divide el SALDO en cuotas al
   // cobrar. Solo se ofrece con cliente dado de alta — seleccionado o
   // con el nombre tecleado, porque «Continuar solo con el nombre» crea
-  // el registro al cobrar — y con saldo pendiente > 0. La fecha del
-  // primer pago se precarga a un periodo de la venta (+15 días
-  // quincenal / +1 mes mensual) y es editable.
+  // el registro al cobrar — y con saldo pendiente > 0. La frecuencia
+  // es un combo con las TRES opciones (semanal / quincenal / mensual)
+  // y MENSUAL por default (ajuste del dueño, 2026-11-19: las pastillas
+  // se amontonaban). La fecha del primer pago se precarga a un periodo
+  // de la venta según la frecuencia elegida: mientras el campo siga en
+  // '' (automático) se recalcula al cambiar la frecuencia; si el
+  // vendedor la edita a mano, su fecha manda.
   const [planEnabled, setPlanEnabled] = useState(false)
   const [planCountInput, setPlanCountInput] = useState('4')
-  const [planFrequency, setPlanFrequency] = useState<PaymentFrequency>('biweekly')
+  const [planFrequency, setPlanFrequency] = useState<PaymentFrequency>('monthly')
   const [planFirstDate, setPlanFirstDate] = useState('') // '' = automática según frecuencia
   const planCount = Math.max(1, Math.floor(parseInt(planCountInput, 10) || 0) || 1)
   const planFirstDue = planFirstDate || defaultFirstPaymentDate(planFrequency)
@@ -767,6 +780,12 @@ export default function SellerDashboard() {
         try {
           reminderMonths = (await getReminderConfig()).months
         } catch { /* keep the default period */ }
+        // La plantilla del ticket se lee de «Mensajes» al cobrar; si
+        // la lectura falla, buildTicketMessage cae a la predefinida.
+        let ticketTemplate = ''
+        try {
+          ticketTemplate = await getMessageTemplate(TICKET_TEMPLATE_KEY)
+        } catch { /* keep the built-in default template */ }
         setLastSale({
           saleId: createdSaleId,
           createdAt: new Date().toISOString(),
@@ -779,7 +798,8 @@ export default function SellerDashboard() {
           paid: ticketPaid,
           pendingBalance: Math.max(0, total - ticketPaid),
           reminderMonths,
-          paymentPlan: appliedPlan
+          paymentPlan: appliedPlan,
+          ticketTemplate
         })
       }
 
@@ -799,6 +819,7 @@ export default function SellerDashboard() {
       setShowQuickAdd(false)
       setPaidAmountInput('')
       setPlanEnabled(false)
+      setPlanFrequency('monthly')
       setPlanFirstDate('')
       setCouponCode('')
       setActiveCoupon(null)
@@ -833,29 +854,117 @@ export default function SellerDashboard() {
 
   // WhatsApp ticket of the last registered sale (success card): the
   // number is normalized with the same helper the birthdays use, and
-  // the message is built from the snapshot taken at checkout.
+  // the message is built from the snapshot taken at checkout. Text and
+  // IMAGE come from the SAME TicketData (lib/ticket.ts composes both),
+  // and the text fills the editable template saved in «Mensajes».
+  const buildTicketData = (sale: LastSaleTicket): TicketData => ({
+    orderCode: orderCodeFromSaleId(sale.saleId),
+    date: new Date(sale.createdAt),
+    customerName: sale.buyerName,
+    lines: sale.lines,
+    subtotal: sale.subtotal,
+    discount: sale.discount,
+    total: sale.total,
+    paid: sale.paid,
+    pendingBalance: sale.pendingBalance,
+    reminderMonths: sale.reminderMonths,
+    template: sale.ticketTemplate,
+    paymentPlan: sale.paymentPlan
+      ? {
+          installments: sale.paymentPlan.installments,
+          frequency: sale.paymentPlan.frequency,
+          installmentAmount: sale.paymentPlan.installmentAmount,
+          firstPaymentDate: sale.paymentPlan.firstPaymentDate
+        }
+      : null
+  })
   const lastSaleWaNumber = lastSale?.buyerPhone ? toWhatsAppNumber(lastSale.buyerPhone) : null
-  const lastSaleTicketText = lastSale
-    ? buildTicketMessage({
-        orderCode: orderCodeFromSaleId(lastSale.saleId),
-        date: new Date(lastSale.createdAt),
-        lines: lastSale.lines,
-        subtotal: lastSale.subtotal,
-        discount: lastSale.discount,
-        total: lastSale.total,
-        paid: lastSale.paid,
-        pendingBalance: lastSale.pendingBalance,
-        reminderMonths: lastSale.reminderMonths,
-        paymentPlan: lastSale.paymentPlan
-          ? {
-              installments: lastSale.paymentPlan.installments,
-              frequency: lastSale.paymentPlan.frequency,
-              installmentAmount: lastSale.paymentPlan.installmentAmount,
-              firstPaymentDate: lastSale.paymentPlan.firstPaymentDate
-            }
-          : null
+  const lastSaleTicketText = lastSale ? buildTicketMessage(buildTicketData(lastSale)) : ''
+
+  // Ticket IMAGE (dictado 2026-11-19): generated when the success card
+  // appears — never on the checkout path, so it cannot slow the sale.
+  // The object URL is revoked when the card changes or closes.
+  const [ticketImage, setTicketImage] = useState<{ url: string; blob: Blob } | null>(null)
+  const [shareNote, setShareNote] = useState('')
+  useEffect(() => {
+    setShareNote('')
+    if (!lastSale) {
+      setTicketImage(null)
+      return
+    }
+    let cancelled = false
+    let url: string | null = null
+    renderTicketImageBlob(buildTicketData(lastSale))
+      .then(blob => {
+        if (cancelled) return
+        url = URL.createObjectURL(blob)
+        setTicketImage({ url, blob })
       })
-    : ''
+      .catch(err => {
+        // The card still offers the text ticket; the image is a plus.
+        console.error('No se pudo generar la imagen del ticket:', err)
+        if (!cancelled) setTicketImage(null)
+      })
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastSale])
+
+  // «Enviar ticket por WhatsApp» (dictado + ajuste 2026-11-19): el
+  // envío lleva la IMAGEN y el TEXTO juntos. wa.me no puede adjuntar
+  // archivos, así que el camino principal es la hoja de compartir del
+  // sistema (navigator.share con files + text: en WhatsApp la imagen
+  // llega con el mensaje como pie de foto). Si la hoja solo acepta el
+  // archivo, se comparte la imagen y se avisa que el texto va por el
+  // chat directo. Sin compartir: se descarga la imagen y se abre el
+  // chat del cliente con el texto, avisando que la adjunte.
+  const handleShareTicket = async () => {
+    if (!lastSale) return
+    const orderCode = orderCodeFromSaleId(lastSale.saleId)
+    if (ticketImage) {
+      const file = new File([ticketImage.blob], ticketImageFileName(orderCode), { type: 'image/png' })
+      const nav = navigator as Navigator & {
+        canShare?: (data: { files?: File[]; text?: string }) => boolean
+      }
+      try {
+        if (nav.canShare?.({ files: [file], text: lastSaleTicketText })) {
+          await navigator.share({
+            files: [file],
+            text: lastSaleTicketText,
+            title: 'Ticket de compra — Óptica Rayo'
+          })
+          return
+        }
+        if (nav.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Ticket de compra — Óptica Rayo' })
+          setShareNote('Se compartió la imagen. El texto del ticket va en el botón «Abrir chat del cliente».')
+          return
+        }
+      } catch (err) {
+        // El vendedor canceló la hoja de compartir: no es un error.
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        // Cualquier otro fallo cae al respaldo de descarga.
+      }
+      const anchor = document.createElement('a')
+      anchor.href = ticketImage.url
+      anchor.download = ticketImageFileName(orderCode)
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+    }
+    if (lastSaleWaNumber) {
+      window.open(
+        `https://wa.me/${lastSaleWaNumber}?text=${encodeURIComponent(lastSaleTicketText)}`,
+        '_blank',
+        'noopener,noreferrer'
+      )
+      if (ticketImage) setShareNote('Se descargó la imagen; adjúntala en el chat.')
+    } else if (ticketImage) {
+      setShareNote('Se descargó la imagen del ticket.')
+    }
+  }
 
   return (
     <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 space-y-4 md:space-y-6 max-w-[1440px] mx-auto pb-24 md:pb-8 text-left">
@@ -918,19 +1027,49 @@ export default function SellerDashboard() {
               })()}
             </p>
           )}
+          {/* Vista previa del ticket como IMAGEN: lo que el vendedor
+              va a compartir, generado de los mismos datos del texto. */}
+          {ticketImage && (
+            <div className="bg-white rounded-2xl border border-[#00422b]/15 p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={ticketImage.url}
+                alt="Vista previa del ticket de compra"
+                className="w-full max-h-[440px] object-contain rounded-lg"
+              />
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handleShareTicket}
+            className="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl px-4 flex items-center justify-center gap-2 transition-colors active:scale-[0.99] cursor-pointer"
+          >
+            <MessageSquare className="w-4 h-4" />
+            Enviar ticket por WhatsApp
+          </button>
           {lastSaleWaNumber ? (
-            <a
-              href={`https://wa.me/${lastSaleWaNumber}?text=${encodeURIComponent(lastSaleTicketText)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl px-4 flex items-center justify-center gap-2 transition-colors active:scale-[0.99]"
-            >
-              <MessageSquare className="w-4 h-4" />
-              Enviar ticket por WhatsApp
-            </a>
+            <>
+              <a
+                href={`https://wa.me/${lastSaleWaNumber}?text=${encodeURIComponent(lastSaleTicketText)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full min-h-[44px] bg-white border border-emerald-700/40 text-emerald-800 text-sm font-bold rounded-xl px-4 flex items-center justify-center gap-2 transition-colors active:scale-[0.99]"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Abrir chat del cliente
+              </a>
+              <p className="text-[11px] font-medium text-[#434653] leading-relaxed">
+                El chat directo solo lleva el texto; la imagen va con el botón de enviar (menú de compartir).
+              </p>
+            </>
           ) : (
             <p className="text-[13px] font-semibold text-[#737784]">
-              Sin teléfono registrado: el ticket no se puede enviar por WhatsApp.
+              Sin teléfono registrado: el chat directo no está disponible; comparte la imagen con el botón de enviar.
+            </p>
+          )}
+          {shareNote && (
+            <p role="status" className="text-[12px] font-bold text-[#00422b] bg-white/60 border border-[#00422b]/15 rounded-xl px-3.5 py-2.5">
+              {shareNote}
             </p>
           )}
           <button
@@ -1458,7 +1597,35 @@ export default function SellerDashboard() {
                     {/* Payment values */}
                     <form onSubmit={handleCheckout} className="mt-6 pt-4 border-t border-[#dee8ff] space-y-4 text-left">
 
+                      {/* Resumen tipo NOTA (dictado del dueño,
+                          2026-11-19): el mismo contenido del ticket,
+                          en pantalla — cada artículo con su precio de
+                          línea (sin inflar: los complementos van como
+                          sublíneas con su precio), Subtotal, el
+                          descuento que aplique y el Total. Del IVA
+                          queda UNA sola línea de nota: fuera «Precio
+                          sin IVA» e «IVA (16%)». */}
                       <div className="space-y-1.5 bg-[#f9f9ff] p-4 rounded-2xl text-sm font-medium">
+                        {cart.length > 0 && (
+                          <div className="space-y-1 pb-2 mb-1 border-b border-[#dee8ff] border-dashed">
+                            {cart.map(item => (
+                              <div key={item.cartKey}>
+                                <div className="flex justify-between gap-2 text-[#434653]">
+                                  <span className="min-w-0">{item.quantity} × {item.product.name}</span>
+                                  <span className="tabular-nums shrink-0">{formatPrice(unitPriceOf(item.product) * item.quantity)}</span>
+                                </div>
+                                {item.complements.map((c, ci) => (
+                                  <div key={ci} className="flex justify-between gap-2 text-xs text-[#737784] pl-4">
+                                    <span className="min-w-0">+ {c.name}</span>
+                                    <span className="tabular-nums shrink-0">
+                                      {c.price > 0 ? formatPrice(c.price * item.quantity) : 'Gratis'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <div className="flex justify-between text-[#737784]">
                           <span>Subtotal</span>
                           <span className="tabular-nums">{formatPrice(subtotal)}</span>
@@ -1478,22 +1645,7 @@ export default function SellerDashboard() {
                             <span className="tabular-nums shrink-0">−{formatPrice(discount)}</span>
                           </div>
                         )}
-                        {/* Informative VAT breakdown: catalog prices already
-                            include the 16% VAT, so this only splits the
-                            amount to charge (total after coupon) into its
-                            net part (total / 1.16) and its tax part. The
-                            charged total does not change by a cent. */}
-                        <div className="pt-2 mt-1 border-t border-[#dee8ff] border-dashed space-y-1.5">
-                          <p className="text-[11px] font-semibold text-[#737784]">Los precios ya incluyen IVA</p>
-                          <div className="flex justify-between text-[#737784] text-xs">
-                            <span>Precio sin IVA</span>
-                            <span className="tabular-nums">{formatPrice(netSubtotal)}</span>
-                          </div>
-                          <div className="flex justify-between text-[#737784] text-xs">
-                            <span>IVA (16%)</span>
-                            <span className="tabular-nums">{formatPrice(iva)}</span>
-                          </div>
-                        </div>
+                        <p className="text-[11px] font-semibold text-[#737784] pt-1">Los precios ya incluyen IVA</p>
                         <div className="flex justify-between items-baseline text-[#111c2d] font-bold pt-2 border-t border-[#dee8ff] border-dashed">
                           <span className="text-base">Total</span>
                           <span className="text-xl font-black text-[#00357f] tabular-nums">{formatPrice(total)}</span>
@@ -1568,25 +1720,20 @@ export default function SellerDashboard() {
                                     <label className="block text-[13px] font-semibold text-[#434653] mb-1.5">
                                       Frecuencia
                                     </label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                      {[
-                                        { id: 'biweekly', label: 'Quincenal' },
-                                        { id: 'monthly', label: 'Mensual' }
-                                      ].map((f) => (
-                                        <button
-                                          key={f.id}
-                                          type="button"
-                                          onClick={() => setPlanFrequency(f.id as PaymentFrequency)}
-                                          className={`py-2 text-sm font-semibold rounded-full border transition-all cursor-pointer min-h-[44px] flex items-center justify-center ${
-                                            planFrequency === f.id
-                                              ? 'bg-[#dee8ff] border-[#00357f]/40 text-[#00357f] font-bold'
-                                              : 'bg-white border-[#dee8ff] text-[#737784] hover:bg-[#dee8ff]/30'
-                                          }`}
-                                        >
-                                          {f.label}
-                                        </button>
-                                      ))}
-                                    </div>
+                                    {/* Combo con las TRES frecuencias
+                                        (ajuste del dueño, 2026-11-19):
+                                        las pastillas se amontonaban y
+                                        «Quincenal» se salía de la suya.
+                                        Mensual es la default. */}
+                                    <select
+                                      value={planFrequency}
+                                      onChange={(e) => setPlanFrequency(e.target.value as PaymentFrequency)}
+                                      className="w-full bg-white border border-[#dee8ff] rounded-xl px-4 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors cursor-pointer"
+                                    >
+                                      <option value="weekly">Semanal</option>
+                                      <option value="biweekly">Quincenal</option>
+                                      <option value="monthly">Mensual</option>
+                                    </select>
                                   </div>
                                 </div>
                                 <div>

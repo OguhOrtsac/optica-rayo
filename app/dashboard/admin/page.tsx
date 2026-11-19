@@ -11,6 +11,8 @@ import {
   searchCustomers,
   getBirthdayDismissals,
   dismissBirthday,
+  getMessageSends,
+  logMessageSend,
   getMessageTemplates,
   getMonthSales,
   getRecentExams,
@@ -18,6 +20,7 @@ import {
   logActivityEvent,
   type DueReminder,
   type MessageTemplates,
+  type MessageSendEntry,
   type RecentExamActivity,
   type ActivityEventItem
 } from '@/lib/services'
@@ -99,6 +102,10 @@ export default function AdminDashboard() {
   const [birthdayDismissals, setBirthdayDismissals] = useState<Set<string>>(new Set())
   const [dismissingId, setDismissingId] = useState<string | null>(null)
   const [birthdayError, setBirthdayError] = useState<string | null>(null)
+  // Sello «ya enviado» de cumpleaños (dictado 2026-11-19): el último
+  // envío registrado por cliente, visible para TODO el personal — la
+  // fila ya no desaparece para los demás cuando alguien felicita.
+  const [birthdaySends, setBirthdaySends] = useState<Map<string, MessageSendEntry>>(new Map())
   const [isAdmin, setIsAdmin] = useState(false)
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   // Secciones minimizables del panel: Recordatorios, Solicitudes y
@@ -124,6 +131,19 @@ export default function AdminDashboard() {
     // ya degrada a «ninguno descartado» y la lista se ve como siempre.
     getBirthdayDismissals()
       .then(setBirthdayDismissals)
+      .catch(() => {})
+
+    // Envíos de felicitación registrados: aparte y sin bloquear; si la
+    // lectura falla (p. ej. migración aún no aplicada) el servicio ya
+    // degrada a «sin envíos» y las filas se ven sin sello, como antes.
+    getMessageSends('birthday', { limit: 100 })
+      .then(sends => {
+        const byCustomer = new Map<string, MessageSendEntry>()
+        for (const s of sends) {
+          if (!byCustomer.has(s.customer_id)) byCustomer.set(s.customer_id, s)
+        }
+        setBirthdaySends(byCustomer)
+      })
       .catch(() => {})
 
     // Plantillas de mensajes: aparte y sin bloquear el panel; si la
@@ -323,6 +343,25 @@ export default function AdminDashboard() {
     }
     return result.sort((a, b) => a.daysUntil - b.daysUntil)
   }, [customers, birthdayDismissals])
+
+  // Sello «ya enviado»: el último envío de felicitación de ese
+  // cliente cuenta para ESTA ocurrencia si se mandó dentro de la
+  // ventana en que la bandeja la muestra (de 7 días antes al día del
+  // cumpleaños). La etiqueta dice «hoy» si se mandó hoy.
+  const birthdaySendFor = (b: { id: string; daysUntil: number }): { entry: MessageSendEntry; whenLabel: string } | null => {
+    const entry = birthdaySends.get(b.id)
+    if (!entry) return null
+    const sent = new Date(entry.sent_at)
+    const sentDay = new Date(sent.getFullYear(), sent.getMonth(), sent.getDate()).getTime()
+    const now = new Date()
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const occurrenceDay = startToday + b.daysUntil * 86400000
+    if (sentDay < occurrenceDay - 7 * 86400000 || sentDay > occurrenceDay) return null
+    const whenLabel = sentDay === startToday
+      ? 'hoy'
+      : sent.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).replace(/\.$/, '')
+    return { entry, whenLabel }
+  }
 
   // «Eliminar» de un cumpleaños: NO optimista — la fila sale solo cuando
   // el descarte quedó guardado; si falla, la fila se queda y se avisa.
@@ -721,6 +760,7 @@ export default function AdminDashboard() {
                         )
                       )
                       const dismissing = dismissingId === b.id
+                      const sendStamp = birthdaySendFor(b)
                       return (
                         <li key={b.id} className="flex items-center gap-2 py-3 min-h-[48px]">
                           <div className="flex-1 min-w-0">
@@ -728,6 +768,11 @@ export default function AdminDashboard() {
                             <p className="text-[11px] text-[#737784] font-medium mt-0.5">
                               {b.daysUntil === 0 ? '¡Cumple hoy!' : b.daysUntil === 1 ? 'Mañana' : `En ${b.daysUntil} días`}
                             </p>
+                            {sendStamp && (
+                              <p className="text-[11px] font-bold text-[#00422b] mt-0.5">
+                                Felicitación ya enviada por {sendStamp.entry.sent_by_name} · {sendStamp.whenLabel}
+                              </p>
+                            )}
                           </div>
                           <span className="shrink-0 bg-[#e6f5fb] text-[#0899c9] text-[11px] font-bold px-2 py-0.5 rounded-full capitalize">
                             {b.dayLabel}
@@ -747,6 +792,19 @@ export default function AdminDashboard() {
                                   customerId: b.id,
                                   description: `Felicitación de cumpleaños a ${b.name}`,
                                 })
+                                // Y en el registro de envíos
+                                // (message_send_log): el sello «ya
+                                // enviado por …» se pinta al momento
+                                // con la entrada creada; si la misma
+                                // persona vuelve a felicitar, se
+                                // registra de nuevo y manda el más
+                                // reciente.
+                                void logMessageSend('birthday', { customerId: b.id })
+                                  .then(entry => {
+                                    if (entry) {
+                                      setBirthdaySends(prev => new Map(prev).set(b.id, entry))
+                                    }
+                                  })
                               }}
                               className="shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all active:scale-95 cursor-pointer"
                             >
