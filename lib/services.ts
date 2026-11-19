@@ -17,8 +17,13 @@ import {
   type MessageTemplateKey,
 } from './message-templates'
 import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT, effectiveClientPrice } from './pricing'
-import { isAdminRole } from './roles'
-import { getAgendaScheduleSummary } from './appointments'
+import { isAdminRole, normalizeRole } from './roles'
+import {
+  formatAppointmentTime,
+  getAgendaScheduleSummary,
+  listAppointmentsForDay,
+  toLocalDateISO,
+} from './appointments'
 import { getPeriodPayments } from './expenses'
 import {
   PRODUCT_IMAGE_BUCKET,
@@ -783,6 +788,43 @@ export async function getCustomerById(id: string): Promise<any | null> {
 }
 
 /**
+ * Updates a customer's general data (nombre, teléfono, fecha de
+ * nacimiento y dirección) — the «Actualizar datos» modal on the
+ * customer file. With a database configured the write goes through
+ * the server action (admin client + staff-role check, because RLS
+ * only lets owner/dev update these tables from the browser); in demo
+ * mode the in-memory mocks are updated in place so the file re-read
+ * shows the new values within the session.
+ */
+export async function updateCustomerGeneralData(customerId: string, data: {
+  fullName: string
+  phone?: string
+  dateOfBirth?: string
+  address?: string
+}): Promise<{ success: boolean; error?: string }> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { updateCustomerGeneralDataAction } = await import('@/app/customers/actions')
+      const res = await updateCustomerGeneralDataAction(customerId, data)
+      if (res.error) return { success: false, error: res.error }
+      invalidateProfilesCache()
+      return { success: true }
+    } catch (e: any) {
+      console.error('Customer general data update failed:', e)
+      return { success: false, error: e?.message || 'No se pudieron actualizar los datos.' }
+    }
+  }
+  mockDb.updateMockCustomerGeneralData(customerId, {
+    full_name: data.fullName,
+    phone: data.phone?.trim() ? data.phone.trim() : null,
+    date_of_birth: data.dateOfBirth?.trim() ? data.dateOfBirth.trim() : null,
+    address: data.address?.trim() ? data.address.trim() : null,
+  })
+  invalidateProfilesCache()
+  return { success: true }
+}
+
+/**
  * Fetches all clinical exams for a customer, newest first.
  */
 export async function getCustomerExams(customerId: string): Promise<any[]> {
@@ -879,6 +921,15 @@ export async function getCustomerSales(customerId: string): Promise<any[]> {
 
 /**
  * Fetches the latest clinical exam for the currently logged-in customer.
+ *
+ * CENSORSHIP AT THE QUERY (owner's supreme rule, re-audited 2026-11-19):
+ * the customer only ever receives the exam DATE and the
+ * RECOMMENDATIONS (lens type / treatment / frame). The select is
+ * deliberately narrowed to those columns — with `select('*')` the
+ * full row (sphere/cylinder/axis/ADD, DIP, acuities, antecedentes and
+ * the clinical_history JSONB) travelled to the customer's browser even
+ * though the panel never painted it. The staff ficha keeps using
+ * getCustomerExams, which does read the whole exam.
  */
 export async function getMyLatestExam(): Promise<any | null> {
   if (isSupabaseConfigured()) {
@@ -889,7 +940,7 @@ export async function getMyLatestExam(): Promise<any | null> {
 
       const { data, error } = await supabase
         .from('clinical_exams')
-        .select('*')
+        .select('id, exam_date, lens_type, treatment, frame_recommendation')
         .eq('customer_id', user.id)
         .order('exam_date', { ascending: false })
         .limit(1)
@@ -1372,6 +1423,308 @@ export async function getMyNotifications(): Promise<any[]> {
     }
   }
   return mockDb.MOCK_NOTIFICATIONS
+}
+
+/**
+ * Creates the bell aviso of the day for every appointment of TODAY
+ * that is still live (pending or confirmed), for the CURRENT user —
+ * the day-of counterpart of the creation trigger, which only fires
+ * when a booking is made (owner's order, 2026-11-19: «esto de que
+ * había agendado una revisión hoy debería haber aparecido en la
+ * ventana de notificaciones»). Same ensure pattern as
+ * ensureFixedPaymentNotifications: invoked when the bell/panel loads,
+ * it guarantees the aviso exists instead of assuming it was created.
+ *
+ * DEDUPLICATION RULE (two checks per appointment):
+ *  1. The day aviso itself: a notification of this user with the exact
+ *     title «Cita hoy {hora} — {nombre}». The title is unique per
+ *     appointment (one live booking per slot, and the name is in it),
+ *     so finding it means today's aviso already exists.
+ *  2. The creation aviso: if the booking was made TODAY for today, the
+ *     database trigger already left a «Nueva Cita de Examen» aviso
+ *     whose message carries this appointment's stamp
+ *     «{DD/MM/YYYY} {HH:MM}» (the trigger's own format) and whose
+ *     created_at is today — that aviso already covers the day, so no
+ *     second one is generated. A booking made on an earlier day gets
+ *     its day aviso here even though its creation aviso exists.
+ * In demo mode the same rule runs against MOCK_NOTIFICATIONS with a
+ * deterministic id per appointment+day.
+ */
+export async function ensureTodayAppointmentNotifications(): Promise<number> {
+  const todayISO = toLocalDateISO(new Date())
+  let todays: Awaited<ReturnType<typeof listAppointmentsForDay>>
+  try {
+    todays = await listAppointmentsForDay(todayISO)
+  } catch {
+    return 0
+  }
+  const live = todays.filter(a => a.status === 'pending' || a.status === 'confirmed')
+  if (live.length === 0) return 0
+
+  const buildAviso = (appt: (typeof live)[number]) => {
+    const name = appt.customer_name || appt.guest_name || 'Un cliente'
+    const phone = appt.customer_phone || appt.guest_phone || ''
+    return {
+      title: `Cita hoy ${formatAppointmentTime(appt.scheduled_time)} — ${name}`,
+      message:
+        `Cita de examen de la vista para hoy; está ${
+          appt.status === 'confirmed' ? 'confirmada' : 'pendiente de confirmación'
+        }.` + (phone ? ` Tel. ${phone}.` : ''),
+    }
+  }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return 0
+
+      const { data: existing } = await supabase
+        .from('notifications')
+        .select('title, message, created_at')
+        .eq('user_id', user.id)
+        .eq('type', 'appointment')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      const rows: { title: string; message: string | null; created_at: string }[] =
+        existing ?? []
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const [y, m, d] = todayISO.split('-')
+
+      let created = 0
+      for (const appt of live) {
+        const { title, message } = buildAviso(appt)
+        if (rows.some(r => r.title === title)) continue
+        // The trigger writes «{nombre}, {DD/MM/YYYY} {HH:MM}» (HH24:MI).
+        const stamp = `${d}/${m}/${y} ${appt.scheduled_time}`
+        const coveredByCreation = rows.some(
+          r =>
+            r.title === 'Nueva Cita de Examen' &&
+            (r.message ?? '').includes(stamp) &&
+            new Date(r.created_at).getTime() >= todayStart.getTime()
+        )
+        if (coveredByCreation) continue
+
+        const { error } = await supabase.from('notifications').insert([
+          { user_id: user.id, title, message, type: 'appointment', is_read: false },
+        ])
+        if (!error) created += 1
+      }
+      return created
+    } catch {
+      return 0
+    }
+  }
+
+  // Demo mode: same dedupe against the in-memory notifications.
+  let created = 0
+  for (const appt of live) {
+    const { title, message } = buildAviso(appt)
+    const id = `mock-appt-today-${appt.id}-${todayISO}`
+    if (mockDb.MOCK_NOTIFICATIONS.some(n => n.id === id || n.title === title)) continue
+    mockDb.MOCK_NOTIFICATIONS.unshift({
+      id,
+      user_id: 'staff-demo',
+      title,
+      message,
+      type: 'appointment',
+      is_read: false,
+      created_at: new Date().toISOString(),
+    })
+    created += 1
+  }
+  return created
+}
+
+/**
+ * Bell avisos for the CUSTOMER (owner's order, 2026-11-19): the bell
+ * is no longer staff-only — the customer gets HIS OWN, with only his
+ * avisos. Same ensure pattern as the staff ensures: invoked when his
+ * bell/panel loads, deduplicated, silent on failure. Two avisos:
+ *
+ *  1. ARMAZONES NUEVOS (type 'general', the bell routes it to the
+ *     catalog for customers): one aviso per frame product (category
+ *     'frames') that arrived in the last 30 days, newest first, at
+ *     most 3 per run. Dedupe by the exact title «Armazón nuevo:
+ *     {nombre}» among the customer's own notifications — one aviso
+ *     per armazón, ever (while the aviso exists).
+ *  2. UN MES ANTES DE SU REVISIÓN (type 'appointment', routed to
+ *     /agendar for customers): when today reaches one month before
+ *     the configured review period (getReminderConfig months, 6 by
+ *     default) counted from his LATEST exam — i.e. at ~5 months —
+ *     the customer is told his check-up is coming and he can book.
+ *     It ADDS to the staff reminder tray + WhatsApp system; it does
+ *     not replace it. Dedupe per exam cycle: the message carries the
+ *     due date («…toca el {fecha larga}») and an existing aviso whose
+ *     message carries the same date means this cycle already warned.
+ *
+ * Only the exam DATE is read here (never graduation or clinical
+ * data — the customer's censorship rule covers this function too).
+ * In demo mode the same rules run against the mocks with
+ * deterministic ids and the demo customer persona (cust-1).
+ */
+export async function ensureCustomerNotifications(): Promise<number> {
+  const frameTitle = (name: string) => `Armazón nuevo: ${name}`
+  const frameMessage = (name: string) =>
+    `Llegó un armazón nuevo a la óptica: ${name}. Échale un ojo en el catálogo y aparta el tuyo.`
+  const reviewTitle = 'Ya casi es tu revisión de la vista'
+  const reviewMessage = (dueLabel: string) =>
+    `Según la recomendación de tu último examen, tu siguiente revisión toca el ${dueLabel} y ya es necesario ir a checarte. Tu examen es gratis: aparta tu cita.`
+
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return 0
+
+      // Only customers get customer avisos (defense in depth: the
+      // bell only invokes this for the customer role anyway).
+      const { data: myProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      const myRole = normalizeRole(myProfile?.role || user.user_metadata?.role)
+      if (myRole !== 'customer') return 0
+
+      const { data: existing } = await supabase
+        .from('notifications')
+        .select('title, message, type')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(200)
+      const rows: { title: string; message: string | null; type: string }[] = existing ?? []
+
+      let created = 0
+
+      // 1) Armazones nuevos (últimos 30 días, máx. 3 por corrida).
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const { data: frames } = await supabase
+        .from('products')
+        .select('id, name, created_at')
+        .eq('category', 'frames')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(3)
+      for (const frame of frames ?? []) {
+        const title = frameTitle(frame.name)
+        if (rows.some(r => r.title === title)) continue
+        const { error } = await supabase.from('notifications').insert([
+          { user_id: user.id, title, message: frameMessage(frame.name), type: 'general', is_read: false },
+        ])
+        if (!error) {
+          created += 1
+          rows.push({ title, message: frameMessage(frame.name), type: 'general' })
+        }
+      }
+
+      // 2) Un mes antes de la revisión (solo la FECHA del examen).
+      const { data: lastExam } = await supabase
+        .from('clinical_exams')
+        .select('exam_date')
+        .eq('customer_id', user.id)
+        .order('exam_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (lastExam?.exam_date) {
+        const { months } = await getReminderConfig()
+        const examDate = new Date(`${String(lastExam.exam_date).slice(0, 10)}T12:00:00`)
+        if (!isNaN(examDate.getTime())) {
+          const dueDate = new Date(addMonthsISO(examDate, months))
+          const noticeFrom = new Date(addMonthsISO(dueDate, -1))
+          if (new Date() >= noticeFrom) {
+            const dueLabel = dueDate.toLocaleDateString('es-MX', {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            })
+            const alreadyWarned = rows.some(
+              r => r.type === 'appointment' && (r.message ?? '').includes(dueLabel)
+            )
+            if (!alreadyWarned) {
+              const { error } = await supabase.from('notifications').insert([
+                {
+                  user_id: user.id,
+                  title: reviewTitle,
+                  message: reviewMessage(dueLabel),
+                  type: 'appointment',
+                  is_read: false,
+                },
+              ])
+              if (!error) created += 1
+            }
+          }
+        }
+      }
+      return created
+    } catch {
+      return 0
+    }
+  }
+
+  // Demo mode: same rules against the in-memory mocks.
+  let created = 0
+  const frames = [...mockDb.MOCK_PRODUCTS]
+    .filter((p: any) => p.category === 'frames')
+    .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, 3)
+  for (const frame of frames) {
+    const id = `mock-frame-new-${frame.id}`
+    const title = frameTitle(frame.name)
+    if (mockDb.MOCK_NOTIFICATIONS.some(n => n.id === id || n.title === title)) continue
+    mockDb.MOCK_NOTIFICATIONS.unshift({
+      id,
+      user_id: 'customer-demo',
+      title,
+      message: frameMessage(frame.name),
+      type: 'general',
+      is_read: false,
+      created_at: new Date().toISOString(),
+    })
+    created += 1
+  }
+
+  const demoExams = mockDb.MOCK_CLINICAL_EXAMS.filter((e: any) => e.customer_id === 'cust-1')
+    .sort((a: any, b: any) => String(b.exam_date).localeCompare(String(a.exam_date)))
+  const lastDemoExam = demoExams[0]
+  if (lastDemoExam?.exam_date) {
+    const { months } = await getReminderConfig()
+    const examDate = new Date(`${String(lastDemoExam.exam_date).slice(0, 10)}T12:00:00`)
+    if (!isNaN(examDate.getTime())) {
+      const dueDate = new Date(addMonthsISO(examDate, months))
+      const noticeFrom = new Date(addMonthsISO(dueDate, -1))
+      if (new Date() >= noticeFrom) {
+        const dueISO = toLocalDateISO(dueDate)
+        const id = `mock-review-due-${dueISO}`
+        const dueLabel = dueDate.toLocaleDateString('es-MX', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        })
+        const alreadyWarned = mockDb.MOCK_NOTIFICATIONS.some(
+          n => n.id === id || (n.type === 'appointment' && (n.message ?? '').includes(dueLabel))
+        )
+        if (!alreadyWarned) {
+          mockDb.MOCK_NOTIFICATIONS.unshift({
+            id,
+            user_id: 'customer-demo',
+            title: reviewTitle,
+            message: reviewMessage(dueLabel),
+            type: 'appointment',
+            is_read: false,
+            created_at: new Date().toISOString(),
+          })
+          created += 1
+        }
+      }
+    }
+  }
+  return created
 }
 
 /**
@@ -1971,8 +2324,10 @@ export async function deletePromotion(id: string): Promise<boolean> {
 //        las cuotas recibidas en el mes.
 //  UTILIDAD (caja): ingresos = Σ paid_amount de ventas creadas en
 //        el rango + Σ cuotas con payment_date en el rango; pagos =
-//        gastos del día del rango + fijos prorrateados (regla de
-//        Reportes, vía getPeriodPayments); adeudos generados =
+//        gastos del día del rango (vía getPeriodPayments) — los
+//        gastos fijos cuentan SOLO cuando se registra su pago
+//        (modelo de caja del dueño, 2026-11-19), porque ese
+//        registro ya crea el gasto del día; adeudos generados =
 //        Σ pending_balance de ventas creadas en el rango;
 //        utilidad = ingresos − pagos.
 
@@ -2217,11 +2572,13 @@ export interface CashUtility {
   income: number
   incomeFromSales: number
   incomeFromInstallments: number
-  /** Gastos del día del rango + fijos prorrateados. */
+  /** Gastos del día del rango (los fijos cuentan solo al registrar su pago). */
   payments: number
   dailyExpensesTotal: number
-  fixedProrated: number
-  fixedMonthlyTotal: number
+  /** Parte de dailyExpensesTotal que son pagos de gastos fijos ya
+   *  registrados en el rango. Dato informativo: YA está incluida
+   *  en dailyExpensesTotal, no se suma aparte. */
+  fixedPaymentsRegisteredTotal: number
   /** Σ pending_balance de las ventas creadas en el rango. */
   debtsGenerated: number
   /** income − payments (criterio de caja del dueño). */
@@ -2266,7 +2623,9 @@ export async function getCashUtility(fromISO: string, toISO: string): Promise<Ca
     incomeFromInstallments = finRound2(incomeFromInstallments + finAmount(inst.amount_paid))
   }
 
-  // Money out lives in lib/expenses (same proration rule as Reports).
+  // Money out lives in lib/expenses: daily expenses of the range.
+  // Fixed expenses count only when their payment is registered
+  // (owner's cash model, 2026-11-19) — no proration on top.
   const periodPayments = await getPeriodPayments(fromISO, toISO)
 
   const income = finRound2(incomeFromSales + incomeFromInstallments)
@@ -2278,8 +2637,7 @@ export async function getCashUtility(fromISO: string, toISO: string): Promise<Ca
     incomeFromInstallments,
     payments: periodPayments.total,
     dailyExpensesTotal: periodPayments.dailyExpensesTotal,
-    fixedProrated: periodPayments.fixedProrated,
-    fixedMonthlyTotal: periodPayments.fixedMonthlyTotal,
+    fixedPaymentsRegisteredTotal: periodPayments.fixedPaymentsRegisteredTotal,
     debtsGenerated,
     utility: finRound2(income - periodPayments.total),
   }

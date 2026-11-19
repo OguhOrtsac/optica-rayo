@@ -41,8 +41,8 @@ export default async function Navbar() {
   // aplica por entrada, como siempre: un grupo solo se construye si trae
   // al menos una entrada visible para el rol (Ventas es de staff;
   // Finanzas, de administrador; en Configuración, Productos y Clientes
-  // son de staff y Usuarios, Mensajes y Configurar horario solo del
-  // administrador).
+  // son de staff y Usuarios, Mensajes, Configurar horario y Datos de
+  // la óptica solo del administrador).
   // La barra inferior móvil lleva el trabajo diario: Inicio · Realizar
   // Venta · Registrar Pago · Realizar examen · Agenda (el Perfil vive
   // aquí en la hamburguesa, como «Mi perfil»). «Agenda» (staff) y
@@ -56,13 +56,27 @@ export default async function Navbar() {
       ]
     }
     if (role === 'customer') {
+      // Menú del cliente (definición por rol, 2026-11-19): su panel,
+      // el catálogo completo y agendar; «Mi perfil» lo agrega el menú
+      // al final, como a todo rol con sesión.
       return [
+        { label: 'Inicio', href: '/dashboard/customer', icon: 'home' },
+        { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
         { label: 'Agendar examen gratis', href: '/agendar', icon: 'agendar' },
       ]
     }
     if (role === 'optometrist') {
+      // Menú del optometrista (dictado del dueño, 2026-11-19): SOLO
+      // sus botones — trabajo clínico y agenda, NADA de dinero (sin
+      // grupo Ventas, sin Finanzas, sin Pagos). Su «Inicio» es la
+      // lista de pacientes, que es su pantalla principal
+      // (dashboardHref del rol); «Mi perfil» lo agrega el menú.
       return [
+        { label: 'Inicio', href: '/customers', icon: 'home' },
+        { label: 'Clientes', href: '/customers', icon: 'clients' },
         { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' },
+        { label: 'Realizar examen', href: '/dashboard/exams/new', icon: 'exam' },
+        { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
       ]
     }
     if (role === 'seller' || role === 'owner' || role === 'super_admin') {
@@ -97,6 +111,7 @@ export default async function Navbar() {
         { label: 'Clientes', href: '/customers', icon: 'clients' },
         ...(isAdmin ? [{ label: 'Mensajes', href: '/dashboard/admin/mensajes', icon: 'messages' } as MainMenuLink] : []),
         ...(isAdmin ? [{ label: 'Configurar horario', href: '/dashboard/admin/horario', icon: 'calendarClock' } as MainMenuLink] : []),
+        ...(isAdmin ? [{ label: 'Datos de la óptica', href: '/dashboard/admin/datos-optica', icon: 'store' } as MainMenuLink] : []),
       ]
       items.push({ label: 'Configuración', icon: 'settings', links: configLinks })
       if (isAdmin) {

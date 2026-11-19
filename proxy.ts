@@ -70,7 +70,9 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Role-based route protection
+  // Role-based route protection (owner's order, 2026-11-19: hiding a
+  // menu button is not enough — every protected route demands its role
+  // HERE, on the server, so pasting the URL cannot skip the gate).
   if (pathname.startsWith('/customers')) {
     if (!['owner', 'seller', 'super_admin', 'optometrist'].includes(userRole)) {
       const url = request.nextUrl.clone()
@@ -79,8 +81,19 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // Productos is the ONE admin page the seller also works in (owner's
+  // order, 2026-11-19: he gives product support — altas y precios).
+  // This exception is matched BEFORE the general admin gate below and
+  // covers only the products path itself.
+  const isProductsAdminPath =
+    pathname === '/dashboard/admin/products' ||
+    pathname.startsWith('/dashboard/admin/products/')
+
   if (pathname.startsWith('/dashboard/admin')) {
-    if (!['owner', 'super_admin'].includes(userRole)) {
+    const allowed = isProductsAdminPath
+      ? ['owner', 'super_admin', 'seller'].includes(userRole)
+      : ['owner', 'super_admin'].includes(userRole)
+    if (!allowed) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)
@@ -89,6 +102,38 @@ export async function proxy(request: NextRequest) {
 
   if (pathname.startsWith('/dashboard/seller')) {
     if (!['owner', 'seller', 'super_admin'].includes(userRole)) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Cobranza («Registrar Pago» / «Por cobrar»): money the optometrist
+  // never touches and customers never see — administrador y vendedor.
+  if (pathname.startsWith('/payments')) {
+    if (!['owner', 'seller', 'super_admin'].includes(userRole)) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Staff agenda: the whole staff works in it (the seller books and
+  // views; marking «Realizada» is additionally gated inside the page
+  // and in completeAppointment). Customers book from /agendar and see
+  // their appointments in their own panel — never here.
+  if (pathname.startsWith('/dashboard/appointments')) {
+    if (!['owner', 'seller', 'super_admin', 'optometrist'].includes(userRole)) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Exam flow: staff-only workspace (admin, optometrist and seller all
+  // run exams from their bars/menus).
+  if (pathname.startsWith('/dashboard/exams')) {
+    if (!['owner', 'seller', 'super_admin', 'optometrist'].includes(userRole)) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)

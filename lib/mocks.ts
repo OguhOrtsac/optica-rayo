@@ -523,12 +523,17 @@ export let MOCK_PROFILES = [
   { id: 'sell-1', email: 'vendedora@opticarayo.com', full_name: 'Patricia Vendedora', role: 'seller', temporal_password_changed: true },
   { id: 'opt-1', email: 'optometrista@opticarayo.com', full_name: 'Dr. Hugo Optometrista', role: 'optometrist', temporal_password_changed: true },
   { id: 'cust-1', email: 'carlos@gmail.com', full_name: 'Carlos Mendoza', role: 'customer', temporal_password_changed: true },
-  { id: 'cust-2', email: 'sofia@gmail.com', full_name: 'Ana Sofia Gomez', role: 'customer', temporal_password_changed: true }
+  { id: 'cust-2', email: 'sofia@gmail.com', full_name: 'Ana Sofia Gomez', role: 'customer', temporal_password_changed: true },
+  // Ana Paula es la clienta de la cita demo de las 10:30 (lib/appointments.ts):
+  // su customer_id enlaza esa cita con su expediente para el botón
+  // «Realizar examen» de la Agenda.
+  { id: 'cust-3', email: 'ana.paula.gutierrez@clientes.rayo.demo', full_name: 'Ana Paula Gutiérrez Mendoza', role: 'customer', temporal_password_changed: true }
 ]
 
 export let MOCK_CUSTOMER_PROFILES = [
-  { id: 'cust-1', phone: '(555) 987-6543', medical_notes: 'Sensibilidad a la luz azul. Usa micas anti-reflejantes.' },
-  { id: 'cust-2', phone: '(555) 456-7890', medical_notes: 'Paciente con astigmatismo elevado en ojo izquierdo.' }
+  { id: 'cust-1', phone: '(555) 987-6543', date_of_birth: '1988-03-08', occupation: 'Ingeniero de sistemas', medical_notes: 'Sensibilidad a la luz azul. Usa micas anti-reflejantes.' },
+  { id: 'cust-2', phone: '(555) 456-7890', date_of_birth: '1995-07-21', occupation: 'Diseñadora gráfica', medical_notes: 'Paciente con astigmatismo elevado en ojo izquierdo.' },
+  { id: 'cust-3', phone: '5214441230103', date_of_birth: '1992-09-17', occupation: 'Maestra', medical_notes: '' }
 ]
 
 export let MOCK_CLINICAL_EXAMS = [
@@ -540,13 +545,47 @@ export let MOCK_CLINICAL_EXAMS = [
     od_sphere: -1.5,
     od_cylinder: -0.5,
     od_axis: 180,
+    od_add: 1.0,
+    od_visual_acuity: '20/20',
     oi_sphere: -1.75,
     oi_cylinder: -0.25,
     oi_axis: 170,
+    oi_add: 1.0,
+    oi_visual_acuity: '20/20',
     pd_distance: 63.0,
+    pd_near: 60.0,
     lens_type: 'Monofocal',
     treatment: 'Anti-Reflejante premium',
-    next_exam_date: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000).toISOString()
+    next_exam_date: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000).toISOString(),
+    // Historia clínica de ejemplo (la hoja en papel, ver
+    // lib/clinical-history.ts): la RX inicial difiere un poco de la
+    // RX Final guardada arriba, como pasa en la práctica.
+    clinical_history: {
+      bothersLights: 'si',
+      usedGlassesBefore: 'si',
+      glassesTime: '4 años',
+      lastExamDate: '2023-11-20',
+      occupation: 'Ingeniero de sistemas',
+      eyeSurgery: 'no',
+      eyeSurgeryDetail: null,
+      hypertensionDiabetes: 'ninguna',
+      medications: 'no',
+      medicationsDetail: null,
+      familyUsesGlasses: 'si',
+      screenTime: '9 horas al día',
+      vaScFar: { od: '20/60', oi: '20/70', ao: '20/50' },
+      vaScNear: { od: '20/40', oi: '20/40', ao: '20/30' },
+      vaCcFar: { od: '20/20', oi: '20/20', ao: '20/20' },
+      vaCcNear: { od: '20/25', oi: '20/25', ao: '20/20' },
+      retinoscopy: { od: '-1.75', oi: '-2.00' },
+      dipOd: 31.5,
+      dipOi: 31.5,
+      rx: {
+        od: { sphere: -1.75, cylinder: -0.5, axis: 175, add: 1.0 },
+        oi: { sphere: -2.0, cylinder: -0.25, axis: 165, add: 1.0 }
+      },
+      observations: 'Paciente refiere fatiga visual al final del día; se sugiere control en 6 meses.'
+    }
   }
 ]
 
@@ -580,6 +619,53 @@ export function addMockCustomer(profile: any, customerProfile: any, clinicalExam
     MOCK_CLINICAL_EXAMS = [clinicalExam, ...MOCK_CLINICAL_EXAMS]
   }
   return profile.id
+}
+
+/**
+ * Demo-mode counterpart of the general-data update (nombre, teléfono,
+ * fecha de nacimiento y dirección) used by the «Actualizar datos» modal
+ * on the customer file. Mutates the in-memory mock arrays the same way
+ * addMockCustomer does, so the file re-read shows the new values within
+ * the session. Creates the customer_profile row when the customer was
+ * registered without one (e.g. public self-signup).
+ */
+export function updateMockCustomerGeneralData(id: string, data: {
+  full_name?: string
+  phone?: string | null
+  date_of_birth?: string | null
+  address?: string | null
+}) {
+  if (data.full_name !== undefined) {
+    const newName = data.full_name
+    MOCK_PROFILES = MOCK_PROFILES.map(p => (p.id === id ? { ...p, full_name: newName } : p))
+  }
+  const exists = MOCK_CUSTOMER_PROFILES.some(cp => cp.id === id)
+  if (exists) {
+    MOCK_CUSTOMER_PROFILES = MOCK_CUSTOMER_PROFILES.map(cp => {
+      if (cp.id !== id) return cp
+      // The seed rows are loosely typed (some lack `address` entirely),
+      // so the patched row is built as `any`, like the rest of the
+      // mock-write helpers in this file.
+      const next: any = { ...cp }
+      if (data.phone !== undefined) next.phone = data.phone
+      if (data.date_of_birth !== undefined) next.date_of_birth = data.date_of_birth
+      if (data.address !== undefined) next.address = data.address
+      return next
+    })
+  } else {
+    const row: any = {
+      id,
+      phone: data.phone ?? null,
+      date_of_birth: data.date_of_birth ?? null,
+      address: data.address ?? null,
+      occupation: null,
+      blood_type: null,
+      medical_notes: null,
+      emergency_contact_name: null,
+      emergency_contact_phone: null,
+    }
+    MOCK_CUSTOMER_PROFILES = [...MOCK_CUSTOMER_PROFILES, row]
+  }
 }
 
 export function addMockReminder(reminder: any) {
@@ -636,7 +722,7 @@ export interface MockNotification {
   user_id: string
   title: string
   message: string
-  type: 'general' | 'payment_reminder' | 'lens_request'
+  type: 'general' | 'payment_reminder' | 'lens_request' | 'appointment' | 'low_stock'
   is_read: boolean
   created_at: string
 }

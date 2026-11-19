@@ -2,14 +2,9 @@
 
 import { useActionState, useEffect, useState } from 'react'
 import { updateProfile, logout, getProfileData } from '@/app/auth/actions'
-import { User, Shield, ShieldAlert, Store, LogOut, CheckCircle, ArrowLeft, ChevronDown } from 'lucide-react'
+import { User, Shield, ShieldAlert, LogOut, CheckCircle, ArrowLeft, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { dashboardHrefForRole, isAdminRole, normalizeRole, roleLabel } from '@/lib/roles'
-import {
-  getBusinessSettings,
-  updateBusinessSettings,
-  type BusinessSettings,
-} from '@/lib/services'
 
 const initialState = {
   error: null as string | null,
@@ -33,19 +28,12 @@ export default function ProfilePage() {
   } | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
 
-  // Business data (admin only): loaded once the profile role is known.
-  const [business, setBusiness] = useState<BusinessSettings | null>(null)
-  const [savingBusiness, setSavingBusiness] = useState(false)
-  const [businessFeedback, setBusinessFeedback] = useState<{
-    type: 'success' | 'error'
-    text: string
-  } | null>(null)
-
   // Collapsible cards: account starts open (it is the main one); staff
-  // management and business data start closed and open with one click.
+  // management starts closed and opens with one click. «Datos de la
+  // óptica» is NOT here anymore: it moved to its own page inside
+  // Configuración (owner's order, 2026-11-19).
   const [accountOpen, setAccountOpen] = useState(true)
   const [staffOpen, setStaffOpen] = useState(false)
-  const [businessOpen, setBusinessOpen] = useState(false)
 
   useEffect(() => {
     async function loadProfile() {
@@ -75,60 +63,6 @@ export default function ProfilePage() {
       refreshProfile()
     }
   }, [state?.success])
-
-  useEffect(() => {
-    if (!profileData || !isAdminRole(profileData.role)) return
-    let cancelled = false
-    async function loadBusiness() {
-      try {
-        const data = await getBusinessSettings()
-        if (!cancelled) setBusiness(data)
-      } catch {
-        if (!cancelled) {
-          setBusinessFeedback({
-            type: 'error',
-            text: 'No se pudieron cargar los datos de la óptica.',
-          })
-        }
-      }
-    }
-    loadBusiness()
-    return () => {
-      cancelled = true
-    }
-  }, [profileData])
-
-  const handleSaveBusiness = async (e: React.FormEvent) => {
-    e.preventDefault()
-    // Hard permission check: only owner / super_admin may save, verified
-    // again here in the handler — hiding the form is not the control.
-    if (!profileData || !isAdminRole(profileData.role) || !business) {
-      setBusinessFeedback({
-        type: 'error',
-        text: 'Solo un administrador puede modificar los datos de la óptica.',
-      })
-      return
-    }
-    setSavingBusiness(true)
-    setBusinessFeedback(null)
-    try {
-      await updateBusinessSettings(business)
-      setBusinessFeedback({
-        type: 'success',
-        text: 'Datos de la óptica guardados correctamente.',
-      })
-    } catch (err) {
-      setBusinessFeedback({
-        type: 'error',
-        text:
-          err instanceof Error
-            ? err.message
-            : 'No se pudieron guardar los datos de la óptica.',
-      })
-    } finally {
-      setSavingBusiness(false)
-    }
-  }
 
   const getRoleBadgeLabel = (role: string) => roleLabel(role)
 
@@ -181,23 +115,6 @@ export default function ProfilePage() {
       </main>
     )
   }
-
-  const businessFields: {
-    key: keyof BusinessSettings
-    label: string
-    type: 'text' | 'tel' | 'email'
-    placeholder: string
-    fullWidth?: boolean
-  }[] = [
-    { key: 'name', label: 'Nombre de la óptica', type: 'text', placeholder: 'Óptica Rayo' },
-    { key: 'address', label: 'Dirección', type: 'text', placeholder: 'Calle, número y colonia', fullWidth: true },
-    { key: 'city', label: 'Ciudad', type: 'text', placeholder: 'Ciudad' },
-    { key: 'state', label: 'Estado', type: 'text', placeholder: 'Estado' },
-    { key: 'country', label: 'País', type: 'text', placeholder: 'País' },
-    { key: 'phone', label: 'Teléfono', type: 'tel', placeholder: 'Teléfono de la óptica' },
-    { key: 'whatsapp', label: 'WhatsApp', type: 'tel', placeholder: 'Número de WhatsApp' },
-    { key: 'email', label: 'Correo', type: 'email', placeholder: 'correo@optica.com' },
-  ]
 
   return (
     <main className="min-h-screen text-[#111c2d] p-4 md:p-8 space-y-4 max-w-3xl mx-auto pb-24 md:pb-8 text-left">
@@ -289,7 +206,7 @@ export default function ProfilePage() {
                 name="fullName"
                 type="text"
                 defaultValue={profileData.fullName}
-                disabled={isPending || profileData.isSuperAdmin}
+                disabled={isPending}
                 placeholder="Tu nombre completo"
                 className={inputClasses}
               />
@@ -305,7 +222,7 @@ export default function ProfilePage() {
                 name="username"
                 type="text"
                 defaultValue={profileData.username}
-                disabled={isPending || profileData.isSuperAdmin}
+                disabled={isPending}
                 placeholder="nombre_usuario"
                 className={inputClasses}
               />
@@ -321,6 +238,28 @@ export default function ProfilePage() {
               <div className="h-px flex-1 bg-[#e7eeff]" />
             </div>
 
+            {/* Current Password — required ONLY to change the password:
+                the server re-authenticates with it before applying the
+                new one (owner's order, 2026-11-19: asking only for the
+                new password was unsafe). */}
+            <div>
+              <label htmlFor="currentPassword" className={labelClasses}>
+                Contraseña Actual
+              </label>
+              <input
+                id="currentPassword"
+                name="currentPassword"
+                type="password"
+                disabled={isPending}
+                placeholder="Solo si vas a cambiar tu contraseña"
+                autoComplete="current-password"
+                className={inputClasses}
+              />
+              <p className="text-[11px] text-[#737784] mt-2 font-medium">
+                Por seguridad, el cambio de contraseña exige primero tu contraseña actual.
+              </p>
+            </div>
+
             {/* New Password */}
             <div>
               <label htmlFor="newPassword" className={labelClasses}>
@@ -330,9 +269,10 @@ export default function ProfilePage() {
                 id="newPassword"
                 name="newPassword"
                 type="password"
-                disabled={isPending || profileData.isSuperAdmin}
+                disabled={isPending}
                 placeholder="Dejar vacío para no cambiar"
                 minLength={6}
+                autoComplete="new-password"
                 className={inputClasses}
               />
             </div>
@@ -346,41 +286,34 @@ export default function ProfilePage() {
                 id="confirmNewPassword"
                 name="confirmNewPassword"
                 type="password"
-                disabled={isPending || profileData.isSuperAdmin}
+                disabled={isPending}
                 placeholder="Repite la nueva contraseña"
                 minLength={6}
+                autoComplete="new-password"
                 className={inputClasses}
               />
             </div>
 
-            {/* Save Button */}
-            {!profileData.isSuperAdmin && (
-              <button
-                type="submit"
-                disabled={isPending}
-                className="w-full bg-[#00357f] hover:bg-[#00509e] text-white font-bold px-4 min-h-[44px] rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer text-[13px]"
-              >
-                {isPending ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                    <span>Guardando...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Guardar Cambios</span>
-                  </>
-                )}
-              </button>
-            )}
-
-            {profileData.isSuperAdmin && (
-              <div className="bg-[#ffdad6] rounded-xl p-3 text-center">
-                <p className="text-[13px] font-semibold text-[#ba1a1a]">
-                  El perfil de Super Admin no se puede modificar.
-                </p>
-              </div>
-            )}
+            {/* Save Button — every signed-in user edits their OWN
+                profile, the Super Admin included (owner's order,
+                2026-11-19: his profile was locked before). */}
+            <button
+              type="submit"
+              disabled={isPending}
+              className="w-full bg-[#00357f] hover:bg-[#00509e] text-white font-bold px-4 min-h-[44px] rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer text-[13px]"
+            >
+              {isPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  <span>Guardando...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Guardar Cambios</span>
+                </>
+              )}
+            </button>
           </form>
             </div>
           )}
@@ -418,130 +351,6 @@ export default function ProfilePage() {
                   <Shield className="w-4 h-4" />
                   Ir a Gestión de Personal
                 </Link>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Business data (admin only, editable, collapsible, closed by default) */}
-        {isAdminRole(profileData.role) && (
-          <div className="bg-white rounded-[20px] or-shadow-card overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setBusinessOpen((v) => !v)}
-              aria-expanded={businessOpen}
-              className="w-full flex items-center gap-2 px-5 py-4 min-h-[52px] text-left cursor-pointer"
-            >
-              <Store className="w-[18px] h-[18px] text-[#00357f] shrink-0" />
-              <h2 className="flex-1 text-[15px] font-bold text-[#111c2d]">
-                Datos de la óptica
-              </h2>
-              <ChevronDown
-                className={`w-4 h-4 shrink-0 text-[#737784] transition-transform duration-200 ${businessOpen ? 'rotate-180' : ''}`}
-              />
-            </button>
-
-            {businessOpen && (
-              <div className="px-5 pb-5 pt-4 border-t border-[#e7eeff] space-y-4 animate-in fade-in duration-150">
-
-            <p className="text-[13px] text-[#434653] font-medium">
-              Estos datos identifican a la óptica en el sistema. Solo los administradores pueden modificarlos.
-            </p>
-
-            {businessFeedback && (
-              <div
-                className={`rounded-xl p-3 flex items-center gap-3 ${
-                  businessFeedback.type === 'success' ? 'bg-[#e2f9ee]' : 'bg-[#ffdad6]'
-                }`}
-              >
-                {businessFeedback.type === 'success' ? (
-                  <CheckCircle className="w-[18px] h-[18px] text-[#00422b] shrink-0" />
-                ) : (
-                  <ShieldAlert className="w-[18px] h-[18px] text-[#ba1a1a] shrink-0" />
-                )}
-                <p
-                  className={`text-[13px] font-semibold leading-normal ${
-                    businessFeedback.type === 'success' ? 'text-[#00422b]' : 'text-[#ba1a1a]'
-                  }`}
-                >
-                  {businessFeedback.text}
-                </p>
-              </div>
-            )}
-
-            {business ? (
-              <form onSubmit={handleSaveBusiness} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {businessFields.map((field) => (
-                    <div key={field.key} className={field.fullWidth ? 'sm:col-span-2' : undefined}>
-                      <label htmlFor={`business-${field.key}`} className={labelClasses}>
-                        {field.label}
-                      </label>
-                      <input
-                        id={`business-${field.key}`}
-                        type={field.type}
-                        value={business[field.key]}
-                        onChange={(e) =>
-                          setBusiness({ ...business, [field.key]: e.target.value })
-                        }
-                        disabled={savingBusiness}
-                        placeholder={field.placeholder}
-                        className={inputClasses}
-                      />
-                    </div>
-                  ))}
-
-                  {/* Currency is fixed for now (not editable in this pass) */}
-                  <div>
-                    <span className={labelClasses}>Moneda</span>
-                    <div className="w-full bg-[#f0f3ff] rounded-xl px-4 py-3 min-h-[44px] flex items-center text-[13px] font-semibold text-[#434653]">
-                      Peso Mexicano (MXN)
-                    </div>
-                  </div>
-
-                  {/* Opening hours are READ-ONLY here: the summary is
-                      generated from «Configurar horario» (per-day
-                      schedule), never typed by hand. */}
-                  <div className="sm:col-span-2">
-                    <span className={labelClasses}>Horario de atención</span>
-                    <div className="w-full bg-[#f0f3ff] rounded-xl px-4 py-3 min-h-[44px] flex items-center text-[13px] font-semibold text-[#434653]">
-                      {business.schedule || '—'}
-                    </div>
-                    <p className="text-[11px] text-[#737784] font-medium mt-1.5">
-                      Este horario se genera desde la configuración de días y horas.{' '}
-                      <Link href="/dashboard/admin/horario" className="font-bold text-[#00357f] underline underline-offset-2">
-                        Se configura en Configurar horario
-                      </Link>
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={savingBusiness}
-                  className="w-full bg-[#00357f] hover:bg-[#00509e] text-white font-bold px-4 min-h-[44px] rounded-xl transition-colors disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer text-[13px]"
-                >
-                  {savingBusiness ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                      <span>Guardando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4" />
-                      <span>Guardar datos de la óptica</span>
-                    </>
-                  )}
-                </button>
-              </form>
-            ) : (
-              !businessFeedback && (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#00357f] border-t-transparent" />
-                  <p className="text-[13px] text-[#737784] font-medium">Cargando datos de la óptica...</p>
-                </div>
-              )
-            )}
               </div>
             )}
           </div>

@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarDays,
   Check,
+  CheckCheck,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
+  Eye,
   Phone,
   PlusCircle,
   Search,
@@ -16,10 +18,12 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
+import Link from 'next/link'
 import { registerCustomerAction } from '@/app/customers/actions'
 import {
   agendaDayNumber,
   cancelAppointment,
+  completeAppointment,
   confirmAppointment,
   createAppointmentByAdmin,
   formatAppointmentDate,
@@ -33,6 +37,8 @@ import {
   type DaySlot,
 } from '@/lib/appointments'
 import { searchCustomers } from '@/lib/services'
+import { createClient as createBrowserClient } from '@/utils/supabase/client'
+import { isAdminRole, normalizeRole, type AccessRole } from '@/lib/roles'
 import PageHeader from '@/components/page-header'
 import AppointmentCalendar from '@/components/appointment-calendar'
 
@@ -41,6 +47,10 @@ const STATUS_BADGES: Record<Appointment['status'], { label: string; classes: str
   // «Confirmada» is the SAME light green the booking calendar paints
   // (owner's order 2026-11-18): one green for confirmed everywhere.
   confirmed: { label: 'Confirmada', classes: 'bg-[#dcfce7] text-[#15803d] border-[#bbf7d0]' },
+  // «Realizada» (owner's order, 2026-11-19): el verde de estado
+  // cumplido del sistema de diseño (el de «Pagado»), distinto del
+  // verde claro de «Confirmada» para que no se confundan.
+  completed: { label: 'Realizada', classes: 'bg-[#e2f9ee] text-[#00422b] border-emerald-200' },
   cancelled: { label: 'Cancelada', classes: 'bg-red-50 text-[#ba1a1a] border-red-200' },
 }
 
@@ -57,6 +67,48 @@ export default function StaffAppointmentsPage() {
   const [loadingDay, setLoadingDay] = useState(true)
   const [dayError, setDayError] = useState<string | null>(null)
   const [actingId, setActingId] = useState<string | null>(null)
+
+  // Rol de quien mira la Agenda (reglas del dueño, 2026-11-19):
+  // «Realizada» solo la ve el ADMINISTRADOR (la función
+  // completeAppointment además rechaza al resto de roles); «Realizar
+  // examen» lo ven el administrador y el OPTOMETRISTA; el vendedor ve
+  // y agenda, pero no cierra citas ni arranca el examen desde aquí.
+  // En modo demo no hay sesión que resolver: el visor demo es el
+  // personal administrador, como actúa el almacén demo de citas.
+  const [viewerRole, setViewerRole] = useState<AccessRole | null>(null)
+  const viewerIsAdmin = isAdminRole(viewerRole)
+  const viewerCanStartExam = viewerIsAdmin || viewerRole === 'optometrist'
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      let resolved: AccessRole = 'guest'
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          let roleValue: string | null = user.user_metadata?.role || null
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', user.id)
+              .maybeSingle()
+            if (profile?.role) roleValue = profile.role
+          } catch {
+            // keep the metadata fallback
+          }
+          resolved = normalizeRole(roleValue)
+        } else if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+          resolved = 'owner'
+        }
+      } catch {
+        // stays 'guest': no action buttons beyond Confirmar/Cancelar
+      }
+      if (!cancelled) setViewerRole(resolved)
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // Cancel inline form (reason is REQUIRED for staff: the customer reads it)
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null)
@@ -302,6 +354,21 @@ export default function StaffAppointmentsPage() {
     }
   }
 
+  // «Realizada»: la cita se atendió. Es terminal — sale del conteo
+  // «en pie» y ya no se puede cancelar. Si la base aún no tiene el
+  // estatus (migración 20261119 pendiente), el error real se muestra.
+  const handleComplete = async (appt: Appointment) => {
+    setActingId(appt.id)
+    try {
+      const updated = await completeAppointment(appt.id)
+      setAppointments(prev => prev.map(a => (a.id === appt.id ? { ...updated, customer_name: a.customer_name, customer_phone: a.customer_phone } : a)))
+    } catch (e: any) {
+      setDayError(e.message || 'No se pudo marcar la cita como realizada.')
+    } finally {
+      setActingId(null)
+    }
+  }
+
   const handleCancel = async (appt: Appointment) => {
     if (!cancelReason.trim()) {
       setCancelError('Escribe el motivo: el cliente lo verá en su panel.')
@@ -350,7 +417,8 @@ export default function StaffAppointmentsPage() {
     }
   }
 
-  const liveCount = appointments.filter(a => a.status !== 'cancelled').length
+  // «En pie» = vivas: ni canceladas ni realizadas (ambas son terminales).
+  const liveCount = appointments.filter(a => a.status !== 'cancelled' && a.status !== 'completed').length
 
   return (
     <main className="min-h-screen text-[#111c2d] px-4 pt-2 md:p-8 max-w-4xl mx-auto pb-24 md:pb-8 text-left space-y-4 md:space-y-5">
@@ -421,7 +489,7 @@ export default function StaffAppointmentsPage() {
           const displayPhone = appt.customer_phone || appt.guest_phone || ''
           const isCancelling = cancelTargetId === appt.id
           return (
-            <article key={appt.id} className={`bg-white border rounded-2xl shadow-sm p-4 ${appt.status === 'cancelled' ? 'border-[#cbd5e1]/60 opacity-75' : 'border-[#cbd5e1]'}`}>
+            <article key={appt.id} className={`bg-white border rounded-2xl shadow-sm p-4 ${appt.status === 'cancelled' || appt.status === 'completed' ? 'border-[#cbd5e1]/60 opacity-75' : 'border-[#cbd5e1]'}`}>
               <div className="flex items-start gap-3.5">
                 <div className="text-center shrink-0 bg-[#f0f3ff] border border-[#cbd5e1]/50 rounded-xl px-3 py-2 min-w-[76px]">
                   <Clock className="w-4 h-4 text-[#00357f] mx-auto" />
@@ -450,7 +518,7 @@ export default function StaffAppointmentsPage() {
                 </div>
               </div>
 
-              {appt.status !== 'cancelled' && (
+              {(appt.status === 'pending' || appt.status === 'confirmed') && (
                 <div className="flex flex-wrap gap-2 mt-3.5 pt-3 border-t border-[#f0f3ff]">
                   {appt.status === 'pending' && (
                     <button
@@ -460,6 +528,29 @@ export default function StaffAppointmentsPage() {
                     >
                       <Check className="w-4 h-4" /> Confirmar
                     </button>
+                  )}
+                  {/* «Realizada»: solo el administrador (owner /
+                      super_admin) la ve y la puede ejecutar. */}
+                  {viewerIsAdmin && (
+                    <button
+                      onClick={() => handleComplete(appt)}
+                      disabled={actingId === appt.id}
+                      className="inline-flex items-center gap-1.5 bg-[#00357f] hover:bg-[#004aad] active:scale-[0.98] disabled:opacity-50 text-white text-xs font-black px-3.5 py-2 rounded-lg transition-all cursor-pointer"
+                    >
+                      <CheckCheck className="w-4 h-4" /> Realizada
+                    </button>
+                  )}
+                  {/* «Realizar examen» (orden del dueño, 2026-11-19): solo
+                      cuando la cita trae cliente vinculado; abre el flujo
+                      de examen nuevo con ese cliente ya seleccionado.
+                      Visible para administrador y optometrista. */}
+                  {appt.customer_id && viewerCanStartExam && (
+                    <Link
+                      href={`/dashboard/exams/new?customer=${appt.customer_id}`}
+                      className="inline-flex items-center gap-1.5 bg-[#0899c9] hover:bg-[#0787b3] active:scale-[0.98] text-white text-xs font-black px-3.5 py-2 rounded-lg transition-all cursor-pointer"
+                    >
+                      <Eye className="w-4 h-4" /> Realizar examen
+                    </Link>
                   )}
                   {!isCancelling ? (
                     <button

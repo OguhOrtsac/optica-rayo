@@ -1,4 +1,5 @@
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
+import { isAdminRole, normalizeRole } from './roles'
 
 /**
  * Appointments service — agenda de exámenes de la vista gratuitos.
@@ -15,9 +16,17 @@ import { createClient as createBrowserClient } from '@/utils/supabase/client'
  * `notify_new_appointment`: an anonymous guest cannot insert other
  * people's notifications under RLS, so the trigger is the only way the
  * avisos work for guests — same pattern as lens requests.)
+ *
+ * ONE deliberate exception (owner's order, 2026-11-19): when Supabase is
+ * NOT configured at all (demo mode), the STAFF AGENDA surface runs on a
+ * small in-memory demo store (see «Demo seam» below) so the agenda, the
+ * bell's today's-appointments avisos and the «Realizada» flow can be
+ * exercised and verified without a database. The seam NEVER activates
+ * with a configured database, and the public booking path
+ * (createAppointment) stays real-database only.
  */
 
-export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled'
+export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed'
 export type AppointmentCreator = 'customer' | 'admin' | 'guest'
 export type AppointmentCanceller = 'customer' | 'admin'
 
@@ -248,6 +257,73 @@ function normalizeAppointment(row: any): Appointment {
   } as Appointment
 }
 
+// ---------------------------------------------------------------
+// Demo seam (SOLO sin base configurada): almacén en memoria con las
+// citas demo de HOY, para que la Agenda del staff, los avisos del día
+// de la campanita y el botón «Realizada» se puedan ejercer y verificar
+// sin base de datos (pedido del dueño, 2026-11-19). Las dos citas
+// sembradas reproducen su captura: una confirmada de 10:30 a. m.
+// agendada por el staff y una pendiente apartada por un invitado.
+// Con base configurada NADA de esto se usa: mandan los datos reales.
+// ---------------------------------------------------------------
+let demoAppointments: Appointment[] | null = null
+
+function seedDemoAppointments(): Appointment[] {
+  const today = toLocalDateISO(new Date())
+  const now = new Date().toISOString()
+  const base = {
+    customer_id: null,
+    cancel_reason: null,
+    cancelled_by: null,
+    notes: null,
+    created_at: now,
+    updated_at: now,
+  }
+  return [
+    {
+      ...base,
+      id: 'demo-appt-1',
+      // Ana Paula SÍ es clienta registrada (en demo, cust-3 de
+      // lib/mocks.ts): la cita nace enlazada a su expediente para que
+      // el botón «Realizar examen» de su tarjeta abra el examen con
+      // ella ya seleccionada, como pidió el dueño.
+      customer_id: 'cust-3',
+      guest_name: 'Ana Paula Gutiérrez Mendoza',
+      guest_phone: '5214441230103',
+      scheduled_date: today,
+      scheduled_time: '10:30',
+      status: 'confirmed',
+      created_by: 'admin',
+      customer_name: 'Ana Paula Gutiérrez Mendoza',
+      customer_phone: '5214441230103',
+    },
+    {
+      ...base,
+      id: 'demo-appt-2',
+      guest_name: 'Jorge Alberto Ramírez Torres',
+      guest_phone: '5214441230102',
+      scheduled_date: today,
+      scheduled_time: '12:00',
+      status: 'pending',
+      created_by: 'guest',
+      customer_name: 'Jorge Alberto Ramírez Torres',
+      customer_phone: '5214441230102',
+    },
+  ] as Appointment[]
+}
+
+function getDemoAppointments(): Appointment[] {
+  if (!demoAppointments) demoAppointments = seedDemoAppointments()
+  return demoAppointments
+}
+
+function updateDemoAppointment(id: string, patch: Partial<Appointment>): Appointment {
+  const appt = getDemoAppointments().find(a => a.id === id)
+  if (!appt) throw new Error('No se encontró la cita.')
+  Object.assign(appt, patch, { updated_at: new Date().toISOString() })
+  return { ...appt }
+}
+
 function friendlyInsertError(error: any): Error {
   // 23505 = unique_violation: the partial unique index caught a double
   // booking (two people racing for the same slot).
@@ -418,6 +494,13 @@ export async function getAgendaScheduleSummary(): Promise<string> {
  * only occupancy data the public may see (no names or phones leak).
  */
 export async function getBookedTimes(dateISO: string): Promise<string[]> {
+  if (!isSupabaseConfigured()) {
+    // Demo seam: ocupan su horario todas menos las canceladas (una
+    // realizada también consumió su hora).
+    return getDemoAppointments()
+      .filter(a => a.scheduled_date === dateISO && a.status !== 'cancelled')
+      .map(a => a.scheduled_time)
+  }
   const supabase = requireSupabase()
   const { data, error } = await supabase.rpc('get_booked_slots', { p_date: dateISO })
   if (error) throw new Error(error.message)
@@ -473,6 +556,23 @@ export async function getMonthAppointmentDays(
   year: number,
   month: number // 0 = enero … 11 = diciembre
 ): Promise<Record<string, AppointmentDayMarks>> {
+  if (!isSupabaseConfigured()) {
+    // Demo seam: las mismas marcas, desde el almacén en memoria.
+    const first = toLocalDateISO(new Date(year, month, 1))
+    const last = toLocalDateISO(new Date(year, month + 1, 0))
+    const marks: Record<string, AppointmentDayMarks> = {}
+    for (const a of getDemoAppointments()) {
+      if (a.scheduled_date < first || a.scheduled_date > last || a.status === 'cancelled') continue
+      let day = marks[a.scheduled_date]
+      if (!day) {
+        day = { confirmed: false, pending: false }
+        marks[a.scheduled_date] = day
+      }
+      if (a.status === 'confirmed') day.confirmed = true
+      else if (a.status === 'pending') day.pending = true
+    }
+    return marks
+  }
   const supabase = requireSupabase()
   const first = toLocalDateISO(new Date(year, month, 1))
   const last = toLocalDateISO(new Date(year, month + 1, 0))
@@ -569,6 +669,27 @@ export async function createAppointmentByAdmin(
   time: string,
   notes?: string
 ): Promise<Appointment> {
+  if (!isSupabaseConfigured()) {
+    // Demo seam: la cita nace confirmada, igual que contra la base.
+    const now = new Date().toISOString()
+    const appt: Appointment = {
+      id: `demo-appt-${Date.now()}`,
+      customer_id: customerId,
+      guest_name: null,
+      guest_phone: null,
+      scheduled_date: date,
+      scheduled_time: time,
+      status: 'confirmed',
+      created_by: 'admin',
+      cancel_reason: null,
+      cancelled_by: null,
+      notes: notes?.trim() || null,
+      created_at: now,
+      updated_at: now,
+    }
+    getDemoAppointments().push(appt)
+    return { ...appt }
+  }
   const supabase = requireSupabase()
   const { data, error } = await supabase
     .from('appointments')
@@ -606,6 +727,13 @@ export async function listAppointmentsForCustomer(customerId: string): Promise<A
  * disappears without a trace), with customer name/phone hydrated.
  */
 export async function listAppointmentsForDay(dateISO: string): Promise<Appointment[]> {
+  if (!isSupabaseConfigured()) {
+    // Demo seam: las citas demo del día, en orden de hora.
+    return getDemoAppointments()
+      .filter(a => a.scheduled_date === dateISO)
+      .sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time))
+      .map(a => ({ ...a }))
+  }
   const supabase = requireSupabase()
   const { data, error } = await supabase
     .from('appointments')
@@ -639,10 +767,59 @@ export async function listAppointmentsForDay(dateISO: string): Promise<Appointme
 
 /** Marks a booking as confirmed (staff). */
 export async function confirmAppointment(id: string): Promise<Appointment> {
+  if (!isSupabaseConfigured()) {
+    return updateDemoAppointment(id, { status: 'confirmed' })
+  }
   const supabase = requireSupabase()
   const { data, error } = await supabase
     .from('appointments')
     .update({ status: 'confirmed' })
+    .eq('id', id)
+    .select('*')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return normalizeAppointment(data)
+}
+
+/**
+ * Marks a booking as COMPLETED («Realizada», owner's order 2026-11-19):
+ * the customer showed up and the exam happened. Terminal like a
+ * cancellation — a completed appointment leaves the «en pie» count and
+ * can no longer be cancelled — but it keeps occupying its slot (the
+ * exam did happen at that hour). Requires the 'completed' value in the
+ * appointments.status CHECK (migration 20261119_appointment_completed);
+ * until that migration is applied, the database's real CHECK error is
+ * thrown and the agenda shows it verbatim.
+ */
+export async function completeAppointment(id: string): Promise<Appointment> {
+  if (!isSupabaseConfigured()) {
+    return updateDemoAppointment(id, { status: 'completed' })
+  }
+  // «Realizada» es SOLO del administrador (owner / super_admin) —
+  // regla del dueño, 2026-11-19: el vendedor y el optometrista ven y
+  // agendan, pero no cierran la cita. La verificación va AQUÍ, contra
+  // la fila de profiles del solicitante (el mismo patrón de
+  // saveProductsOrder), no solo en el botón oculto: invocar la función
+  // con otro rol lanza el error y no escribe nada. En modo demo no hay
+  // identidad que verificar y el almacén demo actúa como el personal.
+  const supabase = requireSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    throw new Error('Inicia sesión como administrador para marcar la cita como realizada.')
+  }
+  const { data: callerProfile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const callerRole = normalizeRole(callerProfile?.role || user.user_metadata?.role)
+  if (!isAdminRole(callerRole)) {
+    throw new Error('Solo el administrador puede marcar una cita como realizada.')
+  }
+  const { data, error } = await supabase
+    .from('appointments')
+    .update({ status: 'completed' })
     .eq('id', id)
     .select('*')
     .single()
@@ -660,6 +837,13 @@ export async function cancelAppointment(
   reason: string | null,
   actor: AppointmentCanceller
 ): Promise<Appointment> {
+  if (!isSupabaseConfigured()) {
+    return updateDemoAppointment(id, {
+      status: 'cancelled',
+      cancel_reason: reason?.trim() || null,
+      cancelled_by: actor,
+    })
+  }
   const supabase = requireSupabase()
   const { data, error } = await supabase
     .from('appointments')

@@ -31,11 +31,31 @@ export default function ChangePasswordPage() {
           </h1>
           <p className="text-xs text-[#737784] mt-2 font-medium leading-relaxed px-2">
             Por motivos de seguridad, debes cambiar la contraseña temporal asignada en tu primer inicio de sesión.
+            Primero escribe tu contraseña actual (la temporal): así confirmamos que eres tú.
           </p>
         </div>
 
         {/* Change Password Form */}
         <form action={formAction} className="space-y-4">
+          <div>
+            <label
+              htmlFor="currentPassword"
+              className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2"
+            >
+              Contraseña Actual
+            </label>
+            <input
+              id="currentPassword"
+              name="currentPassword"
+              type="password"
+              required
+              disabled={isPending}
+              placeholder="La contraseña temporal que te asignaron"
+              autoComplete="current-password"
+              className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none transition-all disabled:opacity-50"
+            />
+          </div>
+
           <div>
             <label
               htmlFor="password"

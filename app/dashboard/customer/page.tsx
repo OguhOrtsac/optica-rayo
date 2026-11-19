@@ -3,9 +3,10 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
 import { logout } from '@/app/auth/actions'
-import { 
-  getCoupons, 
-  getMyLatestExam, 
+import {
+  ensureCustomerNotifications,
+  getCoupons,
+  getMyLatestExam,
   getMySales, 
   getMyReminder,
   getCustomerInstallments,
@@ -141,9 +142,14 @@ export default function CustomerDashboard() {
           }
         }
 
+        // His own bell avisos first (new frames + upcoming review),
+        // deduplicated inside the ensure; silent on failure so the
+        // panel loads regardless.
+        await ensureCustomerNotifications().catch(() => {})
+
         const [
-          couponsData, 
-          examData, 
+          couponsData,
+          examData,
           salesData, 
           reminderData, 
           installmentsData, 
@@ -1112,7 +1118,7 @@ export default function CustomerDashboard() {
               const isLive = appt.status === 'pending' || appt.status === 'confirmed'
               const isCancelling = apptCancelTargetId === appt.id
               return (
-                <article key={appt.id} className={`bg-white border rounded-2xl shadow-sm p-4 ${appt.status === 'cancelled' ? 'border-[#cbd5e1]/60 opacity-80' : 'border-[#cbd5e1]'}`}>
+                <article key={appt.id} className={`bg-white border rounded-2xl shadow-sm p-4 ${appt.status === 'cancelled' || appt.status === 'completed' ? 'border-[#cbd5e1]/60 opacity-80' : 'border-[#cbd5e1]'}`}>
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div>
                       <p className="font-extrabold text-[#111c2d] text-sm capitalize">
@@ -1127,9 +1133,11 @@ export default function CustomerDashboard() {
                         ? 'bg-[#fef3c7] text-[#92400e] border-[#92400e]/20'
                         : appt.status === 'confirmed'
                           ? 'bg-[#e2f9ee] text-[#00422b] border-[#00422b]/15'
-                          : 'bg-[#ffdad6] text-[#ba1a1a] border-[#ba1a1a]/20'
+                          : appt.status === 'completed'
+                            ? 'bg-[#e2f9ee] text-[#00422b] border-[#00422b]/15'
+                            : 'bg-[#ffdad6] text-[#ba1a1a] border-[#ba1a1a]/20'
                     }`}>
-                      {appt.status === 'pending' ? 'Pendiente de confirmación' : appt.status === 'confirmed' ? 'Confirmada' : 'Cancelada'}
+                      {appt.status === 'pending' ? 'Pendiente de confirmación' : appt.status === 'confirmed' ? 'Confirmada' : appt.status === 'completed' ? 'Realizada' : 'Cancelada'}
                     </span>
                   </div>
 

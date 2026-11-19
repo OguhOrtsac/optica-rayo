@@ -15,6 +15,8 @@ import {
   saveLowStockThreshold
 } from '@/lib/services'
 import { Database } from '@/types/database.types'
+import { createClient as createBrowserClient } from '@/utils/supabase/client'
+import { isAdminRole, normalizeRole, type AccessRole } from '@/lib/roles'
 import LensOptionsEditor from './lens-options-editor'
 import PageHeader from '@/components/page-header'
 import {
@@ -265,6 +267,47 @@ export default function AdminProductsPage() {
       setSavingTemplates(false)
     }
   }
+
+  // Rol de quien mira Productos (regla del dueño, 2026-11-19): el
+  // VENDEDOR también entra a esta página — da de alta productos y
+  // cambia precios — pero la «Configuración» (descuento a clientes,
+  // umbral de stock y plantillas) y el BORRAR productos se quedan
+  // solo del administrador. La RLS de products aplica la misma regla
+  // en la base (migración 20261119_products_seller_access). En modo
+  // demo no hay sesión: el visor demo es el administrador.
+  const [viewerRole, setViewerRole] = useState<AccessRole | null>(null)
+  const viewerIsAdmin = isAdminRole(viewerRole)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      let resolved: AccessRole = 'guest'
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          let roleValue: string | null = user.user_metadata?.role || null
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', user.id)
+              .maybeSingle()
+            if (profile?.role) roleValue = profile.role
+          } catch {
+            // keep the metadata fallback
+          }
+          resolved = normalizeRole(roleValue)
+        } else if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+          resolved = 'owner'
+        }
+      } catch {
+        // stays 'guest': config and delete stay hidden
+      }
+      if (!cancelled) setViewerRole(resolved)
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // Every time the create modal opens, the product's lens options start
   // as a fresh copy of the active template (the owner can edit them
@@ -729,7 +772,10 @@ export default function AdminProductsPage() {
       {/* Configuración: member pricing + lens option templates live in ONE
           collapsible section, closed by default, so the product grid is
           the protagonist of the page. Both blocks keep their exact fields
-          and save handlers — only the visual container changed. */}
+          and save handlers — only the visual container changed.
+          SOLO ADMINISTRADOR: el vendedor entra a Productos por los
+          productos (altas y precios), no por la configuración. */}
+      {viewerIsAdmin && (
       <section className="bg-white rounded-2xl border border-[#cbd5e1] shadow-sm" aria-label="Configuración">
         <button
           type="button"
@@ -839,6 +885,7 @@ export default function AdminProductsPage() {
           </div>
         )}
       </section>
+      )}
 
       {/* Filters Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl border border-[#cbd5e1] shadow-sm">
@@ -1006,14 +1053,16 @@ export default function AdminProductsPage() {
                           <Edit3 className="w-3.5 h-3.5" />
                           Editar
                         </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setDeletingProduct(p) }}
-                          className="border border-[#ba1a1a]/30 hover:bg-[#ffdad6] text-[#ba1a1a] px-3 py-1.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[36px]"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Borrar
-                        </button>
+                        {viewerIsAdmin && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setDeletingProduct(p) }}
+                            className="border border-[#ba1a1a]/30 hover:bg-[#ffdad6] text-[#ba1a1a] px-3 py-1.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[36px]"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Borrar
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1106,13 +1155,15 @@ export default function AdminProductsPage() {
                             <Edit3 className="w-3.5 h-3.5" />
                             Editar
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setDeletingProduct(p) }}
-                            className="border border-[#ba1a1a]/30 hover:bg-[#ffdad6] text-[#ba1a1a] px-3.5 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Borrar
-                          </button>
+                          {viewerIsAdmin && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setDeletingProduct(p) }}
+                              className="border border-[#ba1a1a]/30 hover:bg-[#ffdad6] text-[#ba1a1a] px-3.5 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer min-h-[40px]"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Borrar
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

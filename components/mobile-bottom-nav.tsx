@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CalendarDays, Eye } from 'lucide-react'
+import { Eye, Users } from 'lucide-react'
 
 import { dashboardHrefForRole, normalizeRole } from '@/lib/roles'
 
@@ -24,6 +24,7 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
   // Define navigation links based on user role
   const getLinks = () => {
     const normalizedRole = normalizeRole(role)
+    const homeHref = dashboardHrefForRole(normalizedRole)
     // Customer view
     if (normalizedRole === 'customer') {
       return [
@@ -34,25 +35,30 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
     }
 
     if (normalizedRole === 'optometrist') {
+      // Barra del optometrista (dictado del dueño, 2026-11-19): SIN
+      // dinero — nada de «Realizar Venta» ni «Registrar Pago». Solo su
+      // trabajo: Inicio (su lista de pacientes, su pantalla principal),
+      // Clientes, Agenda y Realizar examen. El Catálogo y «Mi perfil»
+      // viven en su menú hamburguesa.
       return [
-        { label: 'Pacientes', href: '/customers', icon: 'patients' },
-        { label: 'Catálogo', href: '/catalog', icon: 'catalog' },
-        { label: 'Perfil', href: '/profile', icon: 'profile' }
+        { label: 'Inicio', href: homeHref, icon: 'home' },
+        { label: 'Clientes', href: '/customers', icon: 'clients' },
+        { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' },
+        { label: 'Realizar examen', href: '/dashboard/exams/new', icon: 'exam' }
       ]
     }
 
-    // Staff view (owner, seller, super_admin/dev) — órdenes del dueño
-    // 2026-11-18: primero sale «Clientes» y entra «Agenda»; después sale
-    // «Perfil» (vive en la hamburguesa, «Mi perfil»), Agenda pasa al
-    // último lugar y en el cuarto entra «Realizar examen», el acceso
-    // rápido a capturar el examen de un cliente.
-    const homeHref = dashboardHrefForRole(normalizedRole)
+    // Staff view (owner, seller, super_admin/dev) — órdenes del dueño:
+    // 2026-11-18 salió «Perfil» (vive en la hamburguesa, «Mi perfil»);
+    // 2026-11-19 sale «Agenda» de la barra (sigue en la hamburguesa y en
+    // la campanita), en el cuarto lugar entra «Clientes» (la lista
+    // canónica /customers) y «Realizar examen» pasa al último lugar.
     return [
       { label: 'Inicio', href: homeHref, icon: 'home' },
       { label: 'Realizar Venta', href: '/dashboard/seller', icon: 'pos' },
       { label: 'Registrar Pago', href: '/payments', icon: 'payment' },
-      { label: 'Realizar examen', href: '/dashboard/exams/new', icon: 'exam' },
-      { label: 'Agenda', href: '/dashboard/appointments', icon: 'agenda' }
+      { label: 'Clientes', href: '/customers', icon: 'clients' },
+      { label: 'Realizar examen', href: '/dashboard/exams/new', icon: 'exam' }
     ]
   }
 
@@ -91,8 +97,14 @@ export default function MobileBottomNav({ isAuthenticated, role, initials }: Mob
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
           </svg>
         )
+      case 'clients':
+        return <Users className="w-5.5 h-5.5" strokeWidth={2} />
       case 'agenda':
-        return <CalendarDays className="w-5.5 h-5.5" strokeWidth={2} />
+        return (
+          <svg className="w-5.5 h-5.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" />
+          </svg>
+        )
       case 'exam':
         return <Eye className="w-5.5 h-5.5" strokeWidth={2} />
       case 'profile':

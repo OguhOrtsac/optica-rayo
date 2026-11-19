@@ -20,10 +20,11 @@ import PageHeader from '@/components/page-header'
 import SalesLineChart from '@/components/sales-line-chart'
 
 // Reports are administrator territory (owner / super_admin), same gate
-// as Promotions: period sales, daily expenses, prorated fixed expenses
-// and profit. Figures come ONLY from getPeriodReport (real database
-// reads); on error the page shows a real error card with a retry —
-// never invented numbers.
+// as Promotions: period sales, daily expenses and profit. Fixed
+// expenses count only when their payment is registered (owner's cash
+// model, 2026-11-19) — no proration. Figures come ONLY from
+// getPeriodReport (real database reads); on error the page shows a
+// real error card with a retry — never invented numbers.
 
 type Preset = 'hoy' | 'semana' | 'mes' | 'personalizado'
 
@@ -366,7 +367,7 @@ export default function AdminReportsPage() {
   // periodo».
   const isTodayRange = range.start === range.end && range.start === toISODate(new Date())
   const dailyExpensesLabel = isTodayRange ? 'Gastos del día' : 'Gastos del periodo'
-  const fixedExpensesLabel = isTodayRange ? 'Gastos fijos' : 'Gastos fijos del periodo'
+  const fixedExpensesLabel = isTodayRange ? 'Pagos fijos del día' : 'Pagos fijos del periodo'
 
   if (gateLoading) {
     return (
@@ -555,8 +556,8 @@ export default function AdminReportsPage() {
                 </p>
                 <p className={`text-xs font-semibold mt-0.5 ${report.profit >= 0 ? 'text-[#00422b]/75' : 'text-[#93000a]/75'}`}>
                   {isTodayRange
-                    ? 'Ventas menos gastos del día y gastos fijos prorrateados.'
-                    : 'Ventas menos gastos del periodo, con los fijos prorrateados.'}
+                    ? 'Ventas menos gastos del día.'
+                    : 'Ventas menos gastos del periodo.'}
                 </p>
               </div>
               <div className="bg-[#f9f9ff] ring-1 ring-[#cbd5e1]/40 rounded-2xl p-4">
@@ -566,9 +567,11 @@ export default function AdminReportsPage() {
               </div>
               <div className="bg-[#f9f9ff] ring-1 ring-[#cbd5e1]/40 rounded-2xl p-4">
                 <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">{fixedExpensesLabel}</p>
-                <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1 tabular-nums whitespace-nowrap">{money.format(report.fixedProrated)}</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1 tabular-nums whitespace-nowrap">{money.format(report.fixedPaymentsRegisteredTotal)}</p>
                 <p className="text-xs text-[#434653] font-semibold mt-0.5">
-                  de {money.format(report.fixedMonthlyTotal)} fijos al mes, prorrateo por días
+                  {isTodayRange
+                    ? 'Ya incluidos en los gastos del día; un fijo sin pago registrado no cuenta.'
+                    : 'Ya incluidos en los gastos del periodo; un fijo sin pago registrado no cuenta.'}
                 </p>
               </div>
             </div>

@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import {
   deleteMyNotification,
+  ensureCustomerNotifications,
+  ensureTodayAppointmentNotifications,
   getMyNotifications,
   markNotificationRead,
 } from '@/lib/services'
@@ -27,6 +29,13 @@ import { createClient as createBrowserClient } from '@/utils/supabase/client'
 // table of the signed-in user via getMyNotifications() (fields: id,
 // user_id, title, message, type, is_read, created_at; the record carries
 // no link, so the destination is derived from `type`).
+//
+// Since 2026-11-19 (owner's order) the CUSTOMER has his own bell too,
+// with ONLY his avisos (new frames and his upcoming review, guaranteed
+// by ensureCustomerNotifications). The destination derived from `type`
+// is AUDIENCE-aware: the same 'appointment' aviso sends staff to the
+// Agenda and the customer to /agendar; a customer's 'general' aviso
+// goes to the catalog, never to a staff route.
 //
 // Each item carries two explicit per-item actions under its body
 // (owner's order, 2026-11-18): «Marcar como leída» for unread items and
@@ -40,7 +49,7 @@ import { createClient as createBrowserClient } from '@/utils/supabase/client'
 // action buttons are secondary links inside the dropdown, so they use
 // a 36px touch height instead of the 44px primary-action minimum.
 //
-// Renders nothing for guests and customers.
+// Renders nothing for guests.
 
 type NotificationItem = {
   id: string
@@ -95,8 +104,22 @@ const TYPE_CONFIG: Record<
   },
 }
 
-function typeConfig(type: string) {
-  return TYPE_CONFIG[type] ?? TYPE_CONFIG.general
+// Customer destinations per type: his avisos never land on staff
+// routes. His 'appointment' aviso is his review reminder → booking;
+// his 'general' aviso is the new-frames one → the catalog; anything
+// money/request related points at his own panel, where those live.
+const CUSTOMER_HREFS: Record<string, string> = {
+  payment_reminder: '/dashboard/customer',
+  appointment: '/agendar',
+  lens_request: '/dashboard/customer',
+  low_stock: '/catalog',
+  general: '/catalog',
+}
+
+function typeConfig(type: string, isCustomer: boolean) {
+  const base = TYPE_CONFIG[type] ?? TYPE_CONFIG.general
+  if (!isCustomer) return base
+  return { ...base, href: CUSTOMER_HREFS[type] ?? CUSTOMER_HREFS.general }
 }
 
 function relativeTime(iso: string): string {
@@ -122,20 +145,36 @@ export default function NotificationBell({ role }: { role: string | null }) {
   const rootRef = useRef<HTMLDivElement>(null)
 
   const isStaff = !!role && STAFF_ROLES.includes(role)
+  const isCustomer = role === 'customer'
 
-  // Refresh on mount and on every route change (no polling).
+  // Refresh on mount and on every route change (no polling). Before
+  // reading, guarantee the viewer's avisos exist (owner's order,
+  // 2026-11-19): for staff, today's appointment avisos — the creation
+  // trigger only fires when a booking is made, so a cita booked days
+  // ago for today would otherwise never surface in the bell on its
+  // day; for the customer, his new-frames and upcoming-review avisos.
+  // The ensures are deduplicated and any failure is silent — the list
+  // still loads.
   useEffect(() => {
-    if (!isStaff) return
+    if (!isStaff && !isCustomer) return
     let cancelled = false
-    getMyNotifications()
-      .then(data => {
+    ;(async () => {
+      if (isStaff) {
+        await ensureTodayAppointmentNotifications().catch(() => {})
+      } else {
+        await ensureCustomerNotifications().catch(() => {})
+      }
+      try {
+        const data = await getMyNotifications()
         if (!cancelled) setNotifications((data ?? []) as NotificationItem[])
-      })
-      .catch(() => {})
+      } catch {
+        // Keep whatever is already shown.
+      }
+    })()
     return () => {
       cancelled = true
     }
-  }, [isStaff, pathname])
+  }, [isStaff, isCustomer, pathname])
 
   // Navigating (e.g. after tapping an item) closes the panel.
   useEffect(() => {
@@ -166,7 +205,7 @@ export default function NotificationBell({ role }: { role: string | null }) {
     }
   }, [open ])
 
-  if (!isStaff) return null
+  if (!isStaff && !isCustomer) return null
 
   const unreadCount = notifications.filter(n => !n.is_read).length
   const visible = notifications.slice(0, PANEL_LIMIT)
@@ -295,7 +334,7 @@ export default function NotificationBell({ role }: { role: string | null }) {
           ) : (
             <ul className="min-h-0 flex-1 divide-y divide-[#cbd5e1]/50 overflow-y-auto">
               {visible.map(n => {
-                const cfg = typeConfig(n.type)
+                const cfg = typeConfig(n.type, isCustomer)
                 const Icon = cfg.Icon
                 return (
                   <li key={n.id} className={n.is_read ? '' : 'bg-[#f0f3ff]'}>
@@ -334,6 +373,17 @@ export default function NotificationBell({ role }: { role: string | null }) {
                       )}
                     </Link>
                     <div className="flex items-center justify-end gap-1 px-2 pb-1.5">
+                      {n.type === 'appointment' && (
+                        <Link
+                          href={cfg.href}
+                          onClick={() => handleItemClick(n)}
+                          aria-label={isCustomer ? `Agendar examen: ${n.title}` : `Ir a la agenda: ${n.title}`}
+                          className="flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold text-[#0899c9] transition hover:bg-[#e6f5fb] cursor-pointer"
+                        >
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          {isCustomer ? 'Agendar examen' : 'Ir a la agenda'}
+                        </Link>
+                      )}
                       {!n.is_read && (
                         <button
                           type="button"

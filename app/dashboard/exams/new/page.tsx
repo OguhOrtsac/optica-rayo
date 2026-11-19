@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { CheckCircle2, Eye, Search, Trash2, User, UserPlus } from 'lucide-react'
 import { registerCustomerAction } from '@/app/customers/actions'
-import { searchCustomers } from '@/lib/services'
+import { getCustomerById, searchCustomers } from '@/lib/services'
 import ClinicalExamForm from '@/components/clinical-exam-form'
 import PageHeader from '@/components/page-header'
 
@@ -59,6 +59,28 @@ export default function QuickExamPage() {
     }, 300)
     return () => { cancelled = true; clearTimeout(t) }
   }, [customerQuery, selectedCustomer])
+
+  // Preselección desde la Agenda (orden del dueño, 2026-11-19): el
+  // botón «Realizar examen» de la tarjeta de una cita llega aquí con
+  // ?customer=<id> y el examen se abre con ese cliente YA elegido
+  // («ya con el nombre del cliente que había agendado»). Sin el
+  // parámetro (entrada normal desde la barra inferior) el selector
+  // queda libre, como siempre, y la lista NO se abre sola. Si el id
+  // no existe, se ignora y el selector queda libre.
+  const preselectTriedRef = useRef(false)
+  useEffect(() => {
+    if (preselectTriedRef.current) return
+    preselectTriedRef.current = true
+    const id = new URLSearchParams(window.location.search).get('customer')
+    if (!id) return
+    let cancelled = false
+    getCustomerById(id)
+      .then(customer => {
+        if (!cancelled && customer) setSelectedCustomer(customer)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   // Click/tap OUTSIDE closes the customer dropdown without selecting.
   useEffect(() => {

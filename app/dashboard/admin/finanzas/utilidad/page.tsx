@@ -283,7 +283,7 @@ export default function FinanzasUtilidadPage() {
             <p className="text-[10px] font-black uppercase tracking-wider text-[#737784]">Pagos</p>
             <p className="text-lg sm:text-xl md:text-2xl font-extrabold text-[#ba1a1a] mt-1 tabular-nums whitespace-nowrap">{money.format(utility.payments)}</p>
             <p className="text-xs text-[#434653] font-semibold mt-1 tabular-nums">
-              Gastos del día {money.format(utility.dailyExpensesTotal)} · Fijos prorrateados {money.format(utility.fixedProrated)} (de {money.format(utility.fixedMonthlyTotal)} al mes)
+              Gastos del día {money.format(utility.dailyExpensesTotal)} · incluye {money.format(utility.fixedPaymentsRegisteredTotal)} de pagos fijos registrados
             </p>
           </div>
           <div className="bg-white rounded-[20px] or-shadow-card p-3.5 sm:p-4 min-w-0">
