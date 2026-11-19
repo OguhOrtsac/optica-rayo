@@ -3,7 +3,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
-  ensureTodayAppointmentNotifications,
   getProducts,
   getSales,
   getLensRequests,
@@ -22,7 +21,7 @@ import {
   type RecentExamActivity,
   type ActivityEventItem
 } from '@/lib/services'
-import { toWhatsAppNumber } from '@/lib/reminder-config'
+import { toWhatsAppNumber } from '@/lib/phone'
 import {
   buildBirthdayMessage,
   buildLensRequestReplyMessage,
@@ -185,12 +184,13 @@ export default function AdminDashboard() {
         // Aviso de pagos fijos por vencer/vencidos en la campanita: se
         // genera una sola vez al montar el panel (solo rol admin) y sin
         // bloquear el render; cualquier fallo es silencioso.
+        // NOTA: los avisos del día de las citas de HOY NO se generan
+        // aquí — su ÚNICA fuente es la campanita. Generarlos también
+        // desde el panel disparaba el ensure dos veces en la misma
+        // carga y la carrera entre ambas lecturas duplicaba los
+        // avisos en producción (bug 2026-11-19).
         if (admin) {
           ensureFixedPaymentNotifications().catch(() => {})
-          // Avisos del día de las citas de HOY en la campanita (pedido
-          // del dueño, 2026-11-19): mismo patrón ensure, sin bloquear
-          // el render; la campanita también lo invoca al cargar.
-          ensureTodayAppointmentNotifications().catch(() => {})
         }
       })
       .catch(() => setIsAdmin(false))
@@ -611,8 +611,7 @@ export default function AdminDashboard() {
                   // Construct pre-filled WhatsApp link. El texto sale de la
                   // plantilla editable (Configuración → Mensajes), con el
                   // texto de siempre como respaldo.
-                  const cleanPhone = customerPhone.replace(/\D/g, '')
-                  const waNumber = cleanPhone.startsWith('52') ? cleanPhone : `52${cleanPhone}`
+                  const waNumber = toWhatsAppNumber(customerPhone) || ''
                   const waMessage = encodeURIComponent(
                     buildLensRequestReplyMessage(
                       msgTemplates?.lensRequestReply ?? DEFAULT_LENS_REQUEST_REPLY_TEMPLATE,

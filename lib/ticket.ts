@@ -47,6 +47,17 @@ export interface TicketData {
   pendingBalance: number
   /** Configured reminder period (months) for the closing invitation. */
   reminderMonths: number
+  /**
+   * Plan de pagos generado con la venta (dictado 2026-11-19): una
+   * sola línea bajo el saldo — «Plan: N pagos quincenales de $X ·
+   * primer pago el <fecha>».
+   */
+  paymentPlan?: {
+    installments: number
+    frequency: 'weekly' | 'biweekly' | 'monthly'
+    installmentAmount: number
+    firstPaymentDate: string
+  } | null
 }
 
 const formatPrice = (price: number) =>
@@ -99,6 +110,23 @@ export function buildTicketMessage(data: TicketData): string {
   lines.push(`Pagado: ${formatPrice(data.paid)}`)
   if (data.pendingBalance > 0) {
     lines.push(`Saldo pendiente: ${formatPrice(data.pendingBalance)}`)
+  }
+  if (data.paymentPlan && data.pendingBalance > 0) {
+    const freqLabel =
+      data.paymentPlan.frequency === 'weekly'
+        ? 'semanales'
+        : data.paymentPlan.frequency === 'biweekly'
+          ? 'quincenales'
+          : 'mensuales'
+    const [py, pm, pd] = data.paymentPlan.firstPaymentDate.split('-').map(Number)
+    const firstDate = new Date(py || 1970, (pm || 1) - 1, pd || 1).toLocaleDateString('es-MX', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })
+    lines.push(
+      `Plan: ${data.paymentPlan.installments} pagos ${freqLabel} de ${formatPrice(data.paymentPlan.installmentAmount)} · primer pago el ${firstDate}`
+    )
   }
 
   lines.push('')

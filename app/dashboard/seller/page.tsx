@@ -8,13 +8,25 @@ import {
   searchCustomers,
   getCoupons,
   getMemberDiscountPercent,
-  getReminderConfig
+  getReminderConfig,
+  COUPON_LIMIT_MESSAGE,
+  isCouponExhausted
 } from '@/lib/services'
+import {
+  buildInstallmentSchedule,
+  defaultFirstPaymentDate,
+  frequencyEvery,
+  frequencyPlural,
+  type PaymentFrequency,
+  type PaymentPlanSummary
+} from '@/lib/payment-plan'
 import { registerCustomerAction } from '@/app/customers/actions'
 import PageHeader from '@/components/page-header'
+import PhoneInput from '@/components/phone-input'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDetails } from '@/lib/product-data'
-import { DEFAULT_REMINDER_MONTHS, toWhatsAppNumber } from '@/lib/reminder-config'
+import { DEFAULT_REMINDER_MONTHS } from '@/lib/reminder-config'
+import { toWhatsAppNumber } from '@/lib/phone'
 import { buildTicketMessage, orderCodeFromSaleId, type TicketLine } from '@/lib/ticket'
 import { Database } from '@/types/database.types'
 import {
@@ -93,6 +105,8 @@ interface LastSaleTicket {
   paid: number
   pendingBalance: number
   reminderMonths: number
+  /** Plan de pagos generado con la venta (null si no se creó). */
+  paymentPlan: PaymentPlanSummary | null
 }
 
 export default function SellerDashboard() {
@@ -122,6 +136,15 @@ export default function SellerDashboard() {
   const [quickError, setQuickError] = useState('')
   const [quickCreating, setQuickCreating] = useState(false)
   const [showWalkInWarning, setShowWalkInWarning] = useState(false)
+  // Selector de cliente como el de la Agenda (dictado del dueño,
+  // 2026-11-19): la lista se abre con la primera interacción (clic o
+  // tecleo), NUNCA sola al cargar; muestra TODOS los clientes y
+  // filtra al escribir; tocar fuera la cierra. Tras «Limpiar» la
+  // lista queda suprimida hasta que el usuario vuelve a tocar el
+  // campo (misma regla suppressAutoOpen de Agenda y Realizar examen).
+  const customerPickerRef = useRef<HTMLDivElement>(null)
+  const suppressCustomerAutoOpenRef = useRef(false)
+  const customerPickerInteractedRef = useRef(false)
   
   // Cart & Checkout states
   const [cart, setCart] = useState<CartItem[]>([])
@@ -194,6 +217,18 @@ export default function SellerDashboard() {
       setLoading(false)
     }
     initLoad()
+  }, [])
+
+  // Tocar fuera del selector de cliente lo cierra (igual que la Agenda).
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      if (customerPickerRef.current && !customerPickerRef.current.contains(e.target as Node)) {
+        setShowCustomerSuggestions(false)
+        setShowQuickAdd(false)
+      }
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
   }, [])
 
   // Filter products locally: by name, by BRAND and by TYPE (the way
@@ -355,12 +390,21 @@ export default function SellerDashboard() {
   
   // Validate and apply coupon. A coupon and a manual discount never
   // stack (owner's rule): applying the coupon removes the manual one.
-  const handleApplyCoupon = (e: React.FormEvent) => {
+  const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!couponCode.trim()) return
 
     const matched = coupons.find(c => c.code.toUpperCase() === couponCode.trim().toUpperCase())
     if (matched && matched.is_active && new Date(matched.valid_until) > new Date()) {
+      // Límite de usos (dictado 2026-11-19): un cupón que ya llegó a
+      // su límite NO se aplica; el conteo se lee en vivo de las
+      // ventas guardadas con ese coupon_id. Al cobrar, createSale
+      // vuelve a validar por si el límite se alcanzó entretanto.
+      if (await isCouponExhausted(matched)) {
+        setActiveCoupon(null)
+        showFeedback('error', COUPON_LIMIT_MESSAGE)
+        return
+      }
       const replacedManual = !!activeManualDiscount
       setActiveCoupon(matched)
       if (replacedManual) setActiveManualDiscount(null)
@@ -448,6 +492,34 @@ export default function SellerDashboard() {
     return Number.isFinite(parsed) ? parsed : 0
   }, [paidAmountInput])
   const pendingBalance = useMemo(() => Math.max(0, total - paidAmount), [total, paidAmount])
+
+  // Plan de pagos (dictado 2026-11-19): divide el SALDO en cuotas al
+  // cobrar. Solo se ofrece con cliente dado de alta — seleccionado o
+  // con el nombre tecleado, porque «Continuar solo con el nombre» crea
+  // el registro al cobrar — y con saldo pendiente > 0. La fecha del
+  // primer pago se precarga a un periodo de la venta (+15 días
+  // quincenal / +1 mes mensual) y es editable.
+  const [planEnabled, setPlanEnabled] = useState(false)
+  const [planCountInput, setPlanCountInput] = useState('4')
+  const [planFrequency, setPlanFrequency] = useState<PaymentFrequency>('biweekly')
+  const [planFirstDate, setPlanFirstDate] = useState('') // '' = automática según frecuencia
+  const planCount = Math.max(1, Math.floor(parseInt(planCountInput, 10) || 0) || 1)
+  const planFirstDue = planFirstDate || defaultFirstPaymentDate(planFrequency)
+  const planEligible = !!selectedCustomer || customerSearch.trim().length > 0
+  const planSchedule = useMemo(
+    () => (planEnabled && pendingBalance > 0
+      ? buildInstallmentSchedule(pendingBalance, planCount, planFrequency, planFirstDue)
+      : []),
+    [planEnabled, pendingBalance, planCount, planFrequency, planFirstDue]
+  )
+  const planFirstDueLabel = (() => {
+    const [py, pm, pd] = planFirstDue.split('-').map(Number)
+    return new Date(py || 1970, (pm || 1) - 1, pd || 1).toLocaleDateString('es-MX', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    })
+  })()
 
   const showFeedback = (type: 'success' | 'error', message: string) => {
     if (type === 'success') {
@@ -661,6 +733,14 @@ export default function SellerDashboard() {
       }))
       const ticketPaid = effectivePaidAmount || total
 
+      // Plan de pagos pedido en pantalla: solo viaja si el comprador
+      // quedó como REGISTRO de cliente (seleccionado o resuelto del
+      // nombre tecleado) y la venta deja saldo. createSale genera las
+      // cuotas sobre SU saldo calculado y devuelve el plan aplicado.
+      const requestedPlan = planEnabled && buyer?.id && Math.max(0, total - ticketPaid) > 0
+        ? { installments: planCount, frequency: planFrequency, firstPaymentDate: planFirstDue }
+        : null
+
       // Register sale with everything captured on screen: the registered
       // customer (when one was selected), the applied coupon and the note.
       const saleResult = await createSale(nameToRegister, items, ticketPaid, paymentMethod, {
@@ -674,7 +754,9 @@ export default function SellerDashboard() {
         // match or minimal profile just created): the screen charged
         // visitor prices, so the recorded sale keeps those prices.
         chargeAsWalkIn: !selectedCustomer && !!buyer,
+        paymentPlan: requestedPlan,
       })
+      const appliedPlan = (saleResult as any)?.paymentPlan ?? null
 
       // Success card with the WhatsApp ticket: it survives the state
       // cleanup below. The reminder period for the closing line comes
@@ -696,13 +778,17 @@ export default function SellerDashboard() {
           total,
           paid: ticketPaid,
           pendingBalance: Math.max(0, total - ticketPaid),
-          reminderMonths
+          reminderMonths,
+          paymentPlan: appliedPlan
         })
       }
 
       showFeedback('success', '¡Venta registrada exitosamente! El inventario se actualizó y se programó la cita de revisión.')
       if (profileCreationFailed) {
         showFeedback('error', 'La venta se registró con el nombre escrito, pero no se pudo crear el perfil del cliente. Agrégalo después en Clientes.')
+      }
+      if (requestedPlan && !appliedPlan) {
+        showFeedback('error', 'La venta se registró, pero el plan de pagos no se generó. El saldo quedó sin plan a plazos.')
       }
 
       // Clear POS state (coupon AND manual discount, like the rest)
@@ -712,6 +798,8 @@ export default function SellerDashboard() {
       setShowWalkInWarning(false)
       setShowQuickAdd(false)
       setPaidAmountInput('')
+      setPlanEnabled(false)
+      setPlanFirstDate('')
       setCouponCode('')
       setActiveCoupon(null)
       setActiveManualDiscount(null)
@@ -757,7 +845,15 @@ export default function SellerDashboard() {
         total: lastSale.total,
         paid: lastSale.paid,
         pendingBalance: lastSale.pendingBalance,
-        reminderMonths: lastSale.reminderMonths
+        reminderMonths: lastSale.reminderMonths,
+        paymentPlan: lastSale.paymentPlan
+          ? {
+              installments: lastSale.paymentPlan.installments,
+              frequency: lastSale.paymentPlan.frequency,
+              installmentAmount: lastSale.paymentPlan.installmentAmount,
+              firstPaymentDate: lastSale.paymentPlan.firstPaymentDate
+            }
+          : null
       })
     : ''
 
@@ -810,6 +906,18 @@ export default function SellerDashboard() {
               <> · Saldo pendiente {formatPrice(lastSale.pendingBalance)}</>
             )}
           </p>
+          {lastSale.paymentPlan && (
+            <p className="text-sm font-bold text-[#00422b] bg-white/60 border border-[#00422b]/15 rounded-xl px-3.5 py-2.5">
+              Plan de pagos: {lastSale.paymentPlan.installments} pagos {frequencyPlural(lastSale.paymentPlan.frequency)} de {formatPrice(lastSale.paymentPlan.installmentAmount)}
+              {lastSale.paymentPlan.lastInstallmentAmount !== lastSale.paymentPlan.installmentAmount && (
+                <> (último de {formatPrice(lastSale.paymentPlan.lastInstallmentAmount)})</>
+              )}
+              {' '}· primer pago el {(() => {
+                const [py, pm, pd] = lastSale.paymentPlan.firstPaymentDate.split('-').map(Number)
+                return new Date(py || 1970, (pm || 1) - 1, pd || 1).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
+              })()}
+            </p>
+          )}
           {lastSaleWaNumber ? (
             <a
               href={`https://wa.me/${lastSaleWaNumber}?text=${encodeURIComponent(lastSaleTicketText)}`}
@@ -977,8 +1085,14 @@ export default function SellerDashboard() {
                                   <h4 className="font-bold text-[#111c2d] leading-snug">{item.product.name}</h4>
                                   <p className="text-xs text-[#737784] tabular-nums">{formatPrice(unitPriceOf(item.product))} c/u</p>
                                 </div>
+                                {/* Precio de la LÍNEA = solo el producto
+                                    × cantidad (dictado del dueño,
+                                    2026-11-19): los complementos NO se
+                                    suman aquí — van como sublíneas con
+                                    su precio y la suma vive en el
+                                    TOTAL del carrito. */}
                                 <span className="font-bold text-[#00357f] tabular-nums text-right shrink-0">
-                                  {formatPrice((unitPriceOf(item.product) + complementsUnitTotal(item)) * item.quantity)}
+                                  {formatPrice(unitPriceOf(item.product) * item.quantity)}
                                 </span>
                               </div>
 
@@ -1046,8 +1160,12 @@ export default function SellerDashboard() {
                         </div>
                       )}
 
-                      {/* Customer predict selector */}
-                      <div className="relative space-y-1 text-left">
+                      {/* Customer selector: mismo comportamiento que
+                          el de la Agenda (dictado 2026-11-19) — clic
+                          abre el combo con TODOS los clientes, escribir
+                          filtra, «Registrar nuevo cliente» va primero
+                          y el walk-in sigue en el estado vacío. */}
+                      <div className="relative space-y-1 text-left" ref={customerPickerRef}>
                         <label className="block text-[13px] font-semibold text-[#434653] mb-1">
                           Buscar Cliente / CRM
                         </label>
@@ -1057,6 +1175,8 @@ export default function SellerDashboard() {
                             placeholder="Escribe el nombre del cliente..."
                             value={selectedCustomer ? selectedCustomer.full_name : customerSearch}
                             onChange={(e) => {
+                              suppressCustomerAutoOpenRef.current = false
+                              customerPickerInteractedRef.current = true
                               setCustomerSearch(e.target.value)
                               setSelectedCustomer(null)
                               setShowCustomerSuggestions(true)
@@ -1064,13 +1184,29 @@ export default function SellerDashboard() {
                               setQuickError('')
                               if (!e.target.value.trim()) setShowWalkInWarning(false)
                             }}
-                            onFocus={() => setShowCustomerSuggestions(true)}
+                            onFocus={() => {
+                              // Primer toque: se arma la apertura y el
+                              // combo se despliega con todos los clientes.
+                              suppressCustomerAutoOpenRef.current = false
+                              customerPickerInteractedRef.current = true
+                              setShowCustomerSuggestions(true)
+                            }}
                             className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                           />
                           {selectedCustomer && (
                             <button
                               type="button"
-                              onClick={() => { setSelectedCustomer(null); setCustomerSearch(''); setShowWalkInWarning(false); }}
+                              onClick={() => {
+                                // Como la basura de la Agenda: quitar la
+                                // selección deja la lista CERRADA hasta
+                                // que el usuario vuelva a tocar el campo.
+                                suppressCustomerAutoOpenRef.current = true
+                                setSelectedCustomer(null)
+                                setCustomerSearch('')
+                                setShowWalkInWarning(false)
+                                setShowCustomerSuggestions(false)
+                                setShowQuickAdd(false)
+                              }}
                               className="absolute right-3 top-1/2 -translate-y-1/2 text-[#ba1a1a] hover:text-[#93000a] text-xs font-bold cursor-pointer px-1 py-1"
                             >
                               Limpiar
@@ -1078,39 +1214,12 @@ export default function SellerDashboard() {
                           )}
                         </div>
 
-                        {showCustomerSuggestions && customerSearch.trim() && !selectedCustomer && (
-                          <div className={`absolute left-0 right-0 z-30 mt-1 bg-white border border-[#dee8ff] rounded-2xl overflow-y-auto shadow-lg divide-y divide-[#f0f3ff] ${filteredCustomers.length === 0 ? 'max-h-[380px]' : 'max-h-[160px]'}`}>
-                            {filteredCustomers.length === 0 ? (
+                        {showCustomerSuggestions && !selectedCustomer && (
+                          <div className="absolute left-0 right-0 z-30 mt-1 bg-white border border-[#dee8ff] rounded-2xl overflow-y-auto shadow-lg max-h-[380px]">
+                            {showQuickAdd ? (
                               <div className="p-4 space-y-3 text-left">
-                                {!showQuickAdd ? (
-                                  <>
-                                    <p className="text-sm text-[#434653] font-semibold">
-                                      &ldquo;{customerSearch.trim()}&rdquo; no está registrado.
-                                    </p>
-                                    <div className="space-y-2">
-                                      <button
-                                        type="button"
-                                        onClick={openQuickAdd}
-                                        className="w-full min-h-[44px] bg-[#00357f] hover:bg-[#00509e] text-white text-sm font-bold rounded-xl px-3 flex items-center justify-center gap-2 cursor-pointer transition-colors"
-                                      >
-                                        <UserPlus className="w-4 h-4" />
-                                        Agregar cliente rápido
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setShowCustomerSuggestions(false)
-                                          setShowWalkInWarning(true)
-                                        }}
-                                        className="w-full min-h-[44px] bg-white border border-[#dee8ff] text-[#00357f] text-sm font-bold rounded-xl px-3 hover:bg-[#dee8ff]/30 flex items-center justify-center cursor-pointer transition-colors"
-                                      >
-                                        Continuar solo con el nombre
-                                      </button>
-                                    </div>
-                                  </>
-                                ) : (
                                   <div className="space-y-3">
-                                    <p className="text-sm font-bold text-[#00357f]">Agregar cliente rápido</p>
+                                    <p className="text-sm font-bold text-[#00357f]">Registrar nuevo cliente</p>
                                     <div>
                                       <label className="block text-[13px] font-semibold text-[#434653] mb-1">
                                         Nombre *
@@ -1127,12 +1236,13 @@ export default function SellerDashboard() {
                                       <label className="block text-[13px] font-semibold text-[#434653] mb-1">
                                         Teléfono (opcional)
                                       </label>
-                                      <input
-                                        type="tel"
+                                      {/* Prefijo elegible (+52 default sin el «1»): quickPhone guarda el valor compuesto */}
+                                      <PhoneInput
                                         value={quickPhone}
-                                        onChange={(e) => setQuickPhone(e.target.value)}
-                                        placeholder="Ej. (555) 123-4567"
-                                        className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                                        onChange={setQuickPhone}
+                                        selectClassName="bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-2 py-2.5 text-sm text-[#111c2d] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors cursor-pointer shrink-0"
+                                        customPrefixClassName="w-[72px] shrink-0 bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-2 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                                        inputClassName="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                                       />
                                     </div>
                                     <div>
@@ -1178,10 +1288,42 @@ export default function SellerDashboard() {
                                       </button>
                                     </div>
                                   </div>
-                                )}
                               </div>
                             ) : (
-                              filteredCustomers.map(c => (
+                              <div className="divide-y divide-[#f0f3ff]">
+                                {/* Primera opción SIEMPRE: el alta rápida,
+                                    como en la Agenda (dictado 2026-11-19). */}
+                                <button
+                                  type="button"
+                                  onClick={openQuickAdd}
+                                  className="w-full text-left px-3.5 py-2.5 min-h-[48px] hover:bg-[#dee8ff]/30 text-sm font-bold text-[#00357f] flex items-center gap-2 cursor-pointer transition-colors"
+                                >
+                                  <UserPlus className="w-4 h-4" /> Registrar nuevo cliente
+                                </button>
+                                {filteredCustomers.length === 0 ? (
+                                  <div className="p-4 space-y-3 text-left">
+                                    {customerSearch.trim() ? (
+                                      <>
+                                        <p className="text-sm text-[#434653] font-semibold">
+                                          &ldquo;{customerSearch.trim()}&rdquo; no está registrado.
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setShowCustomerSuggestions(false)
+                                            setShowWalkInWarning(true)
+                                          }}
+                                          className="w-full min-h-[44px] bg-white border border-[#dee8ff] text-[#00357f] text-sm font-bold rounded-xl px-3 hover:bg-[#dee8ff]/30 flex items-center justify-center cursor-pointer transition-colors"
+                                        >
+                                          Continuar solo con el nombre
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <p className="text-sm text-[#737784] font-medium">Sin clientes registrados todavía.</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  filteredCustomers.map(c => (
                                 <button
                                   key={c.id}
                                   type="button"
@@ -1197,7 +1339,9 @@ export default function SellerDashboard() {
                                     {c.customer_profiles?.phone || 'Sin Tel.'}
                                   </span>
                                 </button>
-                              ))
+                                  ))
+                                )}
+                              </div>
                             )}
                           </div>
                         )}
@@ -1382,6 +1526,97 @@ export default function SellerDashboard() {
                           </div>
                         </div>
                       </div>
+
+                      {/* Plan de pagos (dictado 2026-11-19): con saldo
+                          pendiente y cliente dado de alta (seleccionado
+                          o solo-nombre), el interruptor despliega N°
+                          de pagos, frecuencia y primer pago, con vista
+                          previa en vivo. Sin cliente alguno, la nota
+                          empuja al alta. */}
+                      {pendingBalance > 0 && subtotal > 0 && (
+                        planEligible ? (
+                          <div className="border border-[#dee8ff] rounded-xl p-3.5 space-y-3 bg-[#f9f9ff]">
+                            <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
+                              <span>
+                                <span className="block text-[13px] font-semibold text-[#434653]">Dividir el saldo en pagos</span>
+                                <span className="block text-[11px] text-[#737784] font-medium">Genera las cuotas del saldo al registrar la venta.</span>
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={planEnabled}
+                                onChange={(e) => setPlanEnabled(e.target.checked)}
+                                className="w-5 h-5 shrink-0 accent-[#00357f] cursor-pointer"
+                              />
+                            </label>
+                            {planEnabled && (
+                              <>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-[13px] font-semibold text-[#434653] mb-1.5">
+                                      Número de pagos
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      step={1}
+                                      value={planCountInput}
+                                      onChange={(e) => setPlanCountInput(e.target.value)}
+                                      className="w-full bg-white border border-[#dee8ff] rounded-xl px-4 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] tabular-nums transition-colors"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[13px] font-semibold text-[#434653] mb-1.5">
+                                      Frecuencia
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {[
+                                        { id: 'biweekly', label: 'Quincenal' },
+                                        { id: 'monthly', label: 'Mensual' }
+                                      ].map((f) => (
+                                        <button
+                                          key={f.id}
+                                          type="button"
+                                          onClick={() => setPlanFrequency(f.id as PaymentFrequency)}
+                                          className={`py-2 text-sm font-semibold rounded-full border transition-all cursor-pointer min-h-[44px] flex items-center justify-center ${
+                                            planFrequency === f.id
+                                              ? 'bg-[#dee8ff] border-[#00357f]/40 text-[#00357f] font-bold'
+                                              : 'bg-white border-[#dee8ff] text-[#737784] hover:bg-[#dee8ff]/30'
+                                          }`}
+                                        >
+                                          {f.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-[13px] font-semibold text-[#434653] mb-1.5">
+                                    Fecha del primer pago
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={planFirstDue}
+                                    onChange={(e) => setPlanFirstDate(e.target.value)}
+                                    className="w-full bg-white border border-[#dee8ff] rounded-xl px-4 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                                  />
+                                </div>
+                                {planSchedule.length > 0 && (
+                                  <p className="text-xs font-bold text-[#00357f] bg-[#dee8ff]/50 border border-[#00357f]/15 rounded-xl px-3.5 py-2.5">
+                                    {planCount} pagos de {formatPrice(planSchedule[0].amount)} · {frequencyEvery(planFrequency)} · primer pago el {planFirstDueLabel}
+                                    {planSchedule.length > 1 && planSchedule[planSchedule.length - 1].amount !== planSchedule[0].amount && (
+                                      <> · último de {formatPrice(planSchedule[planSchedule.length - 1].amount)}</>
+                                    )}
+                                  </p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] font-bold text-[#92400e] bg-[#fef3c7] border border-[#92400e]/20 rounded-xl px-3.5 py-2.5">
+                            Para plan de pagos, registra al cliente (aunque sea solo su nombre).
+                          </p>
+                        )
+                      )}
 
                       <div className="space-y-1.5">
                         <label className="block text-[13px] font-semibold text-[#434653]">

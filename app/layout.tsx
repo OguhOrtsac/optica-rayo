@@ -22,14 +22,19 @@ const jakartaSans = Plus_Jakarta_Sans({
   weight: ["400", "500", "600", "700", "800"],
 });
 
-// Viewport: escalado responsivo móvil-primero. El zoom del usuario queda
-// LIBRE (sin maximumScale ni userScalable: bloquearlo es una falla de
-// accesibilidad) y viewportFit 'cover' activa las áreas seguras para que
-// el pb-safe de la navegación funcione en teléfonos con notch.
+// Viewport: escalado responsivo móvil-primero. El dueño ordenó
+// (2026-11-19) que NO se pueda hacer zoom en ninguna página de la
+// app: maximumScale 1 + userScalable false (esto revierte la decisión
+// de accesibilidad del rediseño 2026-11-17 por orden expresa suya).
+// viewportFit 'cover' se conserva: activa las áreas seguras para que
+// el pb-safe de la navegación funcione en teléfonos con notch, y los
+// inputs ya van en 16px contra el zoom automático de iOS al enfocar.
 export const viewport: Viewport = {
   themeColor: '#00357f', // Óptica Rayo brand blue
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: 'cover',
 };
 

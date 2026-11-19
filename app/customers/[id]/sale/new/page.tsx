@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useEffect, useState, useActionState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getProducts, getLensMaterials, getLensTreatments, getCoupons, getMemberDiscountPercent } from '@/lib/services'
+import { getCustomerById, getCustomerExams, getProducts, getLensMaterials, getLensTreatments, getCoupons, getMemberDiscountPercent, getCouponUseCount, COUPON_LIMIT_MESSAGE } from '@/lib/services'
 import { createLinkedSaleAction, CreateSaleState } from '@/app/customers/actions'
 import { effectiveClientPrice } from '@/lib/pricing'
 import PageHeader from '@/components/page-header'
@@ -62,6 +62,24 @@ export default function NewLinkedSalePage({ params }: PageProps) {
   const [cart, setCart] = useState<any[]>([])
   const [selectedExamId, setSelectedExamId] = useState<string>('')
   const [couponCode, setCouponCode] = useState('')
+  // Límite de usos del cupón (dictado 2026-11-19): si el código
+  // tecleado corresponde a un cupón con límite ya alcanzado, el
+  // descuento no se previsualiza ni se cobra — la acción de servidor
+  // vuelve a validar al guardar con el mismo mensaje.
+  const [couponExhausted, setCouponExhausted] = useState(false)
+  useEffect(() => {
+    const code = couponCode.trim().toUpperCase()
+    const matched = code ? coupons.find(c => c.code.toUpperCase() === code) : null
+    if (!matched || (matched.max_uses ?? null) === null) {
+      setCouponExhausted(false)
+      return
+    }
+    let cancelled = false
+    getCouponUseCount(matched.id)
+      .then(uses => { if (!cancelled) setCouponExhausted(uses >= Number(matched.max_uses)) })
+      .catch(() => { if (!cancelled) setCouponExhausted(false) })
+    return () => { cancelled = true }
+  }, [coupons, couponCode])
   const [notes, setNotes] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
@@ -258,12 +276,12 @@ export default function NewLinkedSalePage({ params }: PageProps) {
   // subtotal minus the coupon discount, with no tax added on top.
   const couponDiscountPercent = useMemo(() => {
     const code = couponCode.trim().toUpperCase()
-    if (!code) return 0
+    if (!code || couponExhausted) return 0
     const matched = coupons.find(c => c.code.toUpperCase() === code)
     return matched && matched.is_active && new Date(matched.valid_until) > new Date()
       ? matched.discount_percent
       : 0
-  }, [coupons, couponCode])
+  }, [coupons, couponCode, couponExhausted])
   const discountAmount = useMemo(() => subtotal * (couponDiscountPercent / 100), [subtotal, couponDiscountPercent])
   const total = useMemo(() => subtotal - discountAmount, [subtotal, discountAmount])
 
@@ -784,6 +802,9 @@ export default function NewLinkedSalePage({ params }: PageProps) {
                       onChange={e => setCouponCode(e.target.value)}
                       className="w-full bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg py-2 pl-9 pr-3 text-xs focus:border-[#00357f] outline-none font-mono uppercase" />
                   </div>
+                  {couponExhausted && (
+                    <p className="text-[11px] font-bold text-[#ba1a1a] mt-1.5">{COUPON_LIMIT_MESSAGE}</p>
+                  )}
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-[10px] font-bold text-[#434653] uppercase tracking-wider mb-2">Notas de la Venta</label>

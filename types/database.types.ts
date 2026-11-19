@@ -308,6 +308,11 @@ export interface Database {
           valid_until: string
           is_active: boolean
           created_at: string
+          // Límite de usos (dictado 2026-11-19): NULL = ilimitado. La
+          // columna llega por la migración 20261119_coupons_max_uses;
+          // antes de aplicarla, las filas leídas simplemente no traen
+          // la llave y el código la trata como ilimitado (undefined).
+          max_uses: number | null
         }
         Insert: {
           id?: string
@@ -316,6 +321,7 @@ export interface Database {
           valid_until: string
           is_active?: boolean
           created_at?: string
+          max_uses?: number | null
         }
         Update: {
           id?: string
@@ -324,6 +330,7 @@ export interface Database {
           valid_until?: string
           is_active?: boolean
           created_at?: string
+          max_uses?: number | null
         }
       }
       reminders: {

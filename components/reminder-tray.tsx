@@ -8,7 +8,8 @@ import {
   logActivityEvent,
   type DueReminder,
 } from '@/lib/services'
-import { buildReminderMessage, toWhatsAppNumber } from '@/lib/reminder-config'
+import { buildReminderMessage } from '@/lib/reminder-config'
+import { toWhatsAppNumber } from '@/lib/phone'
 import { CheckCheck, MessageSquare } from 'lucide-react'
 
 /**

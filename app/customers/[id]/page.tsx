@@ -3,11 +3,19 @@
 import * as React from 'react'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
-import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, getMessageTemplate, updateCustomerGeneralData, type ReminderConfig } from '@/lib/services'
+import { getCustomerById, getCustomerExams, getCustomerSales, getCustomerInstallments, getReminderConfig, getMessageTemplate, updateCustomerGeneralData, getSaleRefinancings, restructureSalePayments, type ReminderConfig } from '@/lib/services'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
-import { normalizeRole, type AccessRole } from '@/lib/roles'
+import { isAdminRole, normalizeRole, type AccessRole } from '@/lib/roles'
+import {
+  buildInstallmentSchedule,
+  defaultFirstPaymentDate,
+  frequencyPlural,
+  type PaymentFrequency,
+} from '@/lib/payment-plan'
 import { registerInstallmentPaymentAction, registerSaleBalancePaymentAction } from '@/app/customers/actions'
 import { buildReminderMessage } from '@/lib/reminder-config'
+import { splitPhonePrefix, toWhatsAppNumber } from '@/lib/phone'
+import PhoneInput from '@/components/phone-input'
 import {
   normalizeClinicalHistory,
   hasClinicalHistory,
@@ -242,6 +250,228 @@ function SaleBalancePayForm({ sale, formatPrice, onDone }: {
   )
 }
 
+// Modal «Reestructurar pagos» de la pestaña Cobranza (dictado del
+// dueño, 2026-11-19): SOLO administrador — el botón que lo abre solo
+// se pinta para isAdminRole y la acción de servidor vuelve a
+// verificar el rol. Reestructura el SALDO pendiente de UNA venta: el
+// costo por refinanciación (opcional) se suma al saldo y a la orden,
+// las cuotas no liquidadas se sustituyen por el plan nuevo y la
+// operación queda en el historial estructurado. La vista previa usa
+// el mismo cálculo a centavos del plan del POS (lib/payment-plan).
+function RestructurePaymentsModal({ sale, formatPrice, formatDate, onClose, onDone }: {
+  sale: any
+  formatPrice: (n: number) => string
+  formatDate: (d: string) => string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const pending = Number(sale.pending_balance || 0)
+  const [feeInput, setFeeInput] = useState('0')
+  const [countInput, setCountInput] = useState('4')
+  const [frequency, setFrequency] = useState<PaymentFrequency>('biweekly')
+  const [startDate, setStartDate] = useState(() => defaultFirstPaymentDate('biweekly'))
+  const [dateTouched, setDateTouched] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fee = Math.max(0, parseFloat(feeInput.replace(',', '.')) || 0)
+  const count = Math.max(1, Math.floor(parseInt(countInput, 10) || 0) || 1)
+  const newBalance = Math.round((pending + fee) * 100) / 100
+  const schedule = newBalance > 0
+    ? buildInstallmentSchedule(newBalance, count, frequency, startDate)
+    : []
+  const firstAmount = schedule[0]?.amount ?? 0
+  const lastAmount = schedule[schedule.length - 1]?.amount ?? 0
+
+  const handleFrequency = (f: PaymentFrequency) => {
+    setFrequency(f)
+    if (!dateTouched) setStartDate(defaultFirstPaymentDate(f))
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (submitting) return
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      setError('La fecha de inicio no es válida.')
+      return
+    }
+    try {
+      setSubmitting(true)
+      setError(null)
+      const res = await restructureSalePayments(sale.id, {
+        feeAmount: fee,
+        installmentsCount: count,
+        frequency,
+        firstDueDate: startDate,
+      })
+      if (!res.success) {
+        setError(res.error || 'No se pudo reestructurar los pagos.')
+        return
+      }
+      onDone()
+    } catch (err: any) {
+      setError(err?.message || 'No se pudo reestructurar los pagos.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#111c2d]/50 backdrop-blur-sm p-0 sm:p-4">
+      <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-xl max-h-[92vh] overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#f0f3ff] sticky top-0 bg-white z-10">
+          <h2 className="font-bold text-sm text-[#00357f] uppercase tracking-wider">
+            Reestructurar pagos · Orden #{orderCodeFromSaleId(sale.id)}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-[#f0f3ff] text-[#737784] transition-colors cursor-pointer"
+            aria-label="Cerrar"
+          >
+            <X className="w-4.5 h-4.5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <p role="alert" className="rounded-lg px-3 py-2 text-[11px] font-bold bg-[#ffdad6] text-[#93000a]">
+              {error}
+            </p>
+          )}
+          <div className="bg-[#f9f9ff] border border-[#cbd5e1] rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-xs font-bold text-[#434653]">Saldo pendiente actual</span>
+            <span className="text-lg font-black font-mono text-[#ba1a1a]">{formatPrice(pending)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label htmlFor="restructure-fee" className="text-xs font-bold text-[#111c2d]">Costo por refinanciación</label>
+              <input
+                id="restructure-fee"
+                type="number"
+                min={0}
+                step="0.01"
+                value={feeInput}
+                onChange={e => setFeeInput(e.target.value)}
+                className="w-full bg-[#f9f9ff] border border-[#cbd5e1] rounded-xl px-3.5 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px] tabular-nums"
+              />
+              <p className="text-[10px] text-[#737784] font-semibold">Opcional: recargo por el atraso; $0 = sin costo.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="restructure-count" className="text-xs font-bold text-[#111c2d]">Número de pagos</label>
+              <input
+                id="restructure-count"
+                type="number"
+                min={1}
+                step={1}
+                value={countInput}
+                onChange={e => setCountInput(e.target.value)}
+                className="w-full bg-[#f9f9ff] border border-[#cbd5e1] rounded-xl px-3.5 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px] tabular-nums"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-[#111c2d]">Frecuencia</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'weekly', label: 'Semanal' },
+                { id: 'biweekly', label: 'Quincenal' },
+                { id: 'monthly', label: 'Mensual' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => handleFrequency(f.id as PaymentFrequency)}
+                  className={`py-2 text-sm font-semibold rounded-full border transition-all cursor-pointer min-h-[44px] flex items-center justify-center ${
+                    frequency === f.id
+                      ? 'bg-[#dee8ff] border-[#00357f]/40 text-[#00357f] font-bold'
+                      : 'bg-white border-[#cbd5e1] text-[#737784] hover:bg-[#dee8ff]/30'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="restructure-start" className="text-xs font-bold text-[#111c2d]">A partir de cuándo (primer pago)</label>
+            <input
+              id="restructure-start"
+              type="date"
+              value={startDate}
+              onChange={e => { setStartDate(e.target.value); setDateTouched(true) }}
+              className="w-full bg-[#f9f9ff] border border-[#cbd5e1] rounded-xl px-3.5 py-2.5 text-sm text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+            />
+          </div>
+          {schedule.length > 0 && (
+            <p className="text-xs font-bold text-[#00357f] bg-[#dee8ff]/50 border border-[#00357f]/15 rounded-xl px-3.5 py-2.5 leading-relaxed">
+              Debía {formatPrice(pending)} + refinanciación {formatPrice(fee)} = {formatPrice(newBalance)} en{' '}
+              {count} pagos {frequencyPlural(frequency)} de {formatPrice(firstAmount)}
+              {lastAmount !== firstAmount && <> (último de {formatPrice(lastAmount)})</>}
+              {' '}· primer pago el {formatDate(startDate)}
+            </p>
+          )}
+          <p className="text-[11px] text-[#737784] font-semibold leading-relaxed">
+            Las cuotas ya pagadas quedan como están y lo abonado no se toca. Las cuotas pendientes
+            (incluidas las parcialmente pagadas: su abono ya está neto en el saldo) se sustituyen por este plan.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-[#cbd5e1] text-xs font-bold text-[#434653] hover:bg-[#f0f3ff] transition-colors cursor-pointer min-h-[44px]"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || newBalance <= 0}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-[#00357f] hover:bg-[#004aad] text-white text-xs font-bold shadow-sm transition-colors cursor-pointer disabled:opacity-50 min-h-[44px]"
+            >
+              {submitting ? 'Guardando…' : 'Reestructurar pagos'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// Bloque «Historial de refinanciaciones» de una venta en Cobranza:
+// cada reestructura registrada (fecha, pagado y saldo previos, cuotas
+// sustituidas, recargo, nuevo total y el plan nuevo completo).
+function RefinancingHistory({ rows, formatPrice, formatDate }: {
+  rows: any[]
+  formatPrice: (n: number) => string
+  formatDate: (d: string) => string
+}) {
+  if (!rows || rows.length === 0) return null
+  return (
+    <div className="border-t border-[#cbd5e1]/40 bg-[#f9f9ff] px-5 py-4 space-y-3">
+      <h4 className="text-[10px] font-black uppercase tracking-wider text-[#00357f]">
+        Historial de refinanciaciones
+      </h4>
+      {rows.map((r: any) => (
+        <div key={r.id} className="text-xs font-medium text-[#434653] leading-relaxed border-l-2 border-[#00357f]/30 pl-3 space-y-0.5">
+          <p className="font-bold text-[#111c2d]">
+            {new Date(r.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
+            {' · '}Recargo: {formatPrice(Number(r.fee_amount || 0))}
+            {' · '}Nuevo total de la orden: {formatPrice(Number(r.new_total || 0))}
+          </p>
+          <p>
+            Llevaba pagado {formatPrice(Number(r.previous_paid_amount || 0))} y debía{' '}
+            {formatPrice(Number(r.previous_pending_balance || 0))}; se sustituyeron{' '}
+            {Number(r.replaced_installments || 0)} cuota{Number(r.replaced_installments || 0) !== 1 ? 's' : ''}.
+          </p>
+          <p>
+            Plan nuevo: {Number(r.installments_count || 0)} pagos {frequencyPlural(r.frequency)} de{' '}
+            {formatPrice(Number(r.installment_amount || 0))} · primer pago el {formatDate(r.first_due_date)}
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Modal «Actualizar datos» de la tarjeta Datos Generales (pedido del
 // dueño, 2026-11-19): edita SOLO nombre, teléfono (el de WhatsApp),
 // fecha de nacimiento y dirección — los datos que se capturan al dar
@@ -271,7 +501,9 @@ function EditCustomerDataModal({ customer, onClose, onSaved }: {
       return
     }
     const phoneValue = phone.trim()
-    if (phoneValue && phoneValue.replace(/[^\d]/g, '').length < 10) {
+    // La regla de los 10 dígitos corre sobre el número LOCAL, ya sin
+    // el prefijo elegido en el selector (+52 / +1 / otro).
+    if (phoneValue && splitPhonePrefix(phoneValue).local.length < 10) {
       setFeedback('El teléfono debe tener al menos 10 dígitos.')
       return
     }
@@ -347,13 +579,16 @@ function EditCustomerDataModal({ customer, onClose, onSaved }: {
           </div>
           <div>
             <label className={labelClass}>Teléfono (WhatsApp)</label>
-            <input
-              type="tel"
+            {/* Prefijo elegible (+52 default sin el «1», +1 u otro):
+                al abrir, el selector refleja el prefijo del número
+                guardado y al guardar se recompone «+prefijo número». */}
+            <PhoneInput
               value={phone}
-              onChange={e => setPhone(e.target.value)}
+              onChange={setPhone}
               disabled={submitting}
-              placeholder="Ej. 444 123 4567"
-              className={inputClass}
+              selectClassName="bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-2 py-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px] cursor-pointer shrink-0"
+              customPrefixClassName="w-[68px] shrink-0 bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-2 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+              inputClassName={inputClass}
             />
           </div>
           <div>
@@ -427,6 +662,11 @@ export default function CustomerDetailPage({ params }: PageProps) {
   // breve de confirmación (pedido del dueño, 2026-11-19).
   const [showEditDataModal, setShowEditDataModal] = useState(false)
   const [dataUpdated, setDataUpdated] = useState(false)
+  // Reestructuración de pagos (dictado 2026-11-19): historial por
+  // venta, la venta cuyo modal está abierto y el aviso de guardado.
+  const [refinancingsBySale, setRefinancingsBySale] = useState<Record<string, any[]>>({})
+  const [restructureTarget, setRestructureTarget] = useState<any | null>(null)
+  const [restructureDone, setRestructureDone] = useState(false)
 
   useEffect(() => {
     getReminderConfig().then(setReminderCfg).catch(() => setReminderCfg(null))
@@ -485,6 +725,19 @@ export default function CustomerDetailPage({ params }: PageProps) {
     tabRefs.current[activeTab]?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activeTab, loading])
 
+  // Historial de refinanciaciones por venta (degrada a vacío si la
+  // tabla aún no existe: el bloque simplemente no se pinta).
+  const loadRefinancings = useCallback(async (salesList: any[]) => {
+    try {
+      const entries = await Promise.all(
+        salesList.map(async (s: any) => [s.id, await getSaleRefinancings(s.id)] as const)
+      )
+      setRefinancingsBySale(Object.fromEntries(entries))
+    } catch {
+      // Sin historial visible si la lectura falla.
+    }
+  }, [])
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
@@ -503,13 +756,14 @@ export default function CustomerDetailPage({ params }: PageProps) {
         setExams(examsData)
         setSales(salesData)
         setInstallments(installmentsData)
+        loadRefinancings(salesData)
       }
     } catch (err: any) {
       setError(`Error al cargar los datos: ${err.message || 'Error inesperado.'}`)
     } finally {
       setLoading(false)
     }
-  }, [customerId])
+  }, [customerId, loadRefinancings])
 
   useEffect(() => {
     loadData()
@@ -544,10 +798,20 @@ export default function CustomerDetailPage({ params }: PageProps) {
       ])
       setSales(salesData)
       setInstallments(installmentsData)
+      loadRefinancings(salesData)
     } catch {
       // Si la recarga falla, la recarga completa sigue disponible.
     }
-  }, [customerId])
+  }, [customerId, loadRefinancings])
+
+  // Al guardar una reestructuración: cerrar el modal, avisar y
+  // recargar el dinero (la venta, sus cuotas y el historial nuevos).
+  const handleRestructureDone = useCallback(() => {
+    setRestructureTarget(null)
+    setRestructureDone(true)
+    reloadBilling()
+    setTimeout(() => setRestructureDone(false), 4000)
+  }, [reloadBilling])
 
   const getInitials = (name: string) =>
     name ? name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : 'P'
@@ -834,11 +1098,9 @@ export default function CustomerDetailPage({ params }: PageProps) {
     return { actual, anterior, rows }
   })()
 
-  // Teléfono del cliente listo para tel:/wa.me (con código de país).
-  const cleanPhone = (cp.phone || '').replace(/[^\d]/g, '')
-  const phoneWithCode = cleanPhone
-    ? (cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone)
-    : ''
+  // Teléfono del cliente listo para tel:/wa.me (con código de país,
+  // SIN el «1» mexicano): normalizador único de lib/phone.
+  const phoneWithCode = toWhatsAppNumber(cp.phone) || ''
 
   // Acciones rápidas de la cabecera: botones táctiles ≥44px, icono + texto.
   const quickActionClass = 'inline-flex items-center justify-center gap-1.5 min-h-[40px] px-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98] cursor-pointer shadow-sm'
@@ -1069,8 +1331,8 @@ export default function CustomerDetailPage({ params }: PageProps) {
                     {/* Recordatorio de Cita */}
                     <button
                       onClick={() => {
-                        const cleanPhone = cp.phone.replace(/[^\d]/g, '')
-                        const phoneWithCode = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone
+                        const phoneWithCode = toWhatsAppNumber(cp.phone)
+                        if (!phoneWithCode) return
                         const message = reminderCfg
                           ? buildReminderMessage(reminderCfg.template, {
                               nombre: customer.full_name.split(' ')[0] || customer.full_name,
@@ -1093,8 +1355,8 @@ export default function CustomerDetailPage({ params }: PageProps) {
                     {billing.pendingTotal > 0 && (
                       <button
                         onClick={() => {
-                          const cleanPhone = cp.phone.replace(/[^\d]/g, '')
-                          const phoneWithCode = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone
+                          const phoneWithCode = toWhatsAppNumber(cp.phone)
+                          if (!phoneWithCode) return
                           const message = buildPaymentReminderMessage(paymentTemplate, {
                             nombre: customer.full_name,
                             saldo: formatPrice(billing.pendingTotal),
@@ -1500,6 +1762,12 @@ export default function CustomerDetailPage({ params }: PageProps) {
               </span>
             </div>
 
+            {restructureDone && (
+              <p className="text-xs font-bold text-[#00422b] bg-[#e2f9ee] border border-[#49da9f]/40 rounded-xl px-3.5 py-2.5 flex items-center gap-2">
+                <Check className="w-4 h-4 shrink-0" /> Pagos reestructurados: la venta ya muestra su plan nuevo.
+              </p>
+            )}
+
             {/* Resumen de cobranza */}
             <div className="bg-white border border-[#cbd5e1] rounded-2xl p-4 sm:p-6 shadow-sm space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1568,6 +1836,16 @@ export default function CustomerDetailPage({ params }: PageProps) {
                         <span className={Number(sale.pending_balance || 0) > 0 ? 'text-[#ba1a1a] font-bold' : 'text-[#00422b] font-bold'}>
                           Resta: {formatPrice(Number(sale.pending_balance || 0))}
                         </span>
+                        {Number(sale.pending_balance || 0) > 0 && isAdminRole(viewerRole) && (
+                          <button
+                            type="button"
+                            onClick={() => setRestructureTarget(sale)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#00357f] text-white text-[11px] font-bold hover:bg-[#004aad] transition-colors cursor-pointer"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Reestructurar pagos
+                          </button>
+                        )}
                       </div>
 
                       <div className="p-4 space-y-3">
@@ -1631,6 +1909,11 @@ export default function CustomerDetailPage({ params }: PageProps) {
                           )
                         })}
                       </div>
+                      <RefinancingHistory
+                        rows={refinancingsBySale[sale.id] || []}
+                        formatPrice={formatPrice}
+                        formatDate={formatDate}
+                      />
                     </div>
                   )
                 })}
@@ -1648,6 +1931,16 @@ export default function CustomerDetailPage({ params }: PageProps) {
                       <span className="text-[#ba1a1a] font-bold">
                         Resta: {formatPrice(Number(sale.pending_balance || 0))}
                       </span>
+                      {isAdminRole(viewerRole) && (
+                        <button
+                          type="button"
+                          onClick={() => setRestructureTarget(sale)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#00357f] text-white text-[11px] font-bold hover:bg-[#004aad] transition-colors cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          Reestructurar pagos
+                        </button>
+                      )}
                     </div>
 
                     <div className="p-4">
@@ -1673,6 +1966,11 @@ export default function CustomerDetailPage({ params }: PageProps) {
                         />
                       </div>
                     </div>
+                    <RefinancingHistory
+                      rows={refinancingsBySale[sale.id] || []}
+                      formatPrice={formatPrice}
+                      formatDate={formatDate}
+                    />
                   </div>
                 ))}
               </div>
@@ -1686,6 +1984,16 @@ export default function CustomerDetailPage({ params }: PageProps) {
           customer={customer}
           onClose={() => setShowEditDataModal(false)}
           onSaved={handleDataSaved}
+        />
+      )}
+
+      {restructureTarget && (
+        <RestructurePaymentsModal
+          sale={restructureTarget}
+          formatPrice={formatPrice}
+          formatDate={formatDate}
+          onClose={() => setRestructureTarget(null)}
+          onDone={handleRestructureDone}
         />
       )}
     </main>

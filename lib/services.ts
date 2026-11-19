@@ -26,6 +26,12 @@ import {
 } from './appointments'
 import { getPeriodPayments } from './expenses'
 import {
+  buildInstallmentSchedule,
+  summarizePlan,
+  type PaymentPlanInput,
+  type PaymentPlanSummary,
+} from './payment-plan'
+import {
   PRODUCT_IMAGE_BUCKET,
   productImageExtension,
   validateProductImageFile,
@@ -382,6 +388,42 @@ export async function getSales(): Promise<(Sale & { customer_name?: string; sell
   }
 }
 
+/** Mensaje exacto al aplicar/cobrar un cupón que agotó sus usos. */
+export const COUPON_LIMIT_MESSAGE = 'Este cupón ya llegó a su límite de usos'
+
+/**
+ * Usos de un cupón = ventas guardadas con ese coupon_id (dictado
+ * 2026-11-19). En demo el conteo sale de las ventas mock.
+ */
+export async function getCouponUseCount(couponId: string): Promise<number> {
+  if (!couponId) return 0
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { count, error } = await supabase
+        .from('sales')
+        .select('id', { count: 'exact', head: true })
+        .eq('coupon_id', couponId)
+      if (!error && typeof count === 'number') return count
+      console.error('Coupon use count failed:', error?.message)
+    } catch (e) {
+      console.error('Coupon use count failed:', e)
+    }
+    return 0
+  }
+  return mockDb.MOCK_SALES.filter(s => s.coupon_id === couponId).length
+}
+
+/**
+ * True si el cupón tiene límite de usos y ya se alcanzó. max_uses
+ * NULL o ausente (columna aún sin migrar) = ilimitado.
+ */
+export async function isCouponExhausted(coupon: { id: string; max_uses?: number | null }): Promise<boolean> {
+  const limit = coupon.max_uses ?? null
+  if (limit === null) return false
+  return (await getCouponUseCount(coupon.id)) >= limit
+}
+
 /**
  * Service to register a new transaction sale (Staff only).
  */
@@ -395,6 +437,12 @@ export interface CreateSaleOptions {
   // created on the fly): the recorded sale must keep the prices actually
   // charged on screen, not re-price as a member sale after the fact.
   chargeAsWalkIn?: boolean
+  // Plan de pagos del POS (dictado 2026-11-19): si viene y la venta deja
+  // saldo con cliente registrado, createSale genera las cuotas en
+  // payment_installments. Si la inserción de cuotas falla, la venta se
+  // revierte completa (mismo rollback que las partidas): nunca queda
+  // una venta «con plan» a medias ni huérfana sin avisar.
+  paymentPlan?: PaymentPlanInput | null
 }
 
 export async function createSale(
@@ -450,6 +498,28 @@ export async function createSale(
       // the recorded total is what the customer actually owes/pays.
       const discountApplied = Math.min(Math.max(0, options?.discountApplied || 0), grossTotal)
       const total = grossTotal - discountApplied
+
+      // Límite de usos del cupón (dictado 2026-11-19): se revalida AL
+      // COBRAR, no solo al aplicar — si entre aplicar y cobrar otra
+      // venta alcanzó el límite, esta venta no se registra con el
+      // descuento y el POS muestra el error exacto. Si la columna
+      // max_uses aún no existe, la fila no la trae → ilimitado.
+      if (options?.couponId) {
+        try {
+          const { data: couponRow } = await supabase
+            .from('coupons')
+            .select('*')
+            .eq('id', options.couponId)
+            .maybeSingle()
+          const limit = (couponRow as any)?.max_uses ?? null
+          if (limit !== null && (await getCouponUseCount(options.couponId)) >= Number(limit)) {
+            throw new Error(COUPON_LIMIT_MESSAGE)
+          }
+        } catch (couponErr) {
+          if (couponErr instanceof Error && couponErr.message === COUPON_LIMIT_MESSAGE) throw couponErr
+          console.error('Coupon limit check failed; sale continues:', couponErr)
+        }
+      }
 
       const finalPaidAmount = paidAmount !== undefined ? paidAmount : total
       const pendingBalance = Math.max(0, total - finalPaidAmount)
@@ -559,6 +629,38 @@ export async function createSale(
           }
         }
 
+        // Plan de pagos del POS (dictado 2026-11-19): el saldo se
+        // divide en cuotas en payment_installments, SOLO con cliente
+        // registrado (seleccionado o dado de alta aunque sea solo con
+        // el nombre — el checkout ya resolvió su registro). Si la
+        // inserción de cuotas falla, la venta se revierte completa
+        // con el mismo rollback de las partidas: nunca queda una
+        // venta «con plan» a medias ni un saldo huérfano sin avisar.
+        let appliedPlan: PaymentPlanSummary | null = null
+        if (options?.paymentPlan && pendingBalance > 0 && options?.customerId) {
+          const schedule = buildInstallmentSchedule(
+            pendingBalance,
+            options.paymentPlan.installments,
+            options.paymentPlan.frequency,
+            options.paymentPlan.firstPaymentDate
+          )
+          const { error: planError } = await supabase
+            .from('payment_installments')
+            .insert(schedule.map(spec => ({
+              sale_id: saleData.id,
+              installment_number: spec.installment_number,
+              due_date: spec.due_date,
+              amount: spec.amount,
+              status: 'pending',
+              amount_paid: 0
+            })))
+          if (planError) {
+            await rollbackSale()
+            throw new Error(`La venta no se registró: no se pudo generar el plan de pagos (${planError.message}).`)
+          }
+          appliedPlan = summarizePlan(pendingBalance, options.paymentPlan, schedule)
+        }
+
         // Decrement stock for what was actually sold (grouped per product).
         // A stock failure is logged loudly but does not erase a completed
         // sale; the discrepancy stays visible in the error log.
@@ -596,7 +698,7 @@ export async function createSale(
           }
         }
 
-        return { sale: saleData }
+        return { sale: saleData, paymentPlan: appliedPlan }
       }
       // Database configured and the insert failed: report the real error.
       // Registering the sale only in the in-memory mock list would make
@@ -607,8 +709,25 @@ export async function createSale(
       throw e instanceof Error ? e : new Error('No se pudo registrar la venta en la base de datos.')
     }
   }
-  // Demo mode (no database configured): local mock registration.
-  return mockDb.addMockSale(customerName, items, paidAmount, paymentMethod)
+  // Demo mode (no database configured): local mock registration. El
+  // límite de usos del cupón también se valida aquí, con el conteo de
+  // las ventas mock que ya traen ese coupon_id.
+  if (options?.couponId) {
+    const coupon = mockDb.MOCK_COUPONS.find(c => c.id === options.couponId)
+    if (coupon && (coupon.max_uses ?? null) !== null) {
+      const uses = mockDb.MOCK_SALES.filter(s => s.coupon_id === coupon.id).length
+      if (uses >= Number(coupon.max_uses)) {
+        throw new Error(COUPON_LIMIT_MESSAGE)
+      }
+    }
+  }
+  return mockDb.addMockSale(customerName, items, paidAmount, paymentMethod, {
+    customerId: options?.customerId ?? null,
+    couponId: options?.couponId ?? null,
+    discountApplied: options?.discountApplied ?? 0,
+    notes: options?.notes ?? null,
+    plan: options?.paymentPlan && options?.customerId ? options.paymentPlan : null
+  })
 }
 
 /**
@@ -671,6 +790,156 @@ export async function getCoupons(): Promise<Coupon[]> {
     }
   }
   return mockDb.MOCK_COUPONS.filter(c => c.is_active)
+}
+
+/** Cupón con su conteo de usos (ventas guardadas con ese coupon_id). */
+export type CouponWithUses = Coupon & { uses: number }
+
+/**
+ * TODOS los cupones (activos e inactivos) con su conteo de usos, para
+ * la administración en Promociones (dictado 2026-11-19). El estado
+ * «agotado» se deriva del conteo: uses >= max_uses (con límite).
+ */
+export async function getAllCoupons(): Promise<CouponWithUses[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await withTimeout(
+        supabase.from('coupons').select('*').order('created_at', { ascending: false })
+      )
+      if (!error && data) {
+        const { data: saleRows } = await supabase
+          .from('sales')
+          .select('coupon_id')
+          .not('coupon_id', 'is', null)
+        const counts = new Map<string, number>()
+        for (const row of (saleRows || []) as any[]) {
+          if (row.coupon_id) counts.set(row.coupon_id, (counts.get(row.coupon_id) || 0) + 1)
+        }
+        return (data as Coupon[]).map(c => ({ ...c, uses: counts.get(c.id) || 0 }))
+      }
+      console.error('Error fetching all coupons from Supabase:', error?.message)
+    } catch (e) {
+      console.error('Supabase all-coupons fetch failed, falling back to mocks:', e)
+    }
+  }
+  return mockDb.MOCK_COUPONS.map(c => ({
+    ...c,
+    uses: mockDb.MOCK_SALES.filter(s => s.coupon_id === c.id).length
+  }))
+}
+
+export interface CouponInput {
+  code: string
+  discount_percent: number
+  valid_until: string
+  is_active: boolean
+  /** NULL = ilimitado. */
+  max_uses: number | null
+}
+
+/**
+ * Crea un cupón. Si la columna max_uses aún no existe en la base
+ * (migración sin aplicar), reintenta sin el campo: el cupón nace
+ * ilimitado en vez de fallar (degradación de la casa).
+ */
+export async function createCoupon(input: CouponInput): Promise<Coupon> {
+  if (isSupabaseConfigured()) {
+    const supabase = createBrowserClient()
+    const payload: any = { ...input, code: input.code.trim().toUpperCase() }
+    let { data, error } = await supabase.from('coupons').insert([payload]).select().single()
+    if (error && /max_uses/.test(error.message)) {
+      const { max_uses: _omit, ...withoutLimit } = payload
+      ;({ data, error } = await supabase.from('coupons').insert([withoutLimit]).select().single())
+    }
+    if (error || !data) throw new Error(error?.message || 'No se pudo crear el cupón.')
+    return data as Coupon
+  }
+  return mockDb.addMockCoupon({ ...input, code: input.code.trim().toUpperCase() })
+}
+
+/** Edita un cupón; misma degradación sin max_uses que createCoupon. */
+export async function updateCoupon(id: string, patch: Partial<CouponInput>): Promise<Coupon> {
+  if (isSupabaseConfigured()) {
+    const supabase = createBrowserClient()
+    const payload: any = { ...patch }
+    if (typeof payload.code === 'string') payload.code = payload.code.trim().toUpperCase()
+    let { data, error } = await supabase.from('coupons').update(payload).eq('id', id).select().single()
+    if (error && /max_uses/.test(error.message)) {
+      const { max_uses: _omit, ...withoutLimit } = payload
+      ;({ data, error } = await supabase.from('coupons').update(withoutLimit).eq('id', id).select().single())
+    }
+    if (error || !data) throw new Error(error?.message || 'No se pudo actualizar el cupón.')
+    return data as Coupon
+  }
+  const updated = mockDb.updateMockCoupon(id, patch)
+  if (!updated) throw new Error('Cupón no encontrado.')
+  return updated
+}
+
+/**
+ * Historial estructurado de refinanciaciones de una venta
+ * (sale_refinancings). Degrada a lista vacía si la tabla aún no
+ * existe: la ficha simplemente no muestra el bloque.
+ */
+export async function getSaleRefinancings(saleId: string): Promise<any[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = createBrowserClient()
+      const { data, error } = await supabase
+        .from('sale_refinancings' as any)
+        .select('*')
+        .eq('sale_id', saleId)
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.error('Refinancings fetch degraded (table may not exist yet):', error.message)
+        return []
+      }
+      return data || []
+    } catch (e) {
+      console.error('Refinancings fetch degraded:', e)
+      return []
+    }
+  }
+  return mockDb.MOCK_SALE_REFINANCINGS
+    .filter(r => r.sale_id === saleId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+}
+
+/**
+ * Reestructura los pagos de una venta con saldo (ficha → Cobranza,
+ * SOLO administrador — dictado 2026-11-19). Delega en la acción de
+ * servidor, que verifica el rol con la sesión real y aplica el
+ * recargo, sustituye las cuotas no liquidadas y registra el
+ * historial; en demo la misma acción opera sobre los mocks.
+ */
+export async function restructureSalePayments(
+  saleId: string,
+  input: {
+    feeAmount: number
+    installmentsCount: number
+    frequency: 'weekly' | 'biweekly' | 'monthly'
+    firstDueDate: string
+  }
+): Promise<{ success: boolean; error?: string }> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { restructureSalePaymentsAction } = await import('@/app/customers/actions')
+      const res = await restructureSalePaymentsAction(saleId, input)
+      if (res.error) return { success: false, error: res.error }
+      return { success: true }
+    } catch (e: any) {
+      console.error('Sale payments restructure failed:', e)
+      return { success: false, error: e?.message || 'No se pudo reestructurar los pagos.' }
+    }
+  }
+  // Demo mode: apply the same operation to the in-memory mocks HERE,
+  // in the browser — a server action would mutate the server's own
+  // mock copy and the file would never see the change (same pattern
+  // as updateCustomerGeneralData).
+  const result = mockDb.restructureMockSalePayments(saleId, input)
+  if (!result) return { success: false, error: 'No se encontró la venta a reestructurar.' }
+  return { success: true }
 }
 
 /**
@@ -1437,9 +1706,13 @@ export async function getMyNotifications(): Promise<any[]> {
  *
  * DEDUPLICATION RULE (two checks per appointment):
  *  1. The day aviso itself: a notification of this user with the exact
- *     title «Cita hoy {hora} — {nombre}». The title is unique per
- *     appointment (one live booking per slot, and the name is in it),
- *     so finding it means today's aviso already exists.
+ *     title «Cita hoy {hora} — {nombre}» created TODAY. The title is
+ *     unique per appointment (one live booking per slot, and the name
+ *     is in it), so finding one from today means today's aviso already
+ *     exists. The created-TODAY window matters: the title carries no
+ *     date, so the same customer at the same time on another day
+ *     produces the same title — an aviso from a previous day must NOT
+ *     silence today's (bug 2026-11-19).
  *  2. The creation aviso: if the booking was made TODAY for today, the
  *     database trigger already left a «Nueva Cita de Examen» aviso
  *     whose message carries this appointment's stamp
@@ -1449,8 +1722,27 @@ export async function getMyNotifications(): Promise<any[]> {
  *     its day aviso here even though its creation aviso exists.
  * In demo mode the same rule runs against MOCK_NOTIFICATIONS with a
  * deterministic id per appointment+day.
+ *
+ * SINGLE SOURCE + IN-FLIGHT LOCK (bug 2026-11-19): this ensure is
+ * invoked ONLY by the notification bell. It used to ALSO be invoked
+ * by the admin panel on the same page load; the two runs raced —
+ * both read «no aviso yet» before either inserted — and every cita
+ * got TWO identical avisos. As a second line of defense, concurrent
+ * calls share ONE in-flight run (the exported wrapper below), so
+ * even a double-mounted bell or a fast route change cannot overlap
+ * two read-then-insert cycles.
  */
-export async function ensureTodayAppointmentNotifications(): Promise<number> {
+let ensureTodayInFlight: Promise<number> | null = null
+
+export function ensureTodayAppointmentNotifications(): Promise<number> {
+  if (ensureTodayInFlight) return ensureTodayInFlight
+  ensureTodayInFlight = runEnsureTodayAppointmentNotifications().finally(() => {
+    ensureTodayInFlight = null
+  })
+  return ensureTodayInFlight
+}
+
+async function runEnsureTodayAppointmentNotifications(): Promise<number> {
   const todayISO = toLocalDateISO(new Date())
   let todays: Awaited<ReturnType<typeof listAppointmentsForDay>>
   try {
@@ -1497,7 +1789,15 @@ export async function ensureTodayAppointmentNotifications(): Promise<number> {
       let created = 0
       for (const appt of live) {
         const { title, message } = buildAviso(appt)
-        if (rows.some(r => r.title === title)) continue
+        // Check 1 with the TODAY window: only an aviso created today
+        // counts — the title has no date, so yesterday's same title
+        // (same customer, same time, another day) must not block.
+        if (
+          rows.some(
+            r => r.title === title && new Date(r.created_at).getTime() >= todayStart.getTime()
+          )
+        )
+          continue
         // The trigger writes «{nombre}, {DD/MM/YYYY} {HH:MM}» (HH24:MI).
         const stamp = `${d}/${m}/${y} ${appt.scheduled_time}`
         const coveredByCreation = rows.some(
@@ -1524,7 +1824,18 @@ export async function ensureTodayAppointmentNotifications(): Promise<number> {
   for (const appt of live) {
     const { title, message } = buildAviso(appt)
     const id = `mock-appt-today-${appt.id}-${todayISO}`
-    if (mockDb.MOCK_NOTIFICATIONS.some(n => n.id === id || n.title === title)) continue
+    // Same TODAY window as the real path: the deterministic id is
+    // already per appointment+day; the title fallback only counts
+    // for avisos created today (another day's same title must not
+    // silence today's aviso).
+    if (
+      mockDb.MOCK_NOTIFICATIONS.some(
+        n =>
+          n.id === id ||
+          (n.title === title && toLocalDateISO(new Date(n.created_at)) === todayISO)
+      )
+    )
+      continue
     mockDb.MOCK_NOTIFICATIONS.unshift({
       id,
       user_id: 'staff-demo',

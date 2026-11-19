@@ -37,9 +37,9 @@ export function buildReminderMessage(
     .replaceAll('{meses}', String(values.meses))
 }
 
-/** Normalizes a Mexican phone number to wa.me international format. */
-export function toWhatsAppNumber(phone: string): string | null {
-  const clean = (phone || '').replace(/[^\d]/g, '')
-  if (!clean) return null
-  return clean.length === 10 ? `52${clean}` : clean
-}
+/**
+ * La normalización de teléfonos vive en lib/phone.ts (fuente única,
+ * dictado del dueño 2026-11-19); se re-exporta aquí para los
+ * consumidores históricos de este módulo.
+ */
+export { toWhatsAppNumber } from './phone'
