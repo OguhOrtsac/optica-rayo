@@ -8,7 +8,13 @@ import * as mockDb from '@/lib/mocks'
 import { addMonthsISO, DEFAULT_REMINDER_MONTHS, REMINDER_MONTHS_KEY } from '@/lib/reminder-config'
 import { buildClinicalHistoryFromFormData, hasClinicalHistory } from '@/lib/clinical-history'
 import { effectiveClientPrice, MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT } from '@/lib/pricing'
-import { isStaffRole } from '@/lib/roles'
+import { isAdminRole, isStaffRole } from '@/lib/roles'
+import {
+  buildInstallmentSchedule,
+  isPaymentFrequency,
+  type PaymentFrequency,
+} from '@/lib/payment-plan'
+import { splitPhonePrefix } from '@/lib/phone'
 
 /**
  * True when a real Supabase project is configured (same env check the
@@ -105,6 +111,14 @@ export async function registerCustomerAction(currentState: RegisterCustomerState
 
   if (!username || !fullName) {
     return { error: 'El nombre de usuario y nombre completo son obligatorios.', success: null, customerId: null }
+  }
+
+  // Teléfono opcional en los registros rápidos y obligatorio en el
+  // alta completa (eso lo exige el formulario); cuando viene, la
+  // regla de los 10 dígitos corre sobre el número LOCAL, ya sin el
+  // prefijo capturado (+52 / +1 / otro) — dictado del dueño 2026-11-19.
+  if (phone && phone.trim() && splitPhonePrefix(phone).local.length < 10) {
+    return { error: 'El teléfono debe tener al menos 10 dígitos.', success: null, customerId: null }
   }
 
   const formattedEmail = formatToEmail(username)
@@ -613,11 +627,24 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
     if (couponCode) {
       const { data: couponData } = await supabase
         .from('coupons')
-        .select('id, discount_percent, is_active, valid_until')
+        .select('*')
         .eq('code', couponCode)
         .single()
 
       if (couponData && couponData.is_active && new Date(couponData.valid_until) > new Date()) {
+        // Límite de usos (dictado 2026-11-19): un uso = una venta
+        // guardada con este coupon_id. Si la columna max_uses aún no
+        // existe, la fila no la trae → ilimitado.
+        const limit = (couponData as any).max_uses ?? null
+        if (limit !== null) {
+          const { count } = await supabase
+            .from('sales')
+            .select('id', { count: 'exact', head: true })
+            .eq('coupon_id', couponData.id)
+          if ((count ?? 0) >= Number(limit)) {
+            return { error: 'Este cupón ya llegó a su límite de usos', success: null }
+          }
+        }
         couponId = couponData.id
         discountPercent = couponData.discount_percent
       } else if (couponCode) {
@@ -1575,8 +1602,9 @@ export async function updateCustomerGeneralDataAction(customerId: string, data: 
     return { success: null, error: 'El nombre completo es obligatorio.' }
   }
   if (phone) {
-    const digits = phone.replace(/[^\d]/g, '')
-    if (digits.length < 10) {
+    // La regla corre sobre el número LOCAL, ya sin el prefijo
+    // elegido en la captura (+52 / +1 / otro).
+    if (splitPhonePrefix(phone).local.length < 10) {
       return { success: null, error: 'El teléfono debe tener al menos 10 dígitos.' }
     }
   }
@@ -1665,5 +1693,227 @@ export async function updateCustomerGeneralDataAction(customerId: string, data: 
   } catch (err: any) {
     console.error('updateCustomerGeneralDataAction failed:', err)
     return { success: null, error: `No se pudieron actualizar los datos: ${err.message || 'error inesperado.'}` }
+  }
+}
+
+/**
+ * Reestructura los pagos de una venta con saldo pendiente (dictado
+ * 2026-11-19, ficha del cliente → Cobranza): SOLO administrador /
+ * superadministrador — la verificación de rol corre aquí, en el
+ * servidor, con la sesión real (el botón de la ficha es solo la
+ * puerta amable; un vendedor u optometrista que invoque la acción
+ * por fuera es rechazado).
+ *
+ * Efecto: el costo por refinanciación (si lo hay) es un recargo real
+ * — suma a total y a pending_balance de la venta y deja línea
+ * fechada en sus notas —; las cuotas NO liquidadas se retiran y se
+ * insertan las nuevas dividiendo el saldo resultante (Σ EXACTA, la
+ * última absorbe el redondeo), y la operación queda en el historial
+ * estructurado sale_refinancings. Las cuotas liquidadas por completo
+ * quedan como historial y paid_amount NO se toca. Las parcialmente
+ * pagadas se sustituyen como las demás pendientes: lo abonado en
+ * ellas ya vive neto en el paid_amount de la venta, así que no se
+ * pierde — el plan nuevo divide el pending_balance vigente.
+ *
+ * Los avisos de cobro (campanita, WhatsApp de cobranza, Pagos
+ * diferidos y la propia Cobranza) leen EN VIVO de
+ * payment_installments y del saldo de la venta: no existe en el
+ * código ningún aviso payment_reminder creado con montos/fechas
+ * congelados, así que al sustituir las cuotas todas esas vistas
+ * reflejan el plan nuevo sin regeneración extra.
+ */
+export async function restructureSalePaymentsAction(
+  saleId: string,
+  input: {
+    feeAmount: number
+    installmentsCount: number
+    frequency: string
+    firstDueDate: string
+  }
+): Promise<{ success: string | null; error: string | null }> {
+  if (!saleId) {
+    return { success: null, error: 'Venta requerida.' }
+  }
+  const fee = Number(input?.feeAmount)
+  if (!Number.isFinite(fee) || fee < 0) {
+    return { success: null, error: 'El costo por refinanciación no es válido.' }
+  }
+  const feeRounded = Math.round(fee * 100) / 100
+  const count = Math.floor(Number(input?.installmentsCount))
+  if (!Number.isFinite(count) || count < 1 || count > 60) {
+    return { success: null, error: 'El número de pagos debe ser entre 1 y 60.' }
+  }
+  if (!isPaymentFrequency(input?.frequency || '')) {
+    return { success: null, error: 'La frecuencia no es válida.' }
+  }
+  const frequency = input.frequency as PaymentFrequency
+  const firstDueDate = (input?.firstDueDate || '').trim()
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(firstDueDate) ||
+    isNaN(new Date(`${firstDueDate}T12:00:00`).getTime())
+  ) {
+    return { success: null, error: 'La fecha de inicio no es válida.' }
+  }
+
+  if (!isSupabaseConfigured()) {
+    // Demo mode: the same operation over the in-memory mocks.
+    const result = mockDb.restructureMockSalePayments(saleId, {
+      feeAmount: feeRounded,
+      installmentsCount: count,
+      frequency,
+      firstDueDate,
+    })
+    if (!result) {
+      return { success: null, error: 'No se encontró la venta a reestructurar.' }
+    }
+    revalidatePath('/customers', 'layout')
+    revalidatePath('/payments')
+    return { success: 'Pagos reestructurados con éxito.', error: null }
+  }
+
+  try {
+    // 1. Verify the caller is signed in and is ADMIN (owner /
+    //    super_admin) — vendedor y optometrista quedan fuera aunque
+    //    invoquen la acción directamente.
+    const sessionClient = await createClient()
+    const { data: { user } } = await sessionClient.auth.getUser()
+    if (!user) {
+      return { success: null, error: 'Sesión no válida. Vuelve a iniciar sesión.' }
+    }
+
+    const adminClient = createAdminClient() as any
+    const { data: callerProfile } = await adminClient
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (!isAdminRole(callerProfile?.role)) {
+      return { success: null, error: 'Solo el administrador puede reestructurar pagos.' }
+    }
+
+    // 2. La venta y sus cuotas actuales.
+    const { data: sale, error: saleError } = await adminClient
+      .from('sales')
+      .select('id, customer_id, total, paid_amount, pending_balance, notes')
+      .eq('id', saleId)
+      .single()
+    if (saleError || !sale) {
+      return { success: null, error: 'No se encontró la venta a reestructurar.' }
+    }
+
+    const previousPaid = Number(sale.paid_amount || 0)
+    const previousPending = Number(sale.pending_balance || 0)
+    if (previousPending <= 0) {
+      return { success: null, error: 'Esta venta ya no tiene saldo pendiente.' }
+    }
+
+    const { data: installments, error: instError } = await adminClient
+      .from('payment_installments')
+      .select('id, installment_number, amount, amount_paid, status')
+      .eq('sale_id', saleId)
+    if (instError) {
+      return { success: null, error: `No se pudieron leer las cuotas actuales: ${instError.message}` }
+    }
+
+    const isSettled = (i: any) =>
+      i.status === 'paid' || Number(i.amount_paid || 0) >= Number(i.amount || 0)
+    const kept = (installments || []).filter(isSettled)
+    const replaced = (installments || []).filter((i: any) => !isSettled(i))
+
+    const newPending = Math.round((previousPending + feeRounded) * 100) / 100
+    const newTotal = Math.round((Number(sale.total || 0) + feeRounded) * 100) / 100
+
+    // 3. Retirar las cuotas NO liquidadas (las liquidadas quedan).
+    if (replaced.length > 0) {
+      const { error: delError } = await adminClient
+        .from('payment_installments')
+        .delete()
+        .in('id', replaced.map((i: any) => i.id))
+      if (delError) {
+        return { success: null, error: `No se pudieron retirar las cuotas anteriores: ${delError.message}` }
+      }
+    }
+
+    // 4. Cuotas nuevas sobre el saldo resultante, numeración tras las
+    //    conservadas; Σ EXACTA == pending_balance resultante.
+    const startNumber =
+      kept.reduce((m: number, i: any) => Math.max(m, Number(i.installment_number || 0)), 0) + 1
+    const schedule = buildInstallmentSchedule(newPending, count, frequency, firstDueDate, startNumber)
+    const { error: insError } = await adminClient
+      .from('payment_installments')
+      .insert(
+        schedule.map(spec => ({
+          sale_id: saleId,
+          installment_number: spec.installment_number,
+          due_date: spec.due_date,
+          amount: spec.amount,
+          status: 'pending',
+          amount_paid: 0,
+        }))
+      )
+    if (insError) {
+      return {
+        success: null,
+        error: `No se pudieron crear las cuotas nuevas: ${insError.message}. La venta conserva su saldo y puede reestructurarse de nuevo.`,
+      }
+    }
+
+    // 5. Recargo real sobre la orden + línea fechada en notas.
+    if (feeRounded > 0) {
+      const fecha = new Date().toLocaleDateString('es-MX', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+      const linea = `Refinanciación ${fecha}: +$${feeRounded.toFixed(2)} por reestructura de pagos`
+      const notes = sale.notes ? `${sale.notes}\n${linea}` : linea
+      const { error: updError } = await adminClient
+        .from('sales')
+        .update({ total: newTotal, pending_balance: newPending, notes })
+        .eq('id', saleId)
+      if (updError) {
+        return {
+          success: null,
+          error: `Las cuotas nuevas ya se crearon, pero no se pudo aplicar el recargo a la venta: ${updError.message}`,
+        }
+      }
+    }
+
+    // 6. Historial estructurado. Si la tabla aún no existe, la
+    //    reestructura ya quedó aplicada y la línea en notas es el
+    //    respaldo: se registra el fallo y se sigue.
+    const { error: histError } = await adminClient
+      .from('sale_refinancings')
+      .insert([
+        {
+          sale_id: saleId,
+          customer_id: sale.customer_id,
+          created_by: user.id,
+          previous_paid_amount: previousPaid,
+          previous_pending_balance: previousPending,
+          replaced_installments: replaced.length,
+          fee_amount: feeRounded,
+          new_total: newTotal,
+          installments_count: count,
+          frequency,
+          first_due_date: firstDueDate,
+          installment_amount: schedule[0]?.amount ?? 0,
+        },
+      ])
+    if (histError) {
+      console.error(
+        'Refinancing history insert failed (restructure applied; notes line is the backup):',
+        histError.message
+      )
+    }
+
+    revalidatePath('/customers', 'layout')
+    if (sale.customer_id) revalidatePath(`/customers/${sale.customer_id}`, 'layout')
+    revalidatePath('/payments')
+    return { success: 'Pagos reestructurados con éxito.', error: null }
+  } catch (err: any) {
+    console.error('restructureSalePaymentsAction failed:', err)
+    return { success: null, error: `No se pudo reestructurar los pagos: ${err.message || 'error inesperado.'}` }
   }
 }

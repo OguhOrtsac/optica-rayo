@@ -9,6 +9,7 @@ import {
   getCustomerInstallments
 } from '@/lib/services'
 import PageHeader from '@/components/page-header'
+import { toWhatsAppNumber } from '@/lib/phone'
 import {
   Search,
   User,
@@ -264,10 +265,9 @@ export default function PaymentsPage() {
   const formatDate = (dateStr: string) =>
     parseLocalDate(dateStr).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
 
-  // Teléfono del cliente seleccionado, listo para tel:/wa.me con código
-  // de país (mismo formato que la ficha del cliente).
-  const cleanPhone = (selectedCustomer?.customer_profiles?.phone || '').replace(/[^\d]/g, '')
-  const phoneWithCode = cleanPhone ? (cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone) : ''
+  // Teléfono del cliente seleccionado, listo para tel:/wa.me con
+  // código de país — normalizador único de lib/phone (sin el «1»).
+  const phoneWithCode = toWhatsAppNumber(selectedCustomer?.customer_profiles?.phone) || ''
 
   // Semáforo del modal: la banda superior lleva el color del estado del
   // cliente (rojo si hay cuota vencida, ámbar si debe sin vencer, verde

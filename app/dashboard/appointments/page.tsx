@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { registerCustomerAction } from '@/app/customers/actions'
+import PhoneInput from '@/components/phone-input'
 import {
   agendaDayNumber,
   cancelAppointment,
@@ -688,12 +689,13 @@ export default function StaffAppointmentsPage() {
                         </div>
                         <div>
                           <label className="block text-[13px] font-semibold text-[#434653] mb-1">Teléfono (opcional)</label>
-                          <input
-                            type="tel"
+                          {/* Prefijo elegible (+52 default sin el «1»): quickPhone guarda el valor compuesto */}
+                          <PhoneInput
                             value={quickPhone}
-                            onChange={e => setQuickPhone(e.target.value)}
-                            placeholder="Ej. (555) 123-4567"
-                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                            onChange={setQuickPhone}
+                            selectClassName="bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-2 py-2.5 text-sm text-[#111c2d] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors cursor-pointer shrink-0"
+                            customPrefixClassName="w-[72px] shrink-0 bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-2 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                            inputClassName="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-3 py-2.5 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
                           />
                         </div>
                         <div>

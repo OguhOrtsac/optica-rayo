@@ -1,4 +1,10 @@
 import { Database } from '@/types/database.types'
+import {
+  buildInstallmentSchedule,
+  summarizePlan,
+  type PaymentPlanInput,
+  type PaymentPlanSummary,
+} from './payment-plan'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Coupon = Database['public']['Tables']['coupons']['Row']
@@ -283,7 +289,7 @@ export let MOCK_PRODUCTS: Product[] = [
   }
 ]
 
-// Initial mock coupons
+// Initial mock coupons (max_uses NULL = ilimitado, dictado 2026-11-19)
 export let MOCK_COUPONS: Coupon[] = [
   {
     id: 'c1',
@@ -291,7 +297,8 @@ export let MOCK_COUPONS: Coupon[] = [
     discount_percent: 15,
     valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
     is_active: true,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    max_uses: null
   },
   {
     id: 'c2',
@@ -299,7 +306,8 @@ export let MOCK_COUPONS: Coupon[] = [
     discount_percent: 10,
     valid_until: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
     is_active: true,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    max_uses: null
   },
   {
     id: 'c3',
@@ -307,7 +315,8 @@ export let MOCK_COUPONS: Coupon[] = [
     discount_percent: 20,
     valid_until: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // expired
     is_active: true,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    max_uses: null
   }
 ]
 
@@ -368,6 +377,29 @@ export let MOCK_SALES: (Sale & { customer_name?: string; seller_name?: string })
     payment_method: 'card',
     status: 'Entregado',
     created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    // Venta a plazos de Carlos Mendoza: total $2,400, anticipo $800 y
+    // una cuota de $400 ya pagada (paid_amount $1,200); el plan original
+    // dividió el saldo de $1,600 en 4 cuotas quincenales de $400 y
+    // quedan 3 pendientes = saldo $1,200. Es el caso de verificación de
+    // la REESTRUCTURACIÓN (dictado 2026-11-19): +$200 y 4 quincenales
+    // deben dar saldo $1,400 en 4 cuotas de $350 con la pagada intacta.
+    id: 's3',
+    customer_id: 'cust-1',
+    customer_name: 'Carlos Mendoza',
+    seller_id: 'sell-1',
+    seller_name: 'Patricia Vendedora',
+    exam_id: null,
+    coupon_id: null,
+    discount_applied: 0,
+    notes: null,
+    total: 2400.00,
+    paid_amount: 1200.00,
+    pending_balance: 1200.00,
+    payment_method: 'cash',
+    status: 'Anticipo_Pagado',
+    created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
   }
 ]
 
@@ -398,6 +430,16 @@ export let MOCK_SALE_ITEMS: SaleItem[] = [
     product_id: 'p4',
     quantity: 1,
     price: 2450.00,
+    is_complement: false,
+    complement_name: null,
+    complement_for: null
+  },
+  {
+    id: 'si4',
+    sale_id: 's3',
+    product_id: 'p2',
+    quantity: 2,
+    price: 1200.00,
     is_complement: false,
     complement_name: null,
     complement_for: null
@@ -434,14 +476,21 @@ export function reorderMockProducts(orderedIds: string[]) {
 }
 
 export function addMockSale(
-  customerName: string, 
-  items: { productId: string; quantity: number }[],
+  customerName: string,
+  items: { productId: string; quantity: number; complements?: { name: string; price: number }[] }[],
   paidAmount?: number,
-  paymentMethod?: 'cash' | 'card' | 'transfer'
-) {
-  const customerId = 'cust_' + Math.random().toString(36).substr(2, 9)
-  
-  let total = 0
+  paymentMethod?: 'cash' | 'card' | 'transfer',
+  extras?: {
+    customerId?: string | null
+    couponId?: string | null
+    discountApplied?: number
+    notes?: string | null
+    plan?: PaymentPlanInput | null
+  }
+): { sale: (typeof MOCK_SALES)[number]; items: SaleItem[]; paymentPlan: PaymentPlanSummary | null } {
+  const customerId = extras?.customerId || 'cust_' + Math.random().toString(36).substr(2, 9)
+
+  let grossTotal = 0
   const saleId = 's_' + Math.random().toString(36).substr(2, 9)
   const itemsToAdd: SaleItem[] = []
 
@@ -449,7 +498,7 @@ export function addMockSale(
     const product = MOCK_PRODUCTS.find(p => p.id === item.productId)
     if (product) {
       const price = product.price
-      total += price * item.quantity
+      grossTotal += price * item.quantity
       itemsToAdd.push({
         id: 'si_' + Math.random().toString(36).substr(2, 9),
         sale_id: saleId,
@@ -460,11 +509,29 @@ export function addMockSale(
         complement_name: null,
         complement_for: null
       })
+      // Complements persist as their own rows, like the real createSale.
+      for (const c of item.complements || []) {
+        if (!c.name?.trim()) continue
+        const cPrice = Math.max(0, c.price || 0)
+        grossTotal += cPrice * item.quantity
+        itemsToAdd.push({
+          id: 'si_' + Math.random().toString(36).substr(2, 9),
+          sale_id: saleId,
+          product_id: null,
+          quantity: item.quantity,
+          price: cPrice,
+          is_complement: true,
+          complement_name: c.name.trim(),
+          complement_for: product.name
+        })
+      }
       // Decrement stock
       updateMockProductStock(item.productId, Math.max(0, product.stock - item.quantity))
     }
   })
 
+  const discountApplied = Math.min(Math.max(0, extras?.discountApplied || 0), grossTotal)
+  const total = grossTotal - discountApplied
   const finalPaidAmount = paidAmount !== undefined ? paidAmount : total
   const pendingBalance = Math.max(0, total - finalPaidAmount)
 
@@ -483,9 +550,9 @@ export function addMockSale(
     seller_id: 'sell-current',
     seller_name: 'Vendedor Actual',
     exam_id: null,
-    coupon_id: null,
-    discount_applied: 0,
-    notes: null,
+    coupon_id: extras?.couponId || null,
+    discount_applied: discountApplied,
+    notes: extras?.notes?.trim() ? extras.notes.trim() : null,
     total,
     paid_amount: finalPaidAmount,
     pending_balance: pendingBalance,
@@ -496,6 +563,33 @@ export function addMockSale(
 
   MOCK_SALES = [newSale, ...MOCK_SALES]
   MOCK_SALE_ITEMS = [...MOCK_SALE_ITEMS, ...itemsToAdd]
+
+  // Plan de pagos del POS (dictado 2026-11-19): las cuotas mock
+  // equivalentes, para que Cobranza y Pagos diferidos las muestren
+  // igual que con base real.
+  let paymentPlan: PaymentPlanSummary | null = null
+  if (extras?.plan && pendingBalance > 0) {
+    const schedule = buildInstallmentSchedule(
+      pendingBalance,
+      extras.plan.installments,
+      extras.plan.frequency,
+      extras.plan.firstPaymentDate
+    )
+    MOCK_PAYMENT_INSTALLMENTS = [
+      ...MOCK_PAYMENT_INSTALLMENTS,
+      ...schedule.map(spec => ({
+        id: 'i_' + Math.random().toString(36).substr(2, 9),
+        sale_id: saleId,
+        installment_number: spec.installment_number,
+        due_date: new Date(`${spec.due_date}T12:00:00`).toISOString(),
+        amount: spec.amount,
+        amount_paid: 0,
+        status: 'pending' as const,
+        created_at: new Date().toISOString()
+      }))
+    ]
+    paymentPlan = summarizePlan(pendingBalance, extras.plan, schedule)
+  }
 
   // Create a auto reminder for 12 months from now for this new sale
   const newReminder: Reminder & { customer_name?: string } = {
@@ -509,7 +603,104 @@ export function addMockSale(
   }
   MOCK_REMINDERS = [newReminder, ...MOCK_REMINDERS]
 
-  return { sale: newSale, items: itemsToAdd }
+  return { sale: newSale, items: itemsToAdd, paymentPlan }
+}
+
+/**
+ * Demo-mode counterpart of the restructure server action
+ * (app/customers/actions.ts): same math and same invariants — el
+ * recargo suma a total y pending_balance, las cuotas NO liquidadas se
+ * sustituyen (las parciales también: lo abonado ya vive neto en el
+ * paid_amount de la venta y el plan nuevo divide el saldo vigente),
+ * las liquidadas quedan intactas y Σ cuotas nuevas == saldo nuevo.
+ */
+export function restructureMockSalePayments(
+  saleId: string,
+  input: { feeAmount: number; installmentsCount: number; frequency: 'weekly' | 'biweekly' | 'monthly'; firstDueDate: string }
+): { sale: (typeof MOCK_SALES)[number]; refinancing: MockSaleRefinancing } | null {
+  const sale = MOCK_SALES.find(s => s.id === saleId)
+  if (!sale) return null
+
+  const isSettled = (i: MockPaymentInstallment) =>
+    i.status === 'paid' || Number(i.amount_paid || 0) >= Number(i.amount || 0)
+  const saleInsts = MOCK_PAYMENT_INSTALLMENTS.filter(i => i.sale_id === saleId)
+  const kept = saleInsts.filter(isSettled)
+  const replaced = saleInsts.filter(i => !isSettled(i))
+
+  const fee = Math.max(0, input.feeAmount || 0)
+  const previousPaid = Number(sale.paid_amount || 0)
+  const previousPending = Number(sale.pending_balance || 0)
+  const newPending = previousPending + fee
+  const newTotal = Number(sale.total || 0) + fee
+
+  sale.total = newTotal
+  sale.pending_balance = newPending
+  if (fee > 0) {
+    const fecha = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
+    const linea = `Refinanciación ${fecha}: +$${fee.toFixed(2)} por reestructura de pagos`
+    sale.notes = sale.notes ? `${sale.notes}\n${linea}` : linea
+  }
+
+  MOCK_PAYMENT_INSTALLMENTS = MOCK_PAYMENT_INSTALLMENTS.filter(
+    i => !(i.sale_id === saleId && !isSettled(i))
+  )
+  const startNumber = kept.reduce((m, i) => Math.max(m, i.installment_number), 0) + 1
+  const schedule = buildInstallmentSchedule(
+    newPending,
+    input.installmentsCount,
+    input.frequency,
+    input.firstDueDate,
+    startNumber
+  )
+  MOCK_PAYMENT_INSTALLMENTS = [
+    ...MOCK_PAYMENT_INSTALLMENTS,
+    ...schedule.map(spec => ({
+      id: 'i_' + Math.random().toString(36).substr(2, 9),
+      sale_id: saleId,
+      installment_number: spec.installment_number,
+      due_date: new Date(`${spec.due_date}T12:00:00`).toISOString(),
+      amount: spec.amount,
+      amount_paid: 0,
+      status: 'pending' as const,
+      created_at: new Date().toISOString()
+    }))
+  ]
+
+  const refinancing: MockSaleRefinancing = {
+    id: 'ref_' + Math.random().toString(36).substr(2, 9),
+    sale_id: saleId,
+    customer_id: sale.customer_id,
+    created_at: new Date().toISOString(),
+    created_by: null,
+    previous_paid_amount: previousPaid,
+    previous_pending_balance: previousPending,
+    replaced_installments: replaced.length,
+    fee_amount: fee,
+    new_total: newTotal,
+    installments_count: Math.max(1, Math.floor(input.installmentsCount) || 1),
+    frequency: input.frequency,
+    first_due_date: input.firstDueDate,
+    installment_amount: schedule[0]?.amount ?? 0
+  }
+  MOCK_SALE_REFINANCINGS = [refinancing, ...MOCK_SALE_REFINANCINGS]
+
+  return { sale, refinancing }
+}
+
+/** Demo-mode coupon writes (espejo de createCoupon/updateCoupon). */
+export function addMockCoupon(input: Omit<Coupon, 'id' | 'created_at'>): Coupon {
+  const coupon: Coupon = {
+    ...input,
+    id: 'c_' + Math.random().toString(36).substr(2, 9),
+    created_at: new Date().toISOString()
+  }
+  MOCK_COUPONS = [coupon, ...MOCK_COUPONS]
+  return coupon
+}
+
+export function updateMockCoupon(id: string, patch: Partial<Coupon>): Coupon | null {
+  MOCK_COUPONS = MOCK_COUPONS.map(c => (c.id === id ? { ...c, ...patch } : c))
+  return MOCK_COUPONS.find(c => c.id === id) ?? null
 }
 
 export function updateMockSaleStatus(id: string, newStatus: 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado') {
@@ -712,10 +903,31 @@ export interface MockPaymentInstallment {
   installment_number: number
   due_date: string
   amount: number
+  amount_paid?: number
   status: 'pending' | 'paid'
   payment_date?: string
   created_at: string
 }
+
+/** Registro demo de una refinanciación (espejo de sale_refinancings). */
+export interface MockSaleRefinancing {
+  id: string
+  sale_id: string
+  customer_id: string | null
+  created_at: string
+  created_by: string | null
+  previous_paid_amount: number
+  previous_pending_balance: number
+  replaced_installments: number
+  fee_amount: number
+  new_total: number
+  installments_count: number
+  frequency: 'weekly' | 'biweekly' | 'monthly'
+  first_due_date: string
+  installment_amount: number
+}
+
+export let MOCK_SALE_REFINANCINGS: MockSaleRefinancing[] = []
 
 export interface MockNotification {
   id: string
@@ -738,7 +950,52 @@ export interface MockLensRequest {
   created_at: string
 }
 
-export let MOCK_PAYMENT_INSTALLMENTS: MockPaymentInstallment[] = []
+// Plan original de la venta s3: saldo de $1,600 en 4 cuotas quincenales
+// de $400; la primera ya se pagó y quedan 3 pendientes ($1,200 = el
+// pending_balance de la venta).
+export let MOCK_PAYMENT_INSTALLMENTS: MockPaymentInstallment[] = [
+  {
+    id: 'i_s3_1',
+    sale_id: 's3',
+    installment_number: 1,
+    due_date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+    amount: 400,
+    amount_paid: 400,
+    status: 'paid',
+    payment_date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+    created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'i_s3_2',
+    sale_id: 's3',
+    installment_number: 2,
+    due_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+    amount: 400,
+    amount_paid: 0,
+    status: 'pending',
+    created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'i_s3_3',
+    sale_id: 's3',
+    installment_number: 3,
+    due_date: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
+    amount: 400,
+    amount_paid: 0,
+    status: 'pending',
+    created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'i_s3_4',
+    sale_id: 's3',
+    installment_number: 4,
+    due_date: new Date(Date.now() + 35 * 24 * 60 * 60 * 1000).toISOString(),
+    amount: 400,
+    amount_paid: 0,
+    status: 'pending',
+    created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString()
+  }
+]
 export let MOCK_NOTIFICATIONS: MockNotification[] = [
   {
     id: 'n1',

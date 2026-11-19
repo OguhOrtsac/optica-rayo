@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { registerCustomerAction, RegisterCustomerState } from '@/app/customers/actions'
 import { checkPhoneDuplicate } from '@/lib/services'
+import { splitPhonePrefix } from '@/lib/phone'
+import PhoneInput from '@/components/phone-input'
 import PageHeader from '@/components/page-header'
 import { ArrowLeft, User, FileText, CheckCircle, ShieldAlert, PlusCircle, Sparkles } from 'lucide-react'
 
@@ -61,33 +63,25 @@ export default function NewCustomerPage() {
     }
   }, [state?.customerId, router])
 
-  // Phone input formatting
-  const handlePhoneChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawVal = e.target.value;
-    const formatted = formatPhoneNumber(rawVal);
-    setPhone(formatted);
+  // El teléfono se captura con prefijo elegible (PhoneInput) y el
+  // estado guarda el valor COMPUESTO «+<prefijo> <número local>» —
+  // ese mismo valor viaja en el campo oculto name="phone" y es el
+  // que se contrasta contra duplicados (mismo formato guardado).
+  const phoneLocalDigits = splitPhonePrefix(phone).local
+  const phoneComplete = phoneLocalDigits.length >= 10
 
-    // Clean phone for duplicate check
-    const digits = formatted.replace(/[^\d]/g, '');
-    if (digits.length >= 10) {
+  const handlePhoneChange = async (composed: string) => {
+    setPhone(composed)
+
+    // Duplicate check once the local number is complete (10 digits)
+    if (splitPhonePrefix(composed).local.length >= 10) {
       setCheckingPhone(true)
-      const isDuplicate = await checkPhoneDuplicate(formatted)
+      const isDuplicate = await checkPhoneDuplicate(composed)
       setPhoneError(isDuplicate)
       setCheckingPhone(false)
     } else {
       setPhoneError(false)
     }
-  }
-
-  const formatPhoneNumber = (value: string) => {
-    if (!value) return value
-    const phoneNumber = value.replace(/[^\d]/g, '')
-    const phoneNumberLength = phoneNumber.length
-    if (phoneNumberLength < 4) return phoneNumber
-    if (phoneNumberLength < 7) {
-      return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3)}`
-    }
-    return `(${phoneNumber.slice(0, 3)}) ${phoneNumber.slice(3, 6)}-${phoneNumber.slice(6, 10)}`
   }
 
   // Adjust numeric optometric fields
@@ -245,20 +239,25 @@ export default function NewCustomerPage() {
                   {checkingPhone && <span className="text-[10px] text-[#737784]">Verificando...</span>}
                   {phoneError && <span className="text-[10px] text-[#ba1a1a] font-bold">Ya registrado</span>}
                 </div>
-                <input 
-                  name="phone" 
-                  type="tel" 
-                  required
-                  disabled={isPending}
+                {/* Prefijo elegible: +52 por default SIN el «1», +1
+                    u otro tecleado. El valor compuesto viaja en el
+                    campo oculto name="phone". */}
+                <input type="hidden" name="phone" value={phone} />
+                <PhoneInput
                   value={phone}
                   onChange={handlePhoneChange}
-                  placeholder="Ej. (555) 123-4567"
-                  className={`w-full bg-[#f0f3ff] border rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:outline-none focus:ring-1 transition-colors min-h-[44px] ${
-                    phoneError 
-                      ? 'border-[#ba1a1a] focus:ring-[#ba1a1a]' 
+                  disabled={isPending}
+                  selectClassName="bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-2 py-2.5 text-xs text-[#111c2d] focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px] cursor-pointer shrink-0"
+                  customPrefixClassName="w-[68px] shrink-0 bg-[#f0f3ff] border border-[#cbd5e1] rounded-lg px-2 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:border-[#00357f] focus:ring-1 focus:ring-[#00357f] outline-none min-h-[44px]"
+                  inputClassName={`w-full bg-[#f0f3ff] border rounded-lg px-4 py-2.5 text-xs text-[#111c2d] placeholder-[#737784]/60 focus:outline-none focus:ring-1 transition-colors min-h-[44px] ${
+                    phoneError
+                      ? 'border-[#ba1a1a] focus:ring-[#ba1a1a]'
                       : 'border-[#cbd5e1] focus:border-[#00357f] focus:ring-[#00357f]'
-                  }`} 
+                  }`}
                 />
+                {phone && !phoneComplete && (
+                  <p className="text-[10px] text-[#ba1a1a] font-bold mt-1.5">El teléfono debe tener al menos 10 dígitos.</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-bold text-[#434653] uppercase tracking-wider mb-2">Fecha de Nacimiento</label>
@@ -524,7 +523,7 @@ export default function NewCustomerPage() {
             
             <button 
               type="submit" 
-              disabled={isPending || !!state?.customerId || phoneError}
+              disabled={isPending || !!state?.customerId || phoneError || !phoneComplete}
               className="w-2/3 bg-[#00357f] hover:bg-[#004aad] text-white font-bold py-3.5 px-4 rounded-xl shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer text-xs uppercase min-h-[44px]"
             >
               {isPending ? (

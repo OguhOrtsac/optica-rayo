@@ -188,33 +188,36 @@ export default function MainMenu({ items, isAuthenticated, displayName, initials
     }
   }, [open ])
 
-  // `color` es el tono del chip: en entradas directas, el de su propio
-  // icono; en subentradas, el heredado de su grupo. En la entrada activa
-  // la pastilla de marca manda en el renglón y el chip pasa a blanco,
-  // conservando su icono en su color para no perder el código de color.
+  // `color` es el tono del chip en entradas directas (el de su propio
+  // icono) y el del panel/encabezado en los grupos. En la entrada
+  // directa activa la pastilla de marca manda en el renglón y el chip
+  // pasa a blanco, conservando su icono en su color. Las SUBENTRADAS
+  // ya no usan `color` para su letra ni su icono: van en negro
+  // (#111c2d) por dictado del dueño (2026-11-19, ver la rama nested).
   const renderLink = (link: MainMenuLink, color: MenuColor, nested = false) => {
     const Icon = ICONS[link.icon]
     const active = pathname === link.href
     if (nested) {
-      // Dictado del dueño (2026-11-18): los submenús se veían «muertos»
-      // del mismo color blanco/gris del cajón. Ahora viven sobre un
-      // panel tintado con el color suave de su grupo (ver renderGroup):
-      // el texto va en el tono fuerte del grupo, el chip es blanco y la
-      // subentrada activa es una pastilla blanca que resalta sobre el
-      // tinte.
+      // El panel del grupo expandido conserva el tinte suave de su
+      // grupo (dictado 2026-11-18, ver renderGroup), pero la LETRA y
+      // el ICONO de cada subentrada van en NEGRO — el texto principal
+      // de la app, #111c2d — también en la activa (dictado del dueño,
+      // 2026-11-19: con todo en el color fuerte del grupo «se pierde
+      // todo en el mismo color»). La activa se sigue distinguiendo
+      // por su pastilla blanca con sombra.
       return (
         <Link
           key={`${link.label}-${link.href}`}
           href={link.href}
           aria-current={active ? 'page' : undefined}
-          style={{ color: active ? '#00357f' : color.fg }}
+          style={{ color: '#111c2d' }}
           className={`flex min-h-11 items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00357f] ${
             active ? 'bg-white shadow-sm' : 'hover:bg-white/60 active:bg-white/80'
           }`}
         >
           <span
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-            style={{ backgroundColor: active ? '#ffffff' : 'rgba(255,255,255,0.65)', color: color.fg }}
+            style={{ backgroundColor: active ? '#ffffff' : 'rgba(255,255,255,0.65)', color: '#111c2d' }}
           >
             <Icon className="h-4 w-4 shrink-0" />
           </span>

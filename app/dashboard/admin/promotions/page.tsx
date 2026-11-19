@@ -28,6 +28,7 @@ import {
   type Promotion,
 } from '@/lib/services'
 import PageHeader from '@/components/page-header'
+import AdminCouponsSection from '@/components/admin-coupons'
 
 // Promotions are created and managed ONLY by the administrator
 // (owner / super_admin) — the owner's rule: sellers do NOT create
@@ -460,6 +461,10 @@ export default function AdminPromotionsPage() {
           })}
         </div>
       )}
+
+      {/* Cupones de descuento (tabla coupons): límite de usos y
+          consumo derivado de las ventas (dictado 2026-11-19) */}
+      <AdminCouponsSection />
 
       {/* Create / Edit Modal */}
       {formOpen && (
