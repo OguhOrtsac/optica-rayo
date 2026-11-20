@@ -160,7 +160,7 @@ export async function renderTicketImageBlob(data: TicketData): Promise<Blob> {
   if (parts.discount) {
     rows.push(
       amountRow(
-        `Descuento${parts.discount.detail ? ` (${parts.discount.detail})` : ''}`,
+        parts.discount.detail ? `Descuento (${parts.discount.detail}):` : 'Descuento:',
         `−${formatTicketPrice(parts.discount.amount)}`,
         `700 25px ${FONT_STACK}`,
         GREEN,

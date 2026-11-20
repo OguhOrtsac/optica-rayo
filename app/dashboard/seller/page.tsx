@@ -7,7 +7,6 @@ import {
   getReminders,
   searchCustomers,
   getCoupons,
-  getMemberDiscountPercent,
   getReminderConfig,
   getMessageTemplate,
   COUPON_LIMIT_MESSAGE,
@@ -24,7 +23,6 @@ import {
 import { registerCustomerAction } from '@/app/customers/actions'
 import PageHeader from '@/components/page-header'
 import PhoneInput from '@/components/phone-input'
-import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDetails } from '@/lib/product-data'
 import { DEFAULT_REMINDER_MONTHS } from '@/lib/reminder-config'
 import { toWhatsAppNumber } from '@/lib/phone'
@@ -122,7 +120,6 @@ export default function SellerDashboard() {
   const [reminders, setReminders] = useState<(Reminder & { customer_name?: string })[]>([])
   const [customers, setCustomers] = useState<CustomerProfile[]>([])
   const [coupons, setCoupons] = useState<Coupon[]>([])
-  const [memberDiscount, setMemberDiscount] = useState(0)
   const [loading, setLoading] = useState(true)
 
   // Mobile active tab for POS mode ('products' or 'cart')
@@ -158,7 +155,7 @@ export default function SellerDashboard() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [couponCode, setCouponCode] = useState('')
   const [activeCoupon, setActiveCoupon] = useState<Coupon | null>(null)
-  // Manual counter discount (see ManualDiscount): the form drafts live
+  // Counter discount (see ManualDiscount): the form drafts live
   // separately from the applied discount, like the coupon code does.
   const [manualMode, setManualMode] = useState<'percent' | 'finalPrice'>('percent')
   const [manualPercentInput, setManualPercentInput] = useState('')
@@ -201,14 +198,12 @@ export default function SellerDashboard() {
 
   const loadAllData = async () => {
     try {
-      const [productsData, remindersData, customersData, couponsData, memberPctData] = await Promise.all([
+      const [productsData, remindersData, customersData, couponsData] = await Promise.all([
         getProducts(),
         getReminders(),
         searchCustomers(''),
-        getCoupons(),
-        getMemberDiscountPercent()
+        getCoupons()
       ])
-      setMemberDiscount(memberPctData)
       setProducts(productsData)
       setReminders(remindersData)
       setCustomers(customersData)
@@ -379,14 +374,13 @@ export default function SellerDashboard() {
     setRemoveCandidate(null)
   }
 
-  // Member pricing at the counter: when the selected buyer is a registered
-  // customer (profile role 'customer'), the unit price is the client price
-  // (special client_price, else the general member discount). createSale
-  // recomputes with exactly this rule, so screen and stored totals match.
-  // A typed-in walk-in name (no selected profile) keeps visitor prices.
-  const isClientBuyer = selectedCustomer?.role === 'customer'
-  const unitPriceOf = (p: Product) =>
-    isClientBuyer ? effectiveClientPrice(p.price, p.client_price, memberDiscount) : p.price
+  // Precios en el mostrador (dictado del dueño, 2026-11-19): seleccionar
+  // un cliente registrado NO modifica el precio del producto — la venta
+  // siempre es a precio de lista, y createSale guarda exactamente eso.
+  // El descuento lo pone el vendedor a mano (descuento % /
+  // precio final) o con cupón. El precio de cliente con su descuento
+  // sigue viviendo solo en el catálogo, en la página del propio cliente.
+  const unitPriceOf = (p: Product) => p.price
 
   // Complements are charged per unit of their product (same rule as the
   // lens treatments elsewhere in the app); a price of 0 adds nothing.
@@ -394,13 +388,20 @@ export default function SellerDashboard() {
     item.complements.reduce((sum, c) => sum + c.price, 0)
 
   // Real-time mathematics (products + their complements)
-  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + ((unitPriceOf(item.product) + complementsUnitTotal(item)) * item.quantity), 0), [cart, isClientBuyer, memberDiscount])
+  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + ((unitPriceOf(item.product) + complementsUnitTotal(item)) * item.quantity), 0), [cart])
   
-  // Validate and apply coupon. A coupon and a manual discount never
-  // stack (owner's rule): applying the coupon removes the manual one.
+  // Validate and apply coupon. A coupon and the counter discount never
+  // stack (owner's rule): applying the coupon removes the other one.
+  // Limpiar el campo y dar «Aplicar» quita el cupón aplicado.
   const handleApplyCoupon = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!couponCode.trim()) return
+    if (!couponCode.trim()) {
+      if (activeCoupon) {
+        setActiveCoupon(null)
+        showFeedback('success', 'Cupón retirado.')
+      }
+      return
+    }
 
     const matched = coupons.find(c => c.code.toUpperCase() === couponCode.trim().toUpperCase())
     if (matched && matched.is_active && new Date(matched.valid_until) > new Date()) {
@@ -413,17 +414,22 @@ export default function SellerDashboard() {
         showFeedback('error', COUPON_LIMIT_MESSAGE)
         return
       }
-      const replacedManual = !!activeManualDiscount
+      const replacedDiscount = !!activeManualDiscount
       setActiveCoupon(matched)
-      if (replacedManual) setActiveManualDiscount(null)
-      showFeedback('success', `Cupón "${matched.code}" aplicado con ${matched.discount_percent}% de descuento.${replacedManual ? ' Se quitó el descuento manual: los descuentos no se combinan.' : ''}`)
+      if (replacedDiscount) {
+        setActiveManualDiscount(null)
+        setManualPercentInput('')
+        setManualFinalPriceInput('')
+        setManualReason('')
+      }
+      showFeedback('success', `Cupón "${matched.code}" aplicado con ${matched.discount_percent}% de descuento.${replacedDiscount ? ' Se quitó el descuento: los descuentos no se combinan.' : ''}`)
     } else {
       setActiveCoupon(null)
       showFeedback('error', 'El cupón no es válido o ha expirado.')
     }
   }
 
-  // Apply the manual counter discount (percentage or final price).
+  // Apply the counter discount (percentage or final price).
   // Applying it removes any active coupon — they never stack.
   const handleApplyManualDiscount = (e: React.FormEvent) => {
     e.preventDefault()
@@ -456,19 +462,23 @@ export default function SellerDashboard() {
       setActiveCoupon(null)
       setCouponCode('')
     }
-    showFeedback('success', `Descuento manual aplicado.${replacedCoupon ? ' Se quitó el cupón: los descuentos no se combinan.' : ''}`)
+    showFeedback('success', `Descuento aplicado.${replacedCoupon ? ' Se quitó el cupón: los descuentos no se combinan.' : ''}`)
   }
 
   // «Quitar» next to the discount line: clears whichever discount
-  // origin is active (coupon or manual).
+  // origin is active (coupon or counter discount) and their drafts,
+  // so the fields return to their neutral state.
   const handleRemoveDiscount = () => {
     setActiveCoupon(null)
     setCouponCode('')
     setActiveManualDiscount(null)
+    setManualPercentInput('')
+    setManualFinalPriceInput('')
+    setManualReason('')
     showFeedback('success', 'Descuento retirado.')
   }
 
-  // The discount comes from the single active origin: coupon OR manual.
+  // The discount comes from the single active origin: coupon OR counter.
   const discount = useMemo(() => {
     if (activeCoupon) return subtotal * (activeCoupon.discount_percent / 100)
     if (!activeManualDiscount) return 0
@@ -477,14 +487,64 @@ export default function SellerDashboard() {
       : Math.max(0, subtotal - activeManualDiscount.finalPrice)
   }, [activeCoupon, activeManualDiscount, subtotal])
 
-  // Full label of the active discount for the summary line.
+  // Full label of the active discount for the summary line. The counter
+  // discount carries its MOTIVO when one was written (dictado del
+  // dueño, 2026-11-19): «Descuento (motivo):»; sin motivo, «Descuento:».
   const discountLabel = activeCoupon
     ? `Descuento cupón ${activeCoupon.code} (${activeCoupon.discount_percent}%)`
-    : activeManualDiscount?.mode === 'percent'
-      ? `Descuento manual (${activeManualDiscount.percent}%)`
-      : activeManualDiscount
-        ? 'Descuento por precio final'
-        : 'Descuento'
+    : activeManualDiscount
+      ? activeManualDiscount.reason
+        ? `Descuento (${activeManualDiscount.reason}):`
+        : 'Descuento:'
+      : 'Descuento'
+
+  // Estados visuales de los campos de cupón y descuento (dictado del
+  // dueño, 2026-11-19): VERDE = aplicado tal cual está tecleado;
+  // ÁMBAR = hay un cambio tecleado SIN aplicar (incluye cambiar solo
+  // el motivo); NEUTRO = nada aplicado ni tecleado. Se derivan del
+  // valor realmente aplicado, así que al cobrar o vaciar el carrito
+  // vuelven solos a neutro.
+  type FieldState = 'applied' | 'dirty' | 'neutral'
+  const couponFieldState: FieldState = activeCoupon
+    ? couponCode.trim().toUpperCase() === activeCoupon.code.toUpperCase()
+      ? 'applied'
+      : 'dirty'
+    : couponCode.trim()
+      ? 'dirty'
+      : 'neutral'
+  const discountDraftMatchesApplied =
+    !!activeManualDiscount &&
+    manualMode === activeManualDiscount.mode &&
+    manualReason.trim() === activeManualDiscount.reason &&
+    (activeManualDiscount.mode === 'percent'
+      ? parseFloat(manualPercentInput.trim().replace(',', '.')) === activeManualDiscount.percent
+      : parseFloat(manualFinalPriceInput.trim().replace(',', '.')) === activeManualDiscount.finalPrice)
+  const discountFieldState: FieldState = activeManualDiscount
+    ? discountDraftMatchesApplied
+      ? 'applied'
+      : 'dirty'
+    : manualPercentInput.trim() || manualFinalPriceInput.trim() || manualReason.trim()
+      ? 'dirty'
+      : 'neutral'
+  const fieldToneClass = (state: FieldState) =>
+    state === 'applied'
+      ? 'bg-[#e2f9ee] border-[#00422b]/60 text-[#00422b] focus:bg-[#e2f9ee] focus:border-[#00422b] focus:ring-[#00422b]/25'
+      : state === 'dirty'
+        ? 'bg-[#fef3c7] border-[#92400e]/60 text-[#92400e] focus:bg-[#fef3c7] focus:border-[#92400e] focus:ring-[#92400e]/25'
+        : 'bg-[#f9f9ff] border-[#dee8ff] text-[#111c2d] focus:bg-white focus:border-[#00357f] focus:ring-[#00357f]/25'
+
+  // Si el carrito se vacía, cupón y descuento se reinician por
+  // completo (borradores incluidos): sus estados vuelven a neutro.
+  useEffect(() => {
+    if (cart.length === 0) {
+      setActiveCoupon(null)
+      setCouponCode('')
+      setActiveManualDiscount(null)
+      setManualPercentInput('')
+      setManualFinalPriceInput('')
+      setManualReason('')
+    }
+  }, [cart.length])
   const taxableBase = useMemo(() => subtotal - discount, [subtotal, discount])
   // Sin desglose de IVA (dictado del dueño, 2026-11-19): los precios
   // ya lo incluyen y el resumen solo lo anota con una línea de texto;
@@ -711,30 +771,25 @@ export default function SellerDashboard() {
       const discountNoteLine = discount > 0
         ? activeCoupon
           ? `Descuento: cupón ${activeCoupon.code} (${activeCoupon.discount_percent}%) −${formatPrice(discount)}`
-          : activeManualDiscount?.mode === 'percent'
-            ? `Descuento: manual ${activeManualDiscount.percent}% −${formatPrice(discount)}${discountReason ? ` · Motivo: ${discountReason}` : ''}`
-            : activeManualDiscount
-              ? `Descuento: precio final de ${formatPrice(subtotal)} a ${formatPrice(activeManualDiscount.finalPrice)} (−${formatPrice(discount)})${discountReason ? ` · Motivo: ${discountReason}` : ''}`
-              : ''
+          : activeManualDiscount
+            ? discountReason
+              ? `Descuento (${discountReason}): −${formatPrice(discount)}`
+              : `Descuento: −${formatPrice(discount)}`
+            : ''
         : ''
 
-      // Short explanation of the discount for the WhatsApp ticket.
+      // Detalle del descuento para el ticket (texto e imagen): el
+      // MOTIVO del descuento de mostrador, o el cupón aplicado. Es el
+      // mismo motivo que se guarda en sales.discount_reason.
       const ticketDiscountDetail = discount > 0
-        ? [
-            activeCoupon
-              ? `cupón ${activeCoupon.code}`
-              : activeManualDiscount?.mode === 'percent'
-                ? `${activeManualDiscount.percent}%`
-                : activeManualDiscount
-                  ? 'precio final'
-                  : '',
-            discountReason
-          ].filter(Boolean).join(' · ') || undefined
+        ? activeCoupon
+          ? `cupón ${activeCoupon.code}`
+          : discountReason || undefined
         : undefined
 
       // Ticket snapshot BEFORE registering/clearing: the lines with the
-      // prices actually charged on screen (client price when it applied)
-      // and the money figures of this exact sale.
+      // prices actually charged on screen (always list price) and the
+      // money figures of this exact sale.
       const ticketLines: TicketLine[] = cart.map(item => ({
         name: item.product.name,
         quantity: item.quantity,
@@ -760,12 +815,13 @@ export default function SellerDashboard() {
         customerId: buyer?.id || null,
         couponId: activeCoupon?.id || null,
         discountApplied: discount,
+        discountReason: activeManualDiscount?.reason?.trim() || null,
         notes: saleNotes.trim()
           ? [saleNotes.trim(), discountNoteLine].filter(Boolean).join('\n')
           : discountNoteLine || undefined,
-        // The buyer was resolved from the typed name at checkout (exact
-        // match or minimal profile just created): the screen charged
-        // visitor prices, so the recorded sale keeps those prices.
+        // La pantalla siempre cobra precios de lista (dictado
+        // 2026-11-19), así que la venta guardada trae esos precios haya
+        // o no cliente seleccionado.
         chargeAsWalkIn: !selectedCustomer && !!buyer,
         paymentPlan: requestedPlan,
       })
@@ -811,7 +867,7 @@ export default function SellerDashboard() {
         showFeedback('error', 'La venta se registró, pero el plan de pagos no se generó. El saldo quedó sin plan a plazos.')
       }
 
-      // Clear POS state (coupon AND manual discount, like the rest)
+      // Clear POS state (coupon AND counter discount, like the rest)
       setCart([])
       setCustomerSearch('')
       setSelectedCustomer(null)
@@ -1176,12 +1232,9 @@ export default function SellerDashboard() {
                             </div>
                             <div className="mt-4 flex justify-between items-end w-full pt-3 border-t border-[#dee8ff]/70">
                               <div className="space-y-0.5">
-                                <span className="block text-[11px] text-[#737784] font-semibold">{isClientBuyer && unitPriceOf(p) !== p.price ? 'Precio cliente' : 'Precio'}</span>
+                                <span className="block text-[11px] text-[#737784] font-semibold">Precio</span>
                                 <span className="block text-lg font-extrabold text-[#00357f] tabular-nums leading-none">
                                   {formatPrice(unitPriceOf(p))}
-                                  {isClientBuyer && unitPriceOf(p) !== p.price && (
-                                    <span className="ml-1.5 text-sm line-through text-[#737784] font-medium">{formatPrice(p.price)}</span>
-                                  )}
                                 </span>
                               </div>
                               <span className="flex items-center gap-1 bg-[#00357f] text-white text-xs font-bold pl-2.5 pr-3 min-h-[36px] rounded-full group-hover:bg-[#00509e] transition-colors">
@@ -1493,38 +1546,43 @@ export default function SellerDashboard() {
                         </p>
                       )}
 
-                      {isClientBuyer && (
-                        <p className="text-xs font-semibold text-[#00422b] bg-[#e2f9ee] border border-[#00422b]/20 rounded-xl px-3 py-2.5 text-left">
-                          Cliente registrado: se aplica su precio de cliente en esta venta.
-                        </p>
-                      )}
+                      {/* Apply Coupon — el campo se ilumina según su
+                          estado: verde aplicado, ámbar cambio sin
+                          aplicar (dictado del dueño, 2026-11-19). */}
+                      <div className="space-y-1.5">
+                        <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Cupón (ej. RAYO15)"
+                            value={couponCode}
+                            onChange={(e) => setCouponCode(e.target.value)}
+                            disabled={subtotal === 0}
+                            className={`w-2/3 border rounded-xl px-4 py-2 text-sm placeholder-[#737784] focus:ring-2 outline-none min-h-[44px] uppercase transition-colors ${fieldToneClass(couponFieldState)}`}
+                          />
+                          <button
+                            type="submit"
+                            disabled={subtotal === 0}
+                            className="w-1/3 bg-white border border-[#dee8ff] text-sm font-bold rounded-xl text-[#00357f] hover:bg-[#dee8ff]/30 min-h-[44px] cursor-pointer transition-colors"
+                          >
+                            Aplicar
+                          </button>
+                        </form>
+                        {couponFieldState === 'applied' && (
+                          <p className="text-xs font-bold text-[#00422b] text-left">Cupón aplicado</p>
+                        )}
+                        {couponFieldState === 'dirty' && (
+                          <p className="text-xs font-bold text-[#92400e] text-left">Cambio sin aplicar</p>
+                        )}
+                      </div>
 
-                      {/* Apply Coupon */}
-                      <form onSubmit={handleApplyCoupon} className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Cupón (ej. RAYO15)"
-                          value={couponCode}
-                          onChange={(e) => setCouponCode(e.target.value)}
-                          disabled={subtotal === 0}
-                          className="w-2/3 bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] uppercase transition-colors"
-                        />
-                        <button
-                          type="submit"
-                          disabled={subtotal === 0}
-                          className="w-1/3 bg-white border border-[#dee8ff] text-sm font-bold rounded-xl text-[#00357f] hover:bg-[#dee8ff]/30 min-h-[44px] cursor-pointer transition-colors"
-                        >
-                          Aplicar
-                        </button>
-                      </form>
-
-                      {/* Manual counter discount (owner's dictation):
+                      {/* Counter discount (owner's dictation):
                           percentage OR final price, with an optional
-                          reason. Exclusive with the coupon — applying
-                          one removes the other. */}
+                          MOTIVO. Exclusive with the coupon — applying
+                          one removes the other. Same field states as
+                          the coupon: green applied, amber unapplied. */}
                       <div className="space-y-2.5 border-t border-[#f0f3ff] pt-3.5">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[13px] font-semibold text-[#434653]">Descuento manual</span>
+                          <span className="text-[13px] font-semibold text-[#434653]">Descuento</span>
                           <div className="flex bg-[#f0f3ff] rounded-full p-0.5 shrink-0">
                             <button
                               type="button"
@@ -1557,7 +1615,7 @@ export default function SellerDashboard() {
                               value={manualPercentInput}
                               onChange={(e) => setManualPercentInput(e.target.value)}
                               disabled={subtotal === 0}
-                              className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] tabular-nums transition-colors"
+                              className={`w-full border rounded-xl px-4 py-2 text-sm placeholder-[#737784] focus:ring-2 outline-none min-h-[44px] tabular-nums transition-colors ${fieldToneClass(discountFieldState)}`}
                             />
                           ) : (
                             <input
@@ -1568,7 +1626,7 @@ export default function SellerDashboard() {
                               value={manualFinalPriceInput}
                               onChange={(e) => setManualFinalPriceInput(e.target.value)}
                               disabled={subtotal === 0}
-                              className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] tabular-nums transition-colors"
+                              className={`w-full border rounded-xl px-4 py-2 text-sm placeholder-[#737784] focus:ring-2 outline-none min-h-[44px] tabular-nums transition-colors ${fieldToneClass(discountFieldState)}`}
                             />
                           )}
                           <input
@@ -1577,7 +1635,7 @@ export default function SellerDashboard() {
                             value={manualReason}
                             onChange={(e) => setManualReason(e.target.value)}
                             disabled={subtotal === 0}
-                            className="w-full bg-[#f9f9ff] border border-[#dee8ff] rounded-xl px-4 py-2 text-sm text-[#111c2d] placeholder-[#737784] focus:bg-white focus:border-[#00357f] focus:ring-2 focus:ring-[#00357f]/25 outline-none min-h-[44px] transition-colors"
+                            className={`w-full border rounded-xl px-4 py-2 text-sm placeholder-[#737784] focus:ring-2 outline-none min-h-[44px] transition-colors ${fieldToneClass(discountFieldState)}`}
                           />
                           <button
                             type="submit"
@@ -1587,8 +1645,16 @@ export default function SellerDashboard() {
                             Aplicar descuento
                           </button>
                         </form>
+                        {discountFieldState === 'applied' && (
+                          <p className="text-xs font-bold text-[#00422b] text-left">
+                            {activeManualDiscount?.reason ? `Descuento aplicado: ${activeManualDiscount.reason}` : 'Descuento aplicado'}
+                          </p>
+                        )}
+                        {discountFieldState === 'dirty' && (
+                          <p className="text-xs font-bold text-[#92400e] text-left">Cambio sin aplicar</p>
+                        )}
                         <p className="text-[11px] font-medium text-[#737784]">
-                          El descuento manual y el cupón no se combinan: aplicar uno quita el otro.
+                          El descuento y el cupón no se combinan: aplicar uno quita el otro.
                         </p>
                       </div>
 
@@ -1870,9 +1936,6 @@ export default function SellerDashboard() {
               )}
               <p className="text-lg font-extrabold text-[#00357f] tabular-nums">
                 {formatPrice(unitPriceOf(complementModal.product))}
-                {isClientBuyer && unitPriceOf(complementModal.product) !== complementModal.product.price && (
-                  <span className="ml-1.5 text-sm line-through text-[#737784] font-medium">{formatPrice(complementModal.product.price)}</span>
-                )}
               </p>
             </div>
 

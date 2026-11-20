@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient as createBrowserClient } from '@/utils/supabase/client'
-import { logout } from '@/app/auth/actions'
+import { logout, getMyMemberDiscountPercent } from '@/app/auth/actions'
 import {
   ensureCustomerNotifications,
   getCoupons,
@@ -17,7 +17,6 @@ import {
   getLensTreatments,
   createLensRequest,
   getReminderConfig,
-  getMemberDiscountPercent,
   getActivePromotions,
   type Promotion
 } from '@/lib/services'
@@ -170,7 +169,9 @@ export default function CustomerDashboard() {
           getLensMaterials(),
           getLensTreatments(),
           getReminderConfig(),
-          getMemberDiscountPercent()
+          // Su % efectivo (general + extra en su mes de cumpleaños) lo
+          // calcula el servidor desde su propia fecha de nacimiento.
+          getMyMemberDiscountPercent()
         ])
 
         setCoupons(couponsData)

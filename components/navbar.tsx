@@ -90,6 +90,16 @@ export default async function Navbar() {
           links: [
             { label: 'Realizar venta', href: '/dashboard/seller', icon: 'pos' },
             { label: 'Historial de ventas', href: '/dashboard/seller/historial', icon: 'history' },
+            // «Pedidos en proceso» va A LA PAR del Historial (dictado
+            // del dueño, 2026-11-19): el Historial es solo lo entregado
+            // y aquí vive todo lo demás, con su estatus movible y el
+            // aviso de «listo» por WhatsApp.
+            { label: 'Pedidos en proceso', href: '/dashboard/seller/pedidos', icon: 'orders' },
+            // «Cobranza» con ese nombre y en este grupo (dictado del
+            // dueño, 2026-11-19): la página /payments lista TODOS los
+            // saldos pendientes — con plan y sin plan — y cobrar al
+            // recoger tenía que encontrarse sin cazar la ficha.
+            { label: 'Cobranza', href: '/payments', icon: 'wallet' },
           ],
         },
       ]

@@ -14,10 +14,16 @@ import {
   LENS_REQUEST_REPLY_TEMPLATE_KEY,
   PAYMENT_REMINDER_TEMPLATE_KEY,
   TICKET_TEMPLATE_KEY,
+  ORDER_READY_TEMPLATE_KEY,
   MESSAGE_TEMPLATE_DEFAULTS,
   type MessageTemplateKey,
 } from './message-templates'
-import { MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT, effectiveClientPrice } from './pricing'
+import {
+  MEMBER_DISCOUNT_KEY,
+  DEFAULT_MEMBER_DISCOUNT_PERCENT,
+  BIRTHDAY_DISCOUNT_EXTRA_KEY,
+  DEFAULT_BIRTHDAY_DISCOUNT_EXTRA_PERCENT,
+} from './pricing'
 import { isAdminRole, normalizeRole } from './roles'
 import {
   formatAppointmentTime,
@@ -389,6 +395,111 @@ export async function getSales(): Promise<(Sale & { customer_name?: string; sell
   }
 }
 
+/** Una partida de venta tal como la pintan las tarjetas de ventas. */
+export interface SaleItemLine {
+  id: string
+  product_id: string | null
+  product_name: string | null
+  quantity: number
+  price: number
+  is_complement: boolean
+  complement_name: string | null
+  complement_for: string | null
+}
+
+/**
+ * Partidas (productos + complementos) de un lote de ventas, agrupadas
+ * por sale_id. La comparten el Historial y «Pedidos en proceso». Ante
+ * cualquier fallo de lectura devuelve el mapa vacío y las tarjetas se
+ * pintan sin la sección de artículos, como siempre.
+ */
+export async function getSaleItemsForSales(
+  saleIds: string[]
+): Promise<Map<string, SaleItemLine[]>> {
+  const bySale = new Map<string, SaleItemLine[]>()
+  if (saleIds.length === 0) return bySale
+  if (!isSupabaseConfigured()) {
+    // Demo mode: las partidas viven en las tablas mock.
+    for (const item of mockDb.MOCK_SALE_ITEMS as any[]) {
+      if (!saleIds.includes(item.sale_id)) continue
+      const product = mockDb.MOCK_PRODUCTS.find(p => p.id === item.product_id)
+      const line: SaleItemLine = {
+        id: item.id,
+        product_id: item.product_id ?? null,
+        product_name: product?.name ?? null,
+        quantity: item.quantity ?? 1,
+        price: Number(item.price ?? 0),
+        is_complement: !!item.is_complement,
+        complement_name: item.complement_name ?? null,
+        complement_for: item.complement_for ?? null,
+      }
+      const arr = bySale.get(item.sale_id) ?? []
+      arr.push(line)
+      bySale.set(item.sale_id, arr)
+    }
+    return bySale
+  }
+  try {
+    const supabase = createBrowserClient()
+    const { data, error } = await supabase
+      .from('sale_items')
+      .select('id, sale_id, product_id, quantity, price, is_complement, complement_name, complement_for, product:products(name)')
+      .in('sale_id', saleIds)
+    if (error || !data) return bySale
+    for (const row of data as any[]) {
+      const line: SaleItemLine = {
+        id: row.id,
+        product_id: row.product_id ?? null,
+        product_name: row.product?.name ?? null,
+        quantity: row.quantity ?? 1,
+        price: Number(row.price ?? 0),
+        is_complement: !!row.is_complement,
+        complement_name: row.complement_name ?? null,
+        complement_for: row.complement_for ?? null,
+      }
+      const arr = bySale.get(row.sale_id) ?? []
+      arr.push(line)
+      bySale.set(row.sale_id, arr)
+    }
+  } catch {
+    // El mapa vacío es el degradado acordado.
+  }
+  return bySale
+}
+
+/**
+ * Teléfonos (customer_profiles.phone) de un lote de clientes, como
+ * mapa id → teléfono. Lo usa «Pedidos en proceso» para el botón de
+ * WhatsApp de cada tarjeta sin una consulta por tarjeta.
+ */
+export async function getCustomerPhonesByIds(
+  customerIds: string[]
+): Promise<Map<string, string>> {
+  const phones = new Map<string, string>()
+  const ids = [...new Set(customerIds.filter(Boolean))]
+  if (ids.length === 0) return phones
+  if (!isSupabaseConfigured()) {
+    for (const cp of mockDb.MOCK_CUSTOMER_PROFILES as any[]) {
+      if (ids.includes(cp.id) && cp.phone) phones.set(cp.id, cp.phone)
+    }
+    return phones
+  }
+  try {
+    const supabase = createBrowserClient()
+    const { data, error } = await supabase
+      .from('customer_profiles')
+      .select('id, phone')
+      .in('id', ids)
+    if (error || !data) return phones
+    for (const row of data as any[]) {
+      if (row.phone) phones.set(row.id, row.phone)
+    }
+  } catch {
+    // Sin teléfonos el botón de WhatsApp simplemente no se pinta.
+  }
+  return phones
+}
+
 /** Mensaje exacto al aplicar/cobrar un cupón que agotó sus usos. */
 export const COUPON_LIMIT_MESSAGE = 'Este cupón ya llegó a su límite de usos'
 
@@ -432,11 +543,17 @@ export interface CreateSaleOptions {
   customerId?: string | null
   couponId?: string | null
   discountApplied?: number
+  // Motivo del descuento de mostrador (dictado del dueño, 2026-11-19):
+  // se guarda en sales.discount_reason (migración
+  // 20261119_sales_discount_reason) y es el detalle que el resumen y
+  // el ticket muestran junto al descuento. Null si no hubo descuento
+  // de mostrador o no se escribió motivo.
+  discountReason?: string | null
   notes?: string
-  // True when the POS composed the sale at visitor prices and the buyer was
-  // only resolved/linked at checkout (typed name matched or minimal profile
-  // created on the fly): the recorded sale must keep the prices actually
-  // charged on screen, not re-price as a member sale after the fact.
+  // Histórico (2026-11-19): el POS ya cobra SIEMPRE a precio de lista,
+  // haya o no cliente seleccionado, así que esta bandera ya no cambia
+  // ningún precio; se conserva en la interfaz por compatibilidad con
+  // las llamadas existentes.
   chargeAsWalkIn?: boolean
   // Plan de pagos del POS (dictado 2026-11-19): si viene y la venta deja
   // saldo con cliente registrado, createSale genera las cuotas en
@@ -461,31 +578,16 @@ export async function createSale(
       // demo/mock list: a POS sale priced from mocks corrupts real totals.
       const catalog = await getProducts()
 
-      // Member pricing at the counter: when the sale is linked to a
-      // registered customer (profile role 'customer'), the unit price is
-      // the client price — the product's special client_price when set, or
-      // the general member discount over the visitor price. Walk-in sales
-      // (no customerId, or a non-customer profile) keep visitor prices.
-      let buyerIsCustomer = false
-      if (options?.customerId) {
-        try {
-          const { data: buyer } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', options.customerId)
-            .maybeSingle()
-          buyerIsCustomer = !options?.chargeAsWalkIn && buyer?.role === 'customer'
-        } catch (roleErr) {
-          console.error('Buyer role lookup failed; charging visitor price:', roleErr)
-        }
-      }
-      const memberPct = buyerIsCustomer ? await getMemberDiscountPercent() : 0
+      // Precios en el mostrador (dictado del dueño, 2026-11-19): la
+      // venta se guarda SIEMPRE a precio de lista, haya o no cliente
+      // registrado vinculado. El único descuento de la venta es el que
+      // el vendedor capturó en pantalla (de mostrador o cupón) y viaja en
+      // options.discountApplied. El precio de cliente con su descuento
+      // (client_price / % de miembro) solo vive en el catálogo, en la
+      // página del propio cliente — nunca en el cobro.
       const priceOf = (productId: string) => {
         const product = catalog.find(p => p.id === productId)
-        if (!product) return 0
-        return buyerIsCustomer
-          ? effectiveClientPrice(product.price, product.client_price, memberPct)
-          : product.price
+        return product ? product.price : 0
       }
 
       // Complements (free-text add-ons per product, price 0 = «Gratis»)
@@ -541,22 +643,36 @@ export async function createSale(
         sellerId = user?.id || null
       } catch { /* seller attribution is best effort */ }
 
-      const { data: saleData, error: saleError } = await supabase
+      const salePayload: Record<string, any> = {
+        customer_id: options?.customerId || null,
+        seller_id: sellerId,
+        coupon_id: options?.couponId || null,
+        discount_applied: discountApplied,
+        discount_reason: options?.discountReason?.trim() || null,
+        total,
+        paid_amount: finalPaidAmount,
+        pending_balance: pendingBalance,
+        payment_method: paymentMethod || 'cash',
+        status: statusVal,
+        notes: options?.notes?.trim() || null
+      }
+      let { data: saleData, error: saleError } = await supabase
         .from('sales')
-        .insert([{
-          customer_id: options?.customerId || null,
-          seller_id: sellerId,
-          coupon_id: options?.couponId || null,
-          discount_applied: discountApplied,
-          total,
-          paid_amount: finalPaidAmount,
-          pending_balance: pendingBalance,
-          payment_method: paymentMethod || 'cash',
-          status: statusVal,
-          notes: options?.notes?.trim() || null
-        }])
+        .insert([salePayload])
         .select()
         .single()
+      if (saleError && /discount_reason/.test(saleError.message || '')) {
+        // La migración 20261119_sales_discount_reason aún no se aplicó
+        // en este entorno: la venta se guarda SIN la columna del motivo
+        // en vez de fallar (el motivo igual viaja en las notas de la
+        // venta y en el ticket de esta venta).
+        const { discount_reason: _omitReason, ...payloadWithoutReason } = salePayload
+        ;({ data: saleData, error: saleError } = await supabase
+          .from('sales')
+          .insert([payloadWithoutReason])
+          .select()
+          .single())
+      }
       
       if (!saleError && saleData) {
         // Rollback for the line-item steps below: if any item insert
@@ -726,13 +842,9 @@ export async function createSale(
     customerId: options?.customerId ?? null,
     couponId: options?.couponId ?? null,
     discountApplied: options?.discountApplied ?? 0,
+    discountReason: options?.discountReason ?? null,
     notes: options?.notes ?? null,
-    plan: options?.paymentPlan && options?.customerId ? options.paymentPlan : null,
-    // Same member-pricing input the real branch uses, so the mock sale
-    // totals match the POS preview for registered customers.
-    memberDiscountPercent: options?.customerId && !options?.chargeAsWalkIn
-      ? await getMemberDiscountPercent()
-      : 0
+    plan: options?.paymentPlan && options?.customerId ? options.paymentPlan : null
   })
 }
 
@@ -2171,6 +2283,7 @@ export interface MessageTemplates {
   lensRequestReply: string
   paymentReminder: string
   ticket: string
+  orderReady: string
 }
 
 /**
@@ -2184,7 +2297,7 @@ export async function getMessageTemplate(key: MessageTemplateKey): Promise<strin
 
 /** All editable WhatsApp templates at once (the «Mensajes» page). */
 export async function getMessageTemplates(): Promise<MessageTemplates> {
-  const [reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder, ticket] =
+  const [reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder, ticket, orderReady] =
     await Promise.all([
       getMessageTemplate(REMINDER_TEMPLATE_KEY),
       getMessageTemplate(BIRTHDAY_TEMPLATE_KEY),
@@ -2192,8 +2305,9 @@ export async function getMessageTemplates(): Promise<MessageTemplates> {
       getMessageTemplate(LENS_REQUEST_REPLY_TEMPLATE_KEY),
       getMessageTemplate(PAYMENT_REMINDER_TEMPLATE_KEY),
       getMessageTemplate(TICKET_TEMPLATE_KEY),
+      getMessageTemplate(ORDER_READY_TEMPLATE_KEY),
     ])
-  return { reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder, ticket }
+  return { reminder, birthday, catalogInquiry, lensRequestReply, paymentReminder, ticket, orderReady }
 }
 
 /**
@@ -2347,6 +2461,26 @@ export async function getMemberDiscountPercent(): Promise<number> {
 
 export async function saveMemberDiscountPercent(percent: number): Promise<void> {
   await setAppSetting(MEMBER_DISCOUNT_KEY, String(percent))
+}
+
+/**
+ * Extra discount during the customer's birthday month (owner's order,
+ * 2026-11-19): STACKS on the general member percent (see
+ * effectiveMemberDiscountPercent in lib/pricing). Default: the owner's
+ * 5% example. Edited next to the general percent in «Datos de la
+ * óptica»; it only changes what the customer SEES in the catalog —
+ * the POS never applies any of this automatically.
+ */
+export async function getBirthdayDiscountExtraPercent(): Promise<number> {
+  const raw = await getAppSetting(BIRTHDAY_DISCOUNT_EXTRA_KEY)
+  const pct = parseFloat(raw || '')
+  return Number.isFinite(pct) && pct >= 0 && pct <= 100
+    ? pct
+    : DEFAULT_BIRTHDAY_DISCOUNT_EXTRA_PERCENT
+}
+
+export async function saveBirthdayDiscountExtraPercent(percent: number): Promise<void> {
+  await setAppSetting(BIRTHDAY_DISCOUNT_EXTRA_KEY, String(percent))
 }
 
 // ----------------------------------------------------
@@ -3122,7 +3256,7 @@ export async function dismissBirthday(customerId: string, occurrenceYear: number
 // NUNCA se bloquea por el registro (mismo criterio que
 // logActivityEvent).
 
-export type MessageSendKind = 'birthday' | 'payment_reminder'
+export type MessageSendKind = 'birthday' | 'payment_reminder' | 'order_ready'
 
 export interface MessageSendEntry {
   id: string

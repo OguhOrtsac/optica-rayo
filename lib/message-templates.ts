@@ -13,6 +13,7 @@
  */
 
 import { REMINDER_TEMPLATE_KEY, DEFAULT_REMINDER_TEMPLATE } from './reminder-config'
+import { frequencyPlural, parsePlanDate, type PaymentFrequency } from './payment-plan'
 
 export { REMINDER_TEMPLATE_KEY, DEFAULT_REMINDER_TEMPLATE }
 
@@ -21,6 +22,7 @@ export const CATALOG_INQUIRY_TEMPLATE_KEY = 'catalog_inquiry_template'
 export const LENS_REQUEST_REPLY_TEMPLATE_KEY = 'lens_request_reply_template'
 export const PAYMENT_REMINDER_TEMPLATE_KEY = 'payment_reminder_template'
 export const TICKET_TEMPLATE_KEY = 'ticket_template'
+export const ORDER_READY_TEMPLATE_KEY = 'order_ready_template'
 
 /**
  * Birthday greeting (panel → «Cumpleaños próximos» → Felicitar).
@@ -93,6 +95,19 @@ Los precios ya incluyen IVA.
 ¡Lo esperamos de vuelta!
 Lo volvemos a esperar en {meses} meses para su examen de vista.`
 
+/**
+ * «Pedido listo» (Pedidos en proceso → «Avisar que está listo»).
+ * Placeholders: {nombre} — the customer's FULL name; {orden} — order
+ * code without '#'; {anticipo} / {saldo} — amounts already formatted
+ * as currency; {detalle_pago} — the payment paragraph, composed by
+ * buildOrderReadyDetail from the sale's real state (plan / balance /
+ * fully paid) so the template itself never branches.
+ */
+export const DEFAULT_ORDER_READY_TEMPLATE = `Hola {nombre} 👋, le saludamos de *Óptica Rayo*.
+¡Su pedido #{orden} ya está listo para entrega! 🎉
+{detalle_pago}
+Pase a recogerlo cuando guste. Gracias por su elección; estamos seguros de que disfrutará mucho sus nuevos lentes. 👓`
+
 /** Every editable template key, for validation in the services layer. */
 export const MESSAGE_TEMPLATE_KEYS = [
   REMINDER_TEMPLATE_KEY,
@@ -101,6 +116,7 @@ export const MESSAGE_TEMPLATE_KEYS = [
   LENS_REQUEST_REPLY_TEMPLATE_KEY,
   PAYMENT_REMINDER_TEMPLATE_KEY,
   TICKET_TEMPLATE_KEY,
+  ORDER_READY_TEMPLATE_KEY,
 ] as const
 
 export type MessageTemplateKey = (typeof MESSAGE_TEMPLATE_KEYS)[number]
@@ -113,6 +129,7 @@ export const MESSAGE_TEMPLATE_DEFAULTS: Record<MessageTemplateKey, string> = {
   [LENS_REQUEST_REPLY_TEMPLATE_KEY]: DEFAULT_LENS_REQUEST_REPLY_TEMPLATE,
   [PAYMENT_REMINDER_TEMPLATE_KEY]: DEFAULT_PAYMENT_REMINDER_TEMPLATE,
   [TICKET_TEMPLATE_KEY]: DEFAULT_TICKET_TEMPLATE,
+  [ORDER_READY_TEMPLATE_KEY]: DEFAULT_ORDER_READY_TEMPLATE,
 }
 
 /** Builds the birthday greeting from the editable template. */
@@ -159,4 +176,81 @@ export function buildPaymentReminderMessage(
   return template
     .replaceAll('{nombre}', values.nombre)
     .replaceAll('{saldo}', values.saldo)
+}
+
+const orderReadyCurrency = (amount: number) =>
+  new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+  }).format(amount)
+
+const orderReadyLongDate = (isoDate: string) =>
+  parsePlanDate(isoDate.slice(0, 10)).toLocaleDateString('es-MX', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+
+/** The live summary of a saved sale's payment plan (see derivePlanSummary). */
+export interface OrderReadyPlanInfo {
+  /** Cuotas aún no liquidadas. */
+  installments: number
+  frequency: PaymentFrequency
+  /** Monto de la primera cuota pendiente. */
+  installmentAmount: number
+  /** Fecha ('YYYY-MM-DD') de la primera cuota pendiente. */
+  firstPaymentDate: string
+}
+
+/**
+ * Composes the {detalle_pago} paragraph of «Pedido listo» from the
+ * sale's real payment state (owner's dictation, 2026-11-19):
+ * - with a live payment plan, the customer only picks up: the rest is
+ *   already scheduled;
+ * - with a balance and no plan, what remains is paid at delivery
+ *   (the anticipo line is dropped when nothing was paid up front);
+ * - fully paid: nothing left to say about money.
+ */
+export function buildOrderReadyDetail(values: {
+  anticipo: number
+  saldo: number
+  plan?: OrderReadyPlanInfo | null
+}): string {
+  if (values.plan) {
+    return (
+      `Ya dio un anticipo de ${orderReadyCurrency(values.anticipo)}; el resto quedó en pagos programados ` +
+      `(${values.plan.installments} pagos ${frequencyPlural(values.plan.frequency)} de ` +
+      `${orderReadyCurrency(values.plan.installmentAmount)}, el primero el ` +
+      `${orderReadyLongDate(values.plan.firstPaymentDate)}), así que solo pase a recogerlo.`
+    )
+  }
+  if (values.saldo > 0) {
+    if (values.anticipo > 0) {
+      return (
+        `Ya dio un anticipo de ${orderReadyCurrency(values.anticipo)}; ` +
+        `para su entrega solo resta pagar ${orderReadyCurrency(values.saldo)}.`
+      )
+    }
+    return `Para su entrega resta pagar ${orderReadyCurrency(values.saldo)}.`
+  }
+  return 'Su pedido está totalmente pagado; solo pase a recogerlo.'
+}
+
+/** Builds the «Pedido listo» notice from the editable template. */
+export function buildOrderReadyMessage(
+  template: string,
+  values: {
+    nombre: string
+    orden: string
+    anticipo: string
+    saldo: string
+    detalle_pago: string
+  }
+): string {
+  return template
+    .replaceAll('{nombre}', values.nombre)
+    .replaceAll('{orden}', values.orden)
+    .replaceAll('{anticipo}', values.anticipo)
+    .replaceAll('{saldo}', values.saldo)
+    .replaceAll('{detalle_pago}', values.detalle_pago)
 }

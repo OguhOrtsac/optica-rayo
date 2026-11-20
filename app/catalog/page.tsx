@@ -17,7 +17,7 @@ import type { FaceShape } from '@/lib/face-shape'
 import { uploadPrescriptionFile, attachPrescriptionToRequest, validatePrescriptionFile } from '@/lib/catalog-data'
 import { effectiveClientPrice } from '@/lib/pricing'
 import { getProductDescription, getProductDetails, getProductImageAlt, getProductImages } from '@/lib/product-data'
-import { getProfileData } from '@/app/auth/actions'
+import { getProfileData, getMyMemberDiscountPercent } from '@/app/auth/actions'
 import { Database } from '@/types/database.types'
 import useEmblaCarousel from 'embla-carousel-react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
@@ -207,6 +207,17 @@ function CatalogContent() {
           const profile = await getProfileData()
           if (profile) {
             setUserProfile(profile)
+            // Cliente conectado: su % efectivo lo calcula el SERVIDOR
+            // (acción getMyMemberDiscountPercent): el general más el
+            // extra si es su mes de cumpleaños, leído de SU fecha de
+            // nacimiento — la fecha nunca viaja al navegador.
+            if (profile.role === 'customer') {
+              try {
+                setMemberPct(await getMyMemberDiscountPercent())
+              } catch (_) {
+                // Se queda el % general ya cargado.
+              }
+            }
             // Fetch wishlist from server
             const serverWishlist = await getWishlist(profile.id)
             setWishlist(serverWishlist)

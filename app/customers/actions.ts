@@ -7,7 +7,6 @@ import { createClient } from '@/utils/supabase/server'
 import * as mockDb from '@/lib/mocks'
 import { addMonthsISO, DEFAULT_REMINDER_MONTHS, REMINDER_MONTHS_KEY } from '@/lib/reminder-config'
 import { buildClinicalHistoryFromFormData, hasClinicalHistory } from '@/lib/clinical-history'
-import { effectiveClientPrice, MEMBER_DISCOUNT_KEY, DEFAULT_MEMBER_DISCOUNT_PERCENT } from '@/lib/pricing'
 import { isAdminRole, isStaffRole } from '@/lib/roles'
 import {
   buildInstallmentSchedule,
@@ -47,27 +46,6 @@ async function reminderMonthsServer(client?: any): Promise<number> {
     }
   }
   return DEFAULT_REMINDER_MONTHS
-}
-
-/**
- * Reads the general member discount percent from app_settings (server side).
- * Falls back to the default (20%) when unset or unreadable.
- */
-async function memberDiscountServer(client?: any): Promise<number> {
-  if (client) {
-    try {
-      const { data } = await client
-        .from('app_settings')
-        .select('value')
-        .eq('key', MEMBER_DISCOUNT_KEY)
-        .single()
-      const n = parseFloat(data?.value ?? '')
-      if (Number.isFinite(n) && n >= 0 && n <= 100) return n
-    } catch {
-      // use default below
-    }
-  }
-  return DEFAULT_MEMBER_DISCOUNT_PERCENT
 }
 
 export interface RegisterCustomerState {
@@ -661,7 +639,7 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
       const treatmentIds = [...new Set(items.flatMap((i: any) => i.treatmentIds || []))]
       const [prodRes, matRes, treatRes] = await Promise.all([
         productIds.length > 0
-          ? supabase.from('products').select('id, price, client_price').in('id', productIds)
+          ? supabase.from('products').select('id, price').in('id', productIds)
           : Promise.resolve({ data: [], error: null }),
         materialIds.length > 0
           ? supabase.from('lens_materials').select('id, price').in('id', materialIds)
@@ -676,26 +654,14 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
         throw new Error('No se pudo verificar el catálogo en la base de datos.')
       }
       const productPrice = new Map((prodRes.data || []).map((r: any) => [r.id, Number(r.price)]))
-      const productClientPrice = new Map((prodRes.data || []).map((r: any) => [r.id, r.client_price != null ? Number(r.client_price) : null]))
       const materialPrice = new Map((matRes.data || []).map((r: any) => [r.id, Number(r.price)]))
       const treatmentPrice = new Map((treatRes.data || []).map((r: any) => [r.id, Number(r.price)]))
 
-      // Member pricing: a linked sale always belongs to a CRM customer, so
-      // when that profile has role 'customer' the product price is the
-      // client price (special client_price, else the general member
-      // discount) — the same rule the catalog and the POS apply. Lens
-      // materials and treatments are services and keep their list price.
-      let buyerIsCustomer = false
-      try {
-        const { data: buyer } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', customerId)
-          .maybeSingle()
-        buyerIsCustomer = buyer?.role === 'customer'
-      } catch { /* fall back to visitor price */ }
-      const memberPct = buyerIsCustomer ? await memberDiscountServer(supabase) : 0
-
+      // Precios de la venta vinculada (dictado del dueño, 2026-11-19):
+      // el producto se cobra SIEMPRE a precio de lista, aunque la venta
+      // sea de un cliente registrado — sin precio de cliente ni % de
+      // miembro automáticos. El único descuento es el cupón validado
+      // arriba. Materiales y tratamientos también van a precio de lista.
       for (const item of items) {
         const qty = Number(item.quantity)
         if (!Number.isInteger(qty) || qty < 1 || qty > 100) {
@@ -704,9 +670,7 @@ export async function createLinkedSaleAction(currentState: CreateSaleState, form
         if (!productPrice.has(item.productId)) {
           return { error: 'Uno de los productos del carrito ya no existe en el catálogo.', success: null }
         }
-        item.price = buyerIsCustomer
-          ? effectiveClientPrice(productPrice.get(item.productId) ?? 0, productClientPrice.get(item.productId) ?? null, memberPct)
-          : productPrice.get(item.productId)
+        item.price = productPrice.get(item.productId)
         if (item.lensMaterialId) {
           if (!materialPrice.has(item.lensMaterialId)) {
             return { error: 'Uno de los materiales seleccionados ya no existe.', success: null }
