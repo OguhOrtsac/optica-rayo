@@ -7,6 +7,14 @@ import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { invalidateProfilesCache } from '@/lib/services'
 import { normalizeRole, type UserRole } from '@/lib/roles'
+import {
+  MEMBER_DISCOUNT_KEY,
+  BIRTHDAY_DISCOUNT_EXTRA_KEY,
+  DEFAULT_MEMBER_DISCOUNT_PERCENT,
+  DEFAULT_BIRTHDAY_DISCOUNT_EXTRA_PERCENT,
+  effectiveMemberDiscountPercent,
+  isBirthdayMonth,
+} from '@/lib/pricing'
 
 /**
  * Centralizes the username-to-email mapping logic.
@@ -413,6 +421,65 @@ export async function getProfileData() {
     email,
     isSuperAdmin: role === 'super_admin',
     bg_theme: (profile?.bg_theme || 'dark') as 'dark' | 'light',
+  }
+}
+
+/**
+ * The discount percent the SIGNED-IN CUSTOMER actually gets in the
+ * catalog and their panel (owner's order, 2026-11-19): the general
+ * member percent, PLUS the birthday extra during the customer's own
+ * birthday month. The birthday-month call is made HERE, on the server,
+ * from the customer's own customer_profiles.date_of_birth — the date
+ * of birth never travels to the browser just to price a catalog.
+ *
+ * Never throws: guests, staff and any read failure fall back to the
+ * general percent (or its default), which is exactly what those
+ * viewers may see anyway. This percent ONLY shapes the customer's own
+ * view — the POS never applies it automatically.
+ */
+export async function getMyMemberDiscountPercent(): Promise<number> {
+  let basePercent = DEFAULT_MEMBER_DISCOUNT_PERCENT
+  let extraPercent = DEFAULT_BIRTHDAY_DISCOUNT_EXTRA_PERCENT
+  try {
+    const supabase = await createClient()
+
+    const { data: settings } = await supabase
+      .from('app_settings')
+      .select('key, value')
+      .in('key', [MEMBER_DISCOUNT_KEY, BIRTHDAY_DISCOUNT_EXTRA_KEY])
+    for (const row of (settings as { key: string; value: string }[] | null) ?? []) {
+      const parsed = parseFloat(row.value || '')
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) continue
+      if (row.key === MEMBER_DISCOUNT_KEY) basePercent = parsed
+      if (row.key === BIRTHDAY_DISCOUNT_EXTRA_KEY) extraPercent = parsed
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) return basePercent
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    const role = normalizeRole(profile?.role || user.user_metadata?.role || 'customer')
+    if (role !== 'customer') return basePercent
+
+    const { data: customerProfile } = await supabase
+      .from('customer_profiles')
+      .select('date_of_birth')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    return effectiveMemberDiscountPercent(
+      basePercent,
+      extraPercent,
+      isBirthdayMonth(customerProfile?.date_of_birth)
+    )
+  } catch {
+    return basePercent
   }
 }
 

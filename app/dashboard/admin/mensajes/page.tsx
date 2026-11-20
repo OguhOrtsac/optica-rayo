@@ -11,6 +11,7 @@ import {
   Lock,
   MessagesSquare,
   MessageSquare,
+  PackageCheck,
   Receipt,
   Save,
   Search,
@@ -32,6 +33,7 @@ import {
   LENS_REQUEST_REPLY_TEMPLATE_KEY,
   PAYMENT_REMINDER_TEMPLATE_KEY,
   TICKET_TEMPLATE_KEY,
+  ORDER_READY_TEMPLATE_KEY,
   type MessageTemplateKey,
 } from '@/lib/message-templates'
 
@@ -52,7 +54,7 @@ import {
 // and Promotions: the seller sells; the owner words the messages. RLS on
 // app_settings enforces the same rule in the database.
 
-type TemplateField = 'reminder' | 'birthday' | 'catalogInquiry' | 'lensRequestReply' | 'paymentReminder' | 'ticket'
+type TemplateField = 'reminder' | 'birthday' | 'catalogInquiry' | 'lensRequestReply' | 'paymentReminder' | 'ticket' | 'orderReady'
 
 interface MessageCardSpec {
   field: TemplateField
@@ -192,6 +194,28 @@ const MESSAGE_CARDS: MessageCardSpec[] = [
       { token: '{meses}', meaning: 'meses para su próximo examen (el periodo configurado en «Recordatorio de examen»)' },
     ],
     note: 'La imagen del ticket que acompaña a este texto se genera siempre con el mismo contenido de la venta (artículos, total, anticipo y plan); esta plantilla manda solo en el texto.',
+  },
+  {
+    field: 'orderReady',
+    settingKey: ORDER_READY_TEMPLATE_KEY,
+    title: 'Pedido listo',
+    icon: PackageCheck,
+    chip: 'bg-[#d1fae5] text-[#047857]',
+    bar: 'bg-[#d1fae5]/60',
+    soft: 'bg-[#ecfdf5]',
+    border: 'border-[#047857]/25',
+    toneText: 'text-[#047857]',
+    focus: 'focus:ring-[#047857]/30 focus:border-[#047857]',
+    where:
+      'Se envía con el botón «Avisar que está listo» de cada pedido en «Pedidos en proceso», cuando el pedido queda en «Listo para entrega».',
+    variables: [
+      { token: '{nombre}', meaning: 'nombre completo del cliente' },
+      { token: '{orden}', meaning: 'código de la orden (sin el #)' },
+      { token: '{anticipo}', meaning: 'lo que el cliente ya pagó, ya con formato de moneda' },
+      { token: '{saldo}', meaning: 'saldo pendiente, ya con formato de moneda' },
+      { token: '{detalle_pago}', meaning: 'el párrafo del pago, compuesto solo según la venta: con plan de pagos dice que el resto quedó programado y solo pase a recogerlo; con saldo y sin plan, cuánto resta pagar a la entrega; sin saldo, que ya está totalmente pagado' },
+    ],
+    note: 'El párrafo de {detalle_pago} se arma con los datos reales de cada venta al momento de enviar; aquí solo se edita el texto que lo rodea.',
   },
 ]
 
@@ -400,6 +424,7 @@ export default function MensajesPage() {
     lensRequestReply: '',
     paymentReminder: '',
     ticket: '',
+    orderReady: '',
   })
   const [reminderMonths, setReminderMonths] = useState(6)
 

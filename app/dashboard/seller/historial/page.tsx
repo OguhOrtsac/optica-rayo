@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getSales, updateSaleStatus } from '@/lib/services'
 import PageHeader from '@/components/page-header'
@@ -23,17 +23,19 @@ interface SaleItemLine {
   complement_for: string | null
 }
 
-type StatusFilter = 'Todos' | 'Cotizacion' | 'Anticipo_Pagado' | 'En_Taller' | 'Listo_Entrega' | 'Entregado'
-
 // Historial de ventas: hasta el 2026-11-18 vivía como la vista «taller»
 // dentro de Realizar Venta; el dueño pidió pantalla propia enlazada
 // desde el menú (Ventas → Historial de ventas) para dejar el POS limpio.
 // Mismas lecturas (getSales + el lote de partidas), mismos textos y el
 // mismo selector de estatus endurecido de siempre.
+//
+// Desde el 2026-11-19 el Historial es SOLO lo entregado (dictado del
+// dueño): todo lo que sigue en proceso vive en su pantalla hermana,
+// «Pedidos en proceso» (Ventas → Pedidos en proceso), y al marcar un
+// pedido como Entregado sale de allá y aparece aquí.
 export default function SalesHistoryPage() {
   const [sales, setSales] = useState<(Sale & { customer_name?: string; seller_name?: string; items?: SaleItemLine[] })[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('Todos')
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -87,7 +89,9 @@ export default function SalesHistoryPage() {
 
   const loadSales = async () => {
     try {
-      const salesData = await getSales()
+      // SOLO entregados: el historial es el archivo de lo ya cerrado;
+      // los pedidos vivos están en «Pedidos en proceso».
+      const salesData = (await getSales()).filter(s => s.status === 'Entregado')
       setSales(await attachSaleItems(salesData))
     } catch (e) {
       console.error('Error loading sales history:', e)
@@ -102,14 +106,6 @@ export default function SalesHistoryPage() {
     }
     initLoad()
   }, [])
-
-  // Filter sales for the history monitor
-  const filteredSales = useMemo(() => {
-    return sales.filter(s => {
-      if (statusFilter === 'Todos') return true
-      return s.status === statusFilter
-    })
-  }, [sales, statusFilter])
 
   // Update Workshop status of a sale
   const handleStatusChange = async (saleId: string, newStatus: any) => {
@@ -182,42 +178,14 @@ export default function SalesHistoryPage() {
       ) : (
         <div className="space-y-6">
 
-          {/* Status filter tabs: los cinco filtros en UN solo renglón,
-              también a 360px — pastillas compactas que se reparten el
-              ancho (flex-1, sin saltos ni scroll horizontal) y la
-              seleccionada se ilumina con el relleno sólido de marca. */}
-          <div className="flex w-full gap-1 sm:gap-2" role="tablist" aria-label="Filtrar por estado">
-            {[
-              { id: 'Todos', label: 'Todos' },
-              { id: 'Cotizacion', label: 'Cotización' },
-              { id: 'En_Taller', label: 'En taller' },
-              { id: 'Listo_Entrega', label: 'Listo para entrega' },
-              { id: 'Entregado', label: 'Entregado' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                role="tab"
-                aria-selected={statusFilter === tab.id}
-                onClick={() => setStatusFilter(tab.id as StatusFilter)}
-                className={`flex-1 min-w-0 whitespace-nowrap px-1 sm:px-3 py-2 text-[10px] min-[420px]:text-[11px] sm:text-xs font-semibold rounded-full border transition-all cursor-pointer min-h-[40px] flex items-center justify-center ${
-                  statusFilter === tab.id
-                    ? 'bg-[#00357f] border-[#00357f] text-white font-bold'
-                    : 'bg-white border-[#dee8ff] text-[#737784] hover:bg-[#f9f9ff]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Orders list */}
+          {/* Orders list — solo entregados (ver la nota de la página). */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredSales.length === 0 ? (
+            {sales.length === 0 ? (
               <div className="col-span-full py-20 text-center text-sm text-[#737784] bg-white rounded-[20px] or-shadow-card font-semibold">
-                No hay órdenes de taller bajo este estado.
+                No hay ventas entregadas todavía.
               </div>
             ) : (
-              filteredSales.map((sale) => {
+              sales.map((sale) => {
                 const balance = sale.pending_balance !== undefined ? sale.pending_balance : 0
                 const paid = sale.paid_amount !== undefined ? sale.paid_amount : sale.total
                 const productLines = (sale.items ?? []).filter(i => !i.is_complement)

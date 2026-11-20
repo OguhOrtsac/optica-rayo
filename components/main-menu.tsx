@@ -11,6 +11,7 @@ import {
   CalendarPlus,
   CalendarRange,
   ChevronDown,
+  ClipboardList,
   Coins,
   Eye,
   Glasses,
@@ -37,7 +38,7 @@ export type MainMenuIcon =
   | 'catalog' | 'agenda' | 'agendar' | 'products' | 'users' | 'promotions'
   | 'expenses' | 'reports' | 'pos' | 'history' | 'clients' | 'messages'
   | 'store' | 'wallet' | 'coins' | 'calendarRange' | 'calendarClock'
-  | 'trendingUp' | 'settings' | 'home' | 'exam'
+  | 'trendingUp' | 'settings' | 'home' | 'exam' | 'orders'
 
 export interface MainMenuLink {
   label: string
@@ -75,6 +76,7 @@ const ICONS = {
   reports: BarChart3,
   pos: ShoppingCart,
   history: History,
+  orders: ClipboardList,
   clients: Users,
   messages: MessageSquare,
   store: Store,
@@ -112,6 +114,7 @@ const ICON_COLORS: Record<MainMenuIcon, MenuColor> = {
   reports: { bg: '#e0e7ff', fg: '#4338ca' }, // Reportes: índigo
   pos: { bg: '#d1fae5', fg: '#047857' },
   history: { bg: '#d1fae5', fg: '#047857' },
+  orders: { bg: '#d1fae5', fg: '#047857' },
   coins: { bg: '#ede9fe', fg: '#6d28d9' },
   calendarRange: { bg: '#ede9fe', fg: '#6d28d9' },
   calendarClock: { bg: '#ede9fe', fg: '#6d28d9' },

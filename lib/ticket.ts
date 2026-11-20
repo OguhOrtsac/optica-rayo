@@ -170,8 +170,13 @@ export function composeTicketParts(data: TicketData): TicketParts {
   }
 
   const discount = data.discount && data.discount.amount > 0 ? data.discount : null
+  // Línea del descuento (dictado del dueño, 2026-11-19): con detalle
+  // (el motivo del descuento de mostrador, o el cupón) va entre
+  // paréntesis tras «Descuento»; sin detalle, solo el monto.
   const discountText = discount
-    ? `Descuento: −${formatPrice(discount.amount)}${discount.detail ? ` (${discount.detail})` : ''}`
+    ? discount.detail
+      ? `Descuento (${discount.detail}): −${formatPrice(discount.amount)}`
+      : `Descuento: −${formatPrice(discount.amount)}`
     : ''
 
   let planLine = ''
